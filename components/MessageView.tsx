@@ -623,6 +623,7 @@ function ToolCallBlock({ block, result, isRunning, duration }: { block: ToolCall
     : null;
   const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
   const isError = result?.isError ?? false;
+  const toolColor = isError ? "#f87171" : isRunning ? "var(--accent)" : "#16a34a";
 
   return (
     <div
@@ -630,8 +631,8 @@ function ToolCallBlock({ block, result, isRunning, duration }: { block: ToolCall
         borderRadius: 7,
         overflow: "hidden",
         fontSize: 12,
-        border: isError ? "1px solid rgba(248,113,113,0.45)" : "1px solid rgba(34,197,94,0.25)",
-        background: isError ? "rgba(248,113,113,0.05)" : "rgba(34,197,94,0.04)",
+        border: isError ? "1px solid rgba(248,113,113,0.45)" : isRunning ? "1px solid rgba(96,165,250,0.35)" : "1px solid rgba(34,197,94,0.25)",
+        background: isError ? "rgba(248,113,113,0.05)" : isRunning ? "rgba(96,165,250,0.06)" : "rgba(34,197,94,0.04)",
       }}
     >
       {/* ── Tool call header ── */}
@@ -652,9 +653,14 @@ function ToolCallBlock({ block, result, isRunning, duration }: { block: ToolCall
           minWidth: 0,
         }}
       >
-        <span style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}>
+        <span style={{ color: toolColor, fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}>
           {block.toolName}
         </span>
+        {isRunning && (
+          <span style={{ color: "var(--accent)", fontSize: 10, flexShrink: 0 }}>
+            running
+          </span>
+        )}
         <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
           {getToolPreview(block)}
         </span>
@@ -835,5 +841,4 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
     </div>
   );
 }
-
 

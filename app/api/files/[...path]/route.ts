@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { execFileSync } from "child_process";
 import { listAllSessions } from "@/lib/session-reader";
 
 const IGNORED_NAMES = new Set([
@@ -13,6 +14,9 @@ const IGNORED_SUFFIXES = [".pyc"];
 
 const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
 const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
+const DIRECTORY_CACHE_TTL_MS = 10_000;
+const GIT_TRACKED_CACHE_TTL_MS = 15_000;
+const FILE_SEARCH_LIMIT = 100;
 
 const IMAGE_EXT_TO_MIME: Record<string, string> = {
   png: "image/png",
@@ -82,6 +86,31 @@ function getLanguage(filePath: string): string {
 // survives Next.js hot-reload.
 declare global {
   var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
+  var __piDirectoryListCache: Map<string, CachedDirectoryList> | undefined;
+  var __piGitTrackedCache: Map<string, CachedGitTrackedIndex> | undefined;
+}
+
+interface FileListEntry {
+  name: string;
+  isDir: boolean;
+  size: number;
+  modified: string;
+}
+
+interface CachedDirectoryList {
+  entries: FileListEntry[];
+  mtimeMs: number;
+  expiresAt: number;
+}
+
+interface GitTrackedIndex {
+  root: string;
+  files: Set<string>;
+  dirs: Set<string>;
+}
+
+interface CachedGitTrackedIndex extends GitTrackedIndex {
+  expiresAt: number;
 }
 
 const ALLOWED_ROOTS_TTL_MS = 5_000;
@@ -89,6 +118,182 @@ const WINDOWS_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 
 function normalizeSlashes(filePath: string): string {
   return filePath.replace(/\\/g, "/");
+}
+
+function shouldIgnoreName(name: string): boolean {
+  return IGNORED_NAMES.has(name) || IGNORED_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+function getDirectoryListCache(): Map<string, CachedDirectoryList> {
+  if (!globalThis.__piDirectoryListCache) globalThis.__piDirectoryListCache = new Map();
+  return globalThis.__piDirectoryListCache;
+}
+
+function getGitTrackedCache(): Map<string, CachedGitTrackedIndex> {
+  if (!globalThis.__piGitTrackedCache) globalThis.__piGitTrackedCache = new Map();
+  return globalThis.__piGitTrackedCache;
+}
+
+function getGitRoot(dirPath: string): string | null {
+  try {
+    return execFileSync("git", ["-C", dirPath, "rev-parse", "--show-toplevel"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1_500,
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function getGitTrackedIndex(dirPath: string): GitTrackedIndex | null {
+  const root = getGitRoot(dirPath);
+  if (!root) return null;
+
+  const now = Date.now();
+  const cache = getGitTrackedCache();
+  const cached = cache.get(root);
+  if (cached && cached.expiresAt > now) return cached;
+
+  try {
+    const output = execFileSync("git", ["-C", root, "ls-files", "-z"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3_000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    const files = new Set<string>();
+    const dirs = new Set<string>();
+    for (const raw of output.split("\0")) {
+      const rel = normalizeSlashes(raw).replace(/^\/+/, "");
+      if (!rel) continue;
+      files.add(rel);
+      const parts = rel.split("/");
+      for (let i = 1; i < parts.length; i++) {
+        dirs.add(parts.slice(0, i).join("/"));
+      }
+    }
+    const index = { root, files, dirs, expiresAt: now + GIT_TRACKED_CACHE_TTL_MS };
+    cache.set(root, index);
+    if (cache.size > 40) {
+      const oldestKey = cache.keys().next().value as string | undefined;
+      if (oldestKey) cache.delete(oldestKey);
+    }
+    return index;
+  } catch {
+    return null;
+  }
+}
+
+function isGitTrackedEntry(fullPath: string, isDir: boolean, index: GitTrackedIndex): boolean {
+  const rel = normalizeSlashes(path.relative(index.root, fullPath));
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return false;
+  return isDir ? index.dirs.has(rel) : index.files.has(rel);
+}
+
+function listDirectoryEntries(
+  dirPath: string,
+  stat: fs.Stats,
+  options?: { force?: boolean; trackedIndex?: GitTrackedIndex | null }
+): FileListEntry[] {
+  const trackedRoot = options?.trackedIndex?.root ?? "all";
+  const cacheKey = `${dirPath}::${trackedRoot}`;
+  const now = Date.now();
+  const cache = getDirectoryListCache();
+  const cached = cache.get(cacheKey);
+  if (!options?.force && cached && cached.mtimeMs === stat.mtimeMs && cached.expiresAt > now) {
+    return cached.entries;
+  }
+
+  const entries = fs.readdirSync(dirPath)
+    .filter((name) => !shouldIgnoreName(name))
+    .map((name) => {
+      const full = path.join(dirPath, name);
+      try {
+        const s = fs.statSync(full);
+        const isDir = s.isDirectory();
+        if (options?.trackedIndex && !isGitTrackedEntry(full, isDir, options.trackedIndex)) return null;
+        return {
+          name,
+          isDir,
+          size: s.isFile() ? s.size : 0,
+          modified: s.mtime.toISOString(),
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter((entry): entry is FileListEntry => entry !== null)
+    .sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+  cache.set(cacheKey, { entries, mtimeMs: stat.mtimeMs, expiresAt: now + DIRECTORY_CACHE_TTL_MS });
+  if (cache.size > 400) {
+    const oldestKey = cache.keys().next().value as string | undefined;
+    if (oldestKey) cache.delete(oldestKey);
+  }
+  return entries;
+}
+
+function searchFileNames(
+  rootPath: string,
+  query: string,
+  trackedIndex: GitTrackedIndex | null
+): Array<FileListEntry & { path: string }> {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+
+  if (trackedIndex) {
+    const rootRel = normalizeSlashes(path.relative(trackedIndex.root, rootPath));
+    const prefix = rootRel && !rootRel.startsWith("..") && !path.isAbsolute(rootRel) ? `${rootRel}/` : "";
+    const matches: Array<FileListEntry & { path: string }> = [];
+    for (const rel of trackedIndex.files) {
+      if (prefix && !rel.startsWith(prefix)) continue;
+      const displayPath = prefix ? rel.slice(prefix.length) : rel;
+      const name = path.basename(rel);
+      if (!name.toLowerCase().includes(needle) && !displayPath.toLowerCase().includes(needle)) continue;
+      const full = path.join(trackedIndex.root, rel);
+      try {
+        const s = fs.statSync(full);
+        matches.push({ name, path: displayPath, isDir: false, size: s.size, modified: s.mtime.toISOString() });
+      } catch {
+        matches.push({ name, path: displayPath, isDir: false, size: 0, modified: new Date(0).toISOString() });
+      }
+      if (matches.length >= FILE_SEARCH_LIMIT) break;
+    }
+    return matches.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  const matches: Array<FileListEntry & { path: string }> = [];
+  const walk = (dirPath: string, relDir: string) => {
+    if (matches.length >= FILE_SEARCH_LIMIT) return;
+    let names: string[];
+    try {
+      names = fs.readdirSync(dirPath);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (matches.length >= FILE_SEARCH_LIMIT || shouldIgnoreName(name)) continue;
+      const full = path.join(dirPath, name);
+      const rel = relDir ? `${relDir}/${name}` : name;
+      try {
+        const s = fs.lstatSync(full);
+        if (s.isSymbolicLink()) continue;
+        if (s.isDirectory()) {
+          walk(full, rel);
+        } else if (name.toLowerCase().includes(needle) || rel.toLowerCase().includes(needle)) {
+          matches.push({ name, path: rel, isDir: false, size: s.size, modified: s.mtime.toISOString() });
+        }
+      } catch {
+        // ignore unreadable entries
+      }
+    }
+  };
+  walk(rootPath, "");
+  return matches.sort((a, b) => a.path.localeCompare(b.path));
 }
 
 function isWindowsAbsolutePath(filePath: string): boolean {
@@ -252,6 +457,8 @@ export async function GET(
     const { path: segments } = await params;
     const filePath = filePathFromSegments(segments);
     const type = request.nextUrl.searchParams.get("type") ?? "list";
+    const trackedOnly = request.nextUrl.searchParams.get("tracked") === "1";
+    const force = request.nextUrl.searchParams.has("refresh");
 
     const allowedRoots = await getAllowedRoots();
     if (!isPathAllowed(filePath, allowedRoots)) {
@@ -336,36 +543,39 @@ export async function GET(
       });
     }
 
-    // type === "list"
     if (!stat.isDirectory()) {
       return NextResponse.json({ error: "Not a directory" }, { status: 400 });
     }
 
-    const names = fs.readdirSync(filePath);
-    const entries = names
-      .filter((name) => !IGNORED_NAMES.has(name) && !IGNORED_SUFFIXES.some((s) => name.endsWith(s)))
-      .map((name) => {
-        const full = path.join(filePath, name);
-        try {
-          const s = fs.statSync(full);
-          return {
-            name,
-            isDir: s.isDirectory(),
-            size: s.isFile() ? s.size : 0,
-            modified: s.mtime.toISOString(),
-          };
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean)
-      .sort((a, b) => {
-        // Dirs first, then files, both alphabetically
-        if (a!.isDir !== b!.isDir) return a!.isDir ? -1 : 1;
-        return a!.name.localeCompare(b!.name);
+    const trackedIndex = trackedOnly ? getGitTrackedIndex(filePath) : null;
+    if (trackedOnly && !trackedIndex) {
+      return NextResponse.json({
+        entries: [],
+        path: filePath,
+        trackedOnly: true,
+        gitTrackedAvailable: false,
       });
+    }
 
-    return NextResponse.json({ entries, path: filePath });
+    if (type === "search") {
+      const query = request.nextUrl.searchParams.get("q") ?? "";
+      const entries = searchFileNames(filePath, query, trackedIndex);
+      return NextResponse.json({
+        entries,
+        path: filePath,
+        trackedOnly,
+        gitTrackedAvailable: trackedOnly ? Boolean(trackedIndex) : undefined,
+      });
+    }
+
+    // type === "list"
+    const entries = listDirectoryEntries(filePath, stat, { force, trackedIndex });
+    return NextResponse.json({
+      entries,
+      path: filePath,
+      trackedOnly,
+      gitTrackedAvailable: trackedOnly ? Boolean(trackedIndex) : undefined,
+    });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

@@ -49,6 +49,16 @@ interface AgentEvent {
   [key: string]: unknown;
 }
 
+type LiveAgentState = {
+  isStreaming?: boolean;
+  isCompacting?: boolean;
+  contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
+  systemPrompt?: string;
+  thinkingLevel?: string;
+};
+
+type AgentStateResponse = { running: boolean; state?: LiveAgentState };
+
 export type AgentPhase =
   | { kind: "waiting_model" }
   | { kind: "running_tools"; tools: { id: string; name: string }[] }
@@ -148,6 +158,27 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return total > 0 ? { tokens, cost } : null;
   })();
 
+  const applyAgentState = useCallback((agentState: AgentStateResponse | null | undefined) => {
+    if (!agentState) return;
+
+    const isActivelyStreaming = Boolean(agentState.running && agentState.state?.isStreaming);
+    setAgentRunning(isActivelyStreaming);
+    agentRunningRef.current = isActivelyStreaming;
+    if (!isActivelyStreaming) {
+      setAgentPhase(null);
+      dispatch({ type: "reset" });
+    } else {
+      setAgentPhase((current) => current ?? { kind: "waiting_model" });
+      dispatch({ type: "start" });
+    }
+
+    if (!agentState.state) return;
+    if (agentState.state.isCompacting !== undefined) setIsCompacting(agentState.state.isCompacting);
+    if (agentState.state.contextUsage !== undefined) setContextUsage(agentState.state.contextUsage ?? null);
+    if (agentState.state.systemPrompt !== undefined) setSystemPrompt(agentState.state.systemPrompt ?? null);
+    if (agentState.state.thinkingLevel !== undefined) setThinkingLevel((agentState.state.thinkingLevel as ThinkingLevelOption) ?? "auto");
+  }, []);
+
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
     try {
       if (showLoading) setLoading(true);
@@ -165,13 +196,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         return null;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const d = await res.json() as SessionData & { agentState?: { running: boolean; state?: { isStreaming?: boolean; isCompacting?: boolean; contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null; systemPrompt?: string; thinkingLevel?: string } } };
+      const d = await res.json() as SessionData & { agentState?: AgentStateResponse };
       setData(d);
       setActiveLeafId(d.leafId);
       setMessages(d.context.messages);
       setEntryIds(d.context.entryIds ?? []);
       setCurrentModelOverride(null);
       setError(null);
+      if (includeState) applyAgentState(d.agentState);
       // If no live agent state, fall back to thinking level from session file
       if (!d.agentState?.state?.thinkingLevel && d.context.thinkingLevel && d.context.thinkingLevel !== "off") {
         setThinkingLevel(d.context.thinkingLevel as ThinkingLevelOption);
@@ -183,7 +215,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, []);
+  }, [applyAgentState]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null) => {
     try {
@@ -212,7 +244,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [setToolPresetState]);
 
-  const connectEvents = useCallback((sid: string) => {
+  const syncLiveSession = useCallback(async (sid: string) => {
+    const agentState = await loadSession(sid, false, true);
+    if (agentState?.running) loadTools(sid);
+  }, [loadSession, loadTools]);
+
+  const connectEvents = useCallback((sid: string, options: { syncOnConnect?: boolean } = {}) => {
+    const { syncOnConnect = true } = options;
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -223,6 +261,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       try {
         const event = JSON.parse(e.data) as AgentEvent;
         handleAgentEventRef.current?.(event);
+        if (event.type === "connected" && syncOnConnect) {
+          syncLiveSession(sid).catch((error) => console.error("Failed to sync live session:", error));
+        }
       } catch {
         // ignore
       }
@@ -232,11 +273,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         es.close();
         eventSourceRef.current = null;
         setTimeout(() => {
-          if (agentRunningRef.current) connectEvents(sid);
+          if (agentRunningRef.current) connectEvents(sid, { syncOnConnect: true });
         }, 1000);
       }
     };
-  }, []);
+  }, [syncLiveSession]);
 
   useEffect(() => {
     agentRunningRef.current = agentRunning;
@@ -328,9 +369,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [loadSession, onAgentEnd]);
   handleAgentEventRef.current = handleAgentEvent;
 
-  const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
-    if (!message.trim() && !images?.length) return;
-    if (agentRunning) return;
+  const handleSend = useCallback(async (message: string, images?: AttachedImage[]): Promise<boolean> => {
+    if (!message.trim() && !images?.length) return false;
+    if (agentRunning) return false;
 
     const imageBlocks = images?.map((img) => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mimeType, data: img.data } }));
     const userMsg: AgentMessage = {
@@ -367,11 +408,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
           }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const result = await res.json() as { sessionId: string };
+        const result = await res.json() as { sessionId?: string; error?: string };
+        if (!res.ok || result.error || !result.sessionId) throw new Error(result.error ?? `HTTP ${res.status}`);
         const realId = result.sessionId;
         sessionIdRef.current = realId;
-        connectEvents(realId);
+        connectEvents(realId, { syncOnConnect: false });
         onSessionCreated?.({
           id: realId,
           path: "",
@@ -383,18 +424,23 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           firstMessage: message,
         });
       } else if (session) {
-        connectEvents(session.id);
+        connectEvents(session.id, { syncOnConnect: false });
         await sendAgentCommand(session.id, {
           type: "prompt",
           message,
           ...(piImages?.length ? { images: piImages } : {}),
         });
+      } else {
+        throw new Error("No active session");
       }
+      return true;
     } catch (e) {
       console.error("Failed to send message:", e);
+      setMessages((prev) => prev[prev.length - 1] === userMsg ? prev.slice(0, -1) : prev);
       setAgentRunning(false);
       setAgentPhase(null);
       dispatch({ type: "end" });
+      return false;
     }
   }, [isNew, newSessionCwd, newSessionModel, toolPreset, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated]);
 
@@ -563,16 +609,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (agentState?.running) {
           loadTools(session.id);
           if (agentState.state?.isStreaming) {
-            setAgentRunning(true);
-            setAgentPhase({ kind: "waiting_model" });
             connectEvents(session.id);
           }
-        }
-        if (agentState?.state) {
-          if (agentState.state.isCompacting !== undefined) setIsCompacting(agentState.state.isCompacting);
-          if (agentState.state.contextUsage !== undefined) setContextUsage(agentState.state.contextUsage ?? null);
-          if (agentState.state.systemPrompt !== undefined) setSystemPrompt(agentState.state.systemPrompt ?? null);
-          if (agentState.state.thinkingLevel !== undefined) setThinkingLevel((agentState.state.thinkingLevel as ThinkingLevelOption) ?? "auto");
         }
       });
     }

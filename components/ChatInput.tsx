@@ -15,7 +15,7 @@ interface ModelOption {
 }
 
 interface Props {
-  onSend: (message: string, images?: AttachedImage[]) => void;
+  onSend: (message: string, images?: AttachedImage[]) => boolean | Promise<boolean>;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
@@ -37,6 +37,8 @@ interface Props {
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
   soundEnabled?: boolean;
   onSoundToggle?: () => void;
+  promptHistory?: string[];
+  draftStorageKey?: string;
 }
 
 export interface ChatInputHandle {
@@ -59,18 +61,73 @@ const THINKING_LEVEL_DESC: Record<typeof THINKING_LEVELS[number], string> = {
   xhigh: "最高强度推理",
 };
 
+const DRAFT_STORAGE_KEY = "pi-web.chat.draft";
+const HISTORY_STORAGE_KEY = "pi-web.chat.history";
+const HISTORY_LIMIT = 50;
+
+const PROMPT_SNIPPETS = [
+  { label: "Review", text: "Review the current changes and call out bugs, risks, and missing tests." },
+  { label: "Explain", text: "Explain how this part of the code works and where the important entry points are." },
+  { label: "Tests", text: "Add focused tests for this behavior and run the relevant checks." },
+  { label: "Refactor", text: "Refactor this with the smallest safe change while preserving behavior." },
+  { label: "Summarize", text: "Summarize what changed, what was verified, and any remaining risks." },
+];
+
+function readStringArray(key: string): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStringArray(key: string, values: string[]): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(values));
+  } catch {
+    // localStorage may be unavailable in private or restricted contexts
+  }
+}
+
+function mergeHistory(...groups: string[][]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const group of groups) {
+    for (const item of group) {
+      const trimmed = item.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      result.push(trimmed);
+      if (result.length >= HISTORY_LIMIT) return result;
+    }
+  }
+  return result;
+}
+
+function isLikelyFilePath(text: string): boolean {
+  const value = text.trim();
+  if (!value || value.includes("\n") || value.startsWith("`") || /^https?:\/\//i.test(value)) return false;
+  if (/^([~.]?\/|\/|[a-zA-Z]:[\\/]|\\\\)/.test(value)) return true;
+  return /^[\w .@+-]+[\\/][\w .@+\-/\\]+\.[A-Za-z0-9]{1,12}$/.test(value);
+}
+
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, modelNames, modelList, onModelChange,
   onCompact, onAbortCompaction, isCompacting, compactError, toolPreset, onToolPresetChange,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
   soundEnabled, onSoundToggle,
+  promptHistory = [],
+  draftStorageKey,
 }: Props, ref) {
   const [value, setValue] = useState("");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
+  const [snippetDropdownOpen, setSnippetDropdownOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -78,7 +135,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
+  const snippetDropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const historyRef = useRef<string[]>([]);
+  const historyIndexRef = useRef<number | null>(null);
+  const draftBeforeHistoryRef = useRef("");
+  const effectiveDraftStorageKey = draftStorageKey ? `${DRAFT_STORAGE_KEY}:${draftStorageKey}` : DRAFT_STORAGE_KEY;
 
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
@@ -158,17 +220,78 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
   }, []);
 
-  const handleSend = useCallback(() => {
+  const resizeTextarea = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+  }, []);
+
+  const setInputValue = useCallback((next: string) => {
+    setValue(next);
+    requestAnimationFrame(resizeTextarea);
+  }, [resizeTextarea]);
+
+  const rememberHistory = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const next = [trimmed, ...historyRef.current.filter((item) => item !== trimmed)].slice(0, HISTORY_LIMIT);
+    historyRef.current = next;
+    writeStringArray(HISTORY_STORAGE_KEY, next);
+  }, []);
+
+  const clearDraft = useCallback(() => {
+    try {
+      window.localStorage.removeItem(effectiveDraftStorageKey);
+    } catch {
+      // ignore storage failures
+    }
+  }, [effectiveDraftStorageKey]);
+
+  useEffect(() => {
+    historyRef.current = mergeHistory(promptHistory, readStringArray(HISTORY_STORAGE_KEY));
+    historyIndexRef.current = null;
+  }, [promptHistory]);
+
+  useEffect(() => {
+    setInputValue("");
+    try {
+      const savedDraft = window.localStorage.getItem(effectiveDraftStorageKey);
+      if (savedDraft) setInputValue(savedDraft);
+    } catch {
+      // ignore storage failures
+    }
+  }, [effectiveDraftStorageKey, setInputValue]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        if (value) window.localStorage.setItem(effectiveDraftStorageKey, value);
+        else window.localStorage.removeItem(effectiveDraftStorageKey);
+      } catch {
+        // ignore storage failures
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [effectiveDraftStorageKey, value]);
+
+  const handleSend = useCallback(async () => {
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
     if (isStreaming) return;
-    onSend(msg, attachedImages.length ? attachedImages : undefined);
-    setValue("");
-    clearImages();
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+    const sentImages = attachedImages.length ? attachedImages : undefined;
+    const success = await Promise.resolve(onSend(msg, sentImages));
+    if (success === false) {
+      setInputValue(value);
+      return;
     }
-  }, [value, attachedImages, isStreaming, onSend, clearImages]);
+    rememberHistory(msg);
+    historyIndexRef.current = null;
+    draftBeforeHistoryRef.current = "";
+    clearDraft();
+    setInputValue("");
+    clearImages();
+  }, [value, attachedImages, isStreaming, onSend, clearImages, clearDraft, rememberHistory, setInputValue]);
 
   const sendQueued = useCallback((mode: "steer" | "followup") => {
     const msg = value.trim();
@@ -178,13 +301,47 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     } else if (mode === "followup" && onFollowUp) {
       onFollowUp(msg, attachedImages.length ? attachedImages : undefined);
     }
-    setValue("");
+    rememberHistory(msg);
+    clearDraft();
+    setInputValue("");
     clearImages();
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [value, attachedImages, onSteer, onFollowUp, clearImages]);
+  }, [value, attachedImages, onSteer, onFollowUp, clearImages, clearDraft, rememberHistory, setInputValue]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const ta = e.currentTarget;
+        const atStart = ta.selectionStart === 0 && ta.selectionEnd === 0;
+        const atEnd = ta.selectionStart === ta.value.length && ta.selectionEnd === ta.value.length;
+        const history = historyRef.current;
+        const browsingHistory = historyIndexRef.current !== null;
+        if (
+          history.length > 0 &&
+          (browsingHistory || (e.key === "ArrowUp" && atStart) || (e.key === "ArrowDown" && atEnd))
+        ) {
+          e.preventDefault();
+          if (historyIndexRef.current === null) {
+            draftBeforeHistoryRef.current = value;
+          }
+          if (e.key === "ArrowUp") {
+            const nextIndex = historyIndexRef.current === null
+              ? 0
+              : Math.min(historyIndexRef.current + 1, history.length - 1);
+            historyIndexRef.current = nextIndex;
+            setInputValue(history[nextIndex]);
+          } else {
+            const nextIndex = historyIndexRef.current === null ? null : historyIndexRef.current - 1;
+            if (nextIndex === null || nextIndex < 0) {
+              historyIndexRef.current = null;
+              setInputValue(draftBeforeHistoryRef.current);
+            } else {
+              historyIndexRef.current = nextIndex;
+              setInputValue(history[nextIndex]);
+            }
+          }
+        }
+        return;
+      }
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         if (isStreaming && (onSteer || onFollowUp)) {
@@ -195,24 +352,66 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [isStreaming, onSteer, onFollowUp, sendQueued, handleSend]
+    [value, isStreaming, onSteer, onFollowUp, sendQueued, handleSend, setInputValue]
   );
 
   const handleInput = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-  }, []);
+    resizeTextarea();
+    historyIndexRef.current = null;
+  }, [resizeTextarea]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? []);
     const imageItems = items.filter((item) => item.type.startsWith("image/"));
-    if (!imageItems.length) return;
+    if (imageItems.length > 0) {
+      e.preventDefault();
+      const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
+      processImageFiles(files);
+      return;
+    }
+
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    if (!isLikelyFilePath(text)) return;
     e.preventDefault();
-    const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
-    processImageFiles(files);
-  }, [processImageFiles]);
+    const ta = textareaRef.current;
+    const quoted = "`" + text.trim() + "`";
+    if (!ta) {
+      setInputValue(value + (value ? " " : "") + quoted);
+      return;
+    }
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    const before = ta.value.slice(0, start);
+    const after = ta.value.slice(end);
+    const sep = before.length > 0 && !before.endsWith(" ") ? " " : "";
+    const next = before + sep + quoted + after;
+    setInputValue(next);
+    requestAnimationFrame(() => {
+      const pos = start + sep.length + quoted.length;
+      ta.setSelectionRange(pos, pos);
+      ta.focus();
+    });
+  }, [processImageFiles, setInputValue, value]);
+
+  const insertSnippet = useCallback((text: string) => {
+    const ta = textareaRef.current;
+    if (!ta) {
+      setInputValue(value + (value ? "\n" : "") + text);
+      return;
+    }
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    const before = ta.value.slice(0, start);
+    const after = ta.value.slice(end);
+    const sep = before.length > 0 && !before.endsWith("\n") ? "\n" : "";
+    const next = before + sep + text + after;
+    setInputValue(next);
+    requestAnimationFrame(() => {
+      const pos = start + sep.length + text.length;
+      ta.setSelectionRange(pos, pos);
+      ta.focus();
+    });
+  }, [setInputValue, value]);
 
 
 
@@ -254,6 +453,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }
       if (thinkingDropdownRef.current && !thinkingDropdownRef.current.contains(e.target as Node)) {
         setThinkingDropdownOpen(false);
+      }
+      if (snippetDropdownRef.current && !snippetDropdownRef.current.contains(e.target as Node)) {
+        setSnippetDropdownOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -491,6 +693,77 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <polyline points="21 15 16 10 5 21" />
               </svg>
             </button>
+            {!isStreaming && (
+              <div ref={snippetDropdownRef} style={{ position: "relative" }}>
+                <button
+                  onClick={() => setSnippetDropdownOpen((v) => !v)}
+                  title="Prompt snippets"
+                  aria-label="Prompt snippets"
+                  style={{
+                    flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 32, height: 32, padding: 0,
+                    background: snippetDropdownOpen ? "var(--bg-hover)" : "none",
+                    border: "none",
+                    borderRadius: 9,
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    transition: "background 0.12s, color 0.12s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--bg-hover)";
+                    e.currentTarget.style.color = "var(--text)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = snippetDropdownOpen ? "var(--bg-hover)" : "none";
+                    e.currentTarget.style.color = "var(--text-muted)";
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 4h16v16H4z" />
+                    <path d="M8 8h8" />
+                    <path d="M8 12h8" />
+                    <path d="M8 16h5" />
+                  </svg>
+                </button>
+                {snippetDropdownOpen && (
+                  <div style={{
+                    position: "absolute", bottom: "calc(100% + 6px)", left: 0,
+                    zIndex: 100, background: "var(--bg)", border: "1px solid var(--border)",
+                    borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
+                    overflow: "hidden", minWidth: 260,
+                  }}>
+                    {PROMPT_SNIPPETS.map((snippet) => (
+                      <button
+                        key={snippet.label}
+                        onClick={() => {
+                          setSnippetDropdownOpen(false);
+                          insertSnippet(snippet.text);
+                        }}
+                        style={{
+                          display: "grid", gridTemplateColumns: "72px minmax(0, 1fr)", gap: 8,
+                          width: "100%", padding: "8px 12px",
+                          background: "none", border: "none",
+                          color: "var(--text-muted)",
+                          cursor: "pointer", fontSize: 12, textAlign: "left",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "var(--bg-hover)";
+                          e.currentTarget.style.color = "var(--text)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "none";
+                          e.currentTarget.style.color = "var(--text-muted)";
+                        }}
+                      >
+                        <span style={{ color: "var(--text)", fontWeight: 600 }}>{snippet.label}</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{snippet.text}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {/* Model selector — visible always, disabled during streaming */}
             {modelOptions.length > 0 && currentName && onModelChange && (
                 <div ref={dropdownRef} style={{ position: "relative" }}>

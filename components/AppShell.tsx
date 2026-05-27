@@ -387,6 +387,7 @@ export function AppShell() {
           {showChat && (
             <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
               <BranchNavigator
+                sessionId={selectedSession?.id ?? null}
                 tree={branchTree}
                 activeLeafId={branchActiveLeafId}
                 onLeafChange={handleBranchLeafChange}

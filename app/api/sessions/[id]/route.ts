@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   resolveSessionPath,
   invalidateSessionPathCache,
-  buildSessionContext,
+  invalidateSessionFileCache,
+  getCachedSessionContext,
+  getCachedSessionFile,
   listAllSessions,
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
@@ -21,22 +23,18 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const sm = SessionManager.open(filePath);
-    const entries = sm.getEntries() as never;
-    const tree = sm.getTree();
-    const leafId = sm.getLeafId();
-    const context = buildSessionContext(entries, leafId);
+    const snapshot = getCachedSessionFile(filePath);
+    const { tree, leafId, header } = snapshot;
+    const context = getCachedSessionContext(snapshot, leafId);
 
-    const header = sm.getHeader();
-    let modified = header?.timestamp ?? new Date().toISOString();
-    try { modified = statSync(filePath).mtime.toISOString(); } catch { /* use header timestamp */ }
+    const modified = new Date(snapshot.mtimeMs).toISOString();
     const allSessions = await listAllSessions();
     const parentSessionId = allSessions.find((s) => s.id === id)?.parentSessionId;
     const info = header ? {
       path: filePath,
       id: header.id,
       cwd: header.cwd ?? "",
-      name: sm.getSessionName(),
+      name: snapshot.sessionName,
       created: header.timestamp,
       modified,
       messageCount: context.messages.length,
@@ -93,6 +91,7 @@ export async function PATCH(
     }
     const sm = SessionManager.open(filePath);
     sm.appendSessionInfo(name.trim());
+    invalidateSessionFileCache(filePath);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -135,6 +134,7 @@ export async function DELETE(
             header.parentSession = parentSessionPath;
             lines[0] = JSON.stringify(header);
             writeFileSync(childPath, lines.join("\n"));
+            invalidateSessionFileCache(childPath);
           }
         } catch { /* skip malformed */ }
       }
@@ -143,6 +143,7 @@ export async function DELETE(
     getRpcSession(id)?.destroy();
     unlinkSync(filePath);
     invalidateSessionPathCache(id);
+    invalidateSessionFileCache(filePath);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

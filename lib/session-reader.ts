@@ -1,5 +1,6 @@
 import { SessionManager, buildSessionContext as piBuildSessionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, AssistantMessage } from "./types";
+import { statSync } from "fs";
+import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, AssistantMessage, SessionHeader } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
 
@@ -38,6 +39,7 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
 // ============================================================================
 declare global {
   var __piSessionPathCache: Map<string, string> | undefined;
+  var __piSessionFileCache: Map<string, CachedSessionFile> | undefined;
 }
 
 function getPathCache(): Map<string, string> {
@@ -62,7 +64,85 @@ export function invalidateSessionPathCache(sessionId: string): void {
   getPathCache().delete(sessionId);
 }
 
+export interface CachedSessionFile {
+  filePath: string;
+  size: number;
+  mtimeMs: number;
+  header: SessionHeader | null;
+  entries: SessionEntry[];
+  tree: SessionTreeNode[];
+  leafId: string | null;
+  sessionName?: string;
+  contexts: Map<string, SessionContext>;
+}
+
+const SESSION_FILE_CACHE_MAX = 50;
+
+function getFileCache(): Map<string, CachedSessionFile> {
+  if (!globalThis.__piSessionFileCache) globalThis.__piSessionFileCache = new Map();
+  return globalThis.__piSessionFileCache;
+}
+
+function rememberCachedSession(filePath: string, snapshot: CachedSessionFile): CachedSessionFile {
+  const cache = getFileCache();
+  cache.delete(filePath);
+  cache.set(filePath, snapshot);
+  while (cache.size > SESSION_FILE_CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (!oldest) break;
+    cache.delete(oldest);
+  }
+  return snapshot;
+}
+
+export function invalidateSessionFileCache(filePath: string): void {
+  getFileCache().delete(filePath);
+}
+
+export function getCachedSessionFile(filePath: string): CachedSessionFile {
+  const stat = statSync(filePath);
+  const cached = getFileCache().get(filePath);
+  if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+    rememberCachedSession(filePath, cached);
+    return cached;
+  }
+
+  const sm = SessionManager.open(filePath);
+  return rememberCachedSession(filePath, {
+    filePath,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    header: (sm.getHeader() as SessionHeader | undefined) ?? null,
+    entries: sm.getEntries() as unknown as SessionEntry[],
+    tree: sm.getTree() as unknown as SessionTreeNode[],
+    leafId: sm.getLeafId(),
+    sessionName: sm.getSessionName(),
+    contexts: new Map(),
+  });
+}
+
+function contextCacheKey(leafId?: string | null): string {
+  if (leafId === undefined) return "mode:default";
+  if (leafId === null) return "mode:empty";
+  return `leaf:${leafId}`;
+}
+
+export function getCachedSessionContext(snapshot: CachedSessionFile, leafId?: string | null): SessionContext {
+  const key = contextCacheKey(leafId);
+  const cached = snapshot.contexts.get(key);
+  if (cached) return cached;
+
+  const context = buildSessionContext(snapshot.entries, leafId);
+  snapshot.contexts.set(key, context);
+  return context;
+}
+
 export function getSessionEntries(filePath: string): SessionEntry[] {
+  const cached = getCachedSessionFile(filePath);
+  return cached.entries;
+}
+
+export function getUncachedSessionEntries(filePath: string): SessionEntry[] {
   const entries = SessionManager.open(filePath).getEntries();
   return entries as unknown as SessionEntry[];
 }
@@ -187,6 +267,3 @@ export function getLeafId(entries: SessionEntry[]): string | null {
   if (entries.length === 0) return null;
   return entries[entries.length - 1].id;
 }
-
-
-

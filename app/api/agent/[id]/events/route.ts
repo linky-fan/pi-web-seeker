@@ -1,6 +1,5 @@
-import { resolveSessionPath } from "@/lib/session-reader";
+import { getCachedSessionFile, resolveSessionPath } from "@/lib/session-reader";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +17,7 @@ export async function GET(
     if (!filePath) {
       return new Response("Session not found", { status: 404 });
     }
-    const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
+    const cwd = getCachedSessionFile(filePath).header?.cwd ?? process.cwd();
     try {
       ({ session } = await startRpcSession(id, filePath, cwd));
     } catch (error) {

@@ -102,7 +102,7 @@ body {
 }
 
 :root {
-  --font-mono: var(--font-noto-mono), 'JetBrains Mono', 'Fira Code', 'Consolas', ui-monospace, 'PingFang SC', 'Microsoft YaHei', monospace;
+  --font-mono: 'SFMono-Regular', 'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', ui-monospace, 'PingFang SC', 'Microsoft YaHei', monospace;
 }
 
 pre, code {
@@ -322,5 +322,4 @@ span.linenumber {
     display: none !important;
   }
 }
-
 
