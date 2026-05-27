@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
-import { join } from "path";
+import path from "path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   resolveSessionPath,
@@ -11,6 +11,11 @@ import {
   listAllSessions,
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
+import { areSameFilePath, isWindowsStylePath } from "@/lib/path-identity";
+
+function getPathModule(filePath: string): typeof path.win32 | typeof path.posix {
+  return isWindowsStylePath(filePath) ? path.win32 : path.posix;
+}
 
 export async function GET(
   req: Request,
@@ -120,16 +125,20 @@ export async function DELETE(
 
     // Re-attach all direct children to this session's parent (cascade re-parent)
     // Scan sibling files in the same directory
-    const dir = filePath.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
+    const pathModule = getPathModule(filePath);
+    const dir = pathModule.dirname(filePath);
     try {
-      const files = readdirSync(dir).filter((f) => f.endsWith(".jsonl") && join(dir, f) !== filePath);
+      const files = readdirSync(dir).filter((f) => {
+        if (!f.endsWith(".jsonl")) return false;
+        return !areSameFilePath(pathModule.join(dir, f), filePath);
+      });
       for (const file of files) {
-        const childPath = join(dir, file);
+        const childPath = pathModule.join(dir, file);
         try {
           const content = readFileSync(childPath, "utf8");
           const lines = content.split("\n");
           const header = JSON.parse(lines[0]) as { type?: string; parentSession?: string };
-          if (header.type === "session" && header.parentSession === filePath) {
+          if (header.type === "session" && header.parentSession && areSameFilePath(header.parentSession, filePath)) {
             // Rewrite header with new parentSession
             header.parentSession = parentSessionPath;
             lines[0] = JSON.stringify(header);

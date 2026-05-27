@@ -1,13 +1,14 @@
-export function normalizeFilePathSlashes(filePath: string): string {
-  if (/^[a-zA-Z]:[\\/]/.test(filePath) || filePath.startsWith("\\\\")) {
-    return filePath.replace(/\\/g, "/");
-  }
-  return filePath;
-}
+import { normalizeFilePathSlashes, normalizePathForComparison } from "./path-identity";
+
+export { normalizeFilePathSlashes };
 
 export function encodeFilePathForApi(filePath: string): string {
-  return normalizeFilePathSlashes(filePath)
-    .split("/")
+  const normalized = normalizeFilePathSlashes(filePath);
+  const segments = normalized.startsWith("//")
+    ? ["__unc__", ...normalized.slice(2).split("/")]
+    : normalized.split("/");
+
+  return segments
     .filter(Boolean)
     .map(encodeURIComponent)
     .join("/");
@@ -23,7 +24,9 @@ export function getRelativeFilePath(filePath: string, cwd?: string): string {
 
   const normalizedFile = normalizeFilePathSlashes(filePath);
   const normalizedCwd = normalizeFilePathSlashes(cwd).replace(/\/$/, "");
-  if (normalizedFile.startsWith(normalizedCwd + "/")) {
+  const fileKey = normalizePathForComparison(normalizedFile);
+  const cwdKey = normalizePathForComparison(normalizedCwd);
+  if (fileKey.startsWith(cwdKey + "/")) {
     return normalizedFile.slice(normalizedCwd.length + 1);
   }
   return filePath;

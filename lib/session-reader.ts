@@ -3,6 +3,7 @@ import { statSync } from "fs";
 import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, AssistantMessage, SessionHeader } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
+import { normalizePathForComparison } from "./path-identity";
 
 export { getAgentDir };
 
@@ -13,7 +14,7 @@ export function getSessionsDir(): string {
 export async function listAllSessions(): Promise<SessionInfo[]> {
   const piSessions: PiSessionInfo[] = await SessionManager.listAll();
   const pathToId = new Map<string, string>();
-  for (const s of piSessions) pathToId.set(s.path, s.id);
+  for (const s of piSessions) pathToId.set(normalizePathForComparison(s.path), s.id);
 
   const cache = getPathCache();
   return piSessions.map((s) => {
@@ -28,7 +29,7 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
       modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
       messageCount: s.messageCount,
       firstMessage: s.firstMessage || "(no messages)",
-      parentSessionId: s.parentSessionPath ? pathToId.get(s.parentSessionPath) : undefined,
+      parentSessionId: s.parentSessionPath ? pathToId.get(normalizePathForComparison(s.parentSessionPath)) : undefined,
     };
   });
 }

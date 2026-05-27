@@ -301,6 +301,10 @@ function isWindowsAbsolutePath(filePath: string): boolean {
 }
 
 function filePathFromSegments(segments: string[]): string {
+  if (segments[0] === "__unc__") {
+    return "//" + segments.slice(1).join("/");
+  }
+
   const joined = segments.join("/");
   const slashJoined = normalizeSlashes(joined);
   if (isWindowsAbsolutePath(slashJoined)) return slashJoined;
