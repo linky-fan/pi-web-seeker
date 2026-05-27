@@ -48,7 +48,19 @@ export async function GET(
 
   const encoder = new TextEncoder();
   const send = (controller: ReadableStreamDefaultController, data: unknown) => {
-    controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+    try {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+    } catch {
+      abort.abort();
+    }
+  };
+
+  const close = (controller: ReadableStreamDefaultController) => {
+    try {
+      controller.close();
+    } catch {
+      // The client may have already closed the EventSource.
+    }
   };
 
   // AbortController propagates client disconnect into authStorage.login()
@@ -62,7 +74,7 @@ export async function GET(
       const providerInfo = providers.find((p) => p.id === provider);
       if (!providerInfo) {
         send(controller, { type: "error", message: `Unknown provider: ${provider}` });
-        controller.close();
+        close(controller);
         return;
       }
 
@@ -180,7 +192,7 @@ export async function GET(
         }
       } finally {
         cleanup();
-        controller.close();
+        close(controller);
       }
     },
     cancel() {

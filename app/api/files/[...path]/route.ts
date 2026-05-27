@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
+import { Readable } from "stream";
 import { listAllSessions } from "@/lib/session-reader";
 
 const IGNORED_NAMES = new Set([
@@ -12,7 +13,7 @@ const IGNORED_NAMES = new Set([
 
 const IGNORED_SUFFIXES = [".pyc"];
 
-const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
+const TEXT_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
 const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 const DIRECTORY_CACHE_TTL_MS = 10_000;
 const GIT_TRACKED_CACHE_TTL_MS = 15_000;
@@ -363,44 +364,7 @@ function isPathAllowed(target: string, allowedRoots: Set<string>): boolean {
 }
 
 function createFileBodyStream(filePath: string, range?: { start: number; end: number }): ReadableStream<Uint8Array> {
-  const fileStream = fs.createReadStream(filePath, range);
-  let closed = false;
-
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      fileStream.on("data", (chunk: Buffer) => {
-        if (closed) return;
-        try {
-          controller.enqueue(new Uint8Array(chunk));
-        } catch {
-          closed = true;
-          fileStream.destroy();
-        }
-      });
-      fileStream.once("end", () => {
-        if (closed) return;
-        closed = true;
-        try {
-          controller.close();
-        } catch {
-          // The browser may cancel media probes before the file stream ends.
-        }
-      });
-      fileStream.once("error", (error) => {
-        if (closed) return;
-        closed = true;
-        try {
-          controller.error(error);
-        } catch {
-          // The response was already abandoned by the client.
-        }
-      });
-    },
-    cancel() {
-      closed = true;
-      fileStream.destroy();
-    },
-  });
+  return Readable.toWeb(fs.createReadStream(filePath, range)) as ReadableStream<Uint8Array>;
 }
 
 function streamFile(filePath: string, stat: fs.Stats, contentType: string, rangeHeader: string | null): Response {
@@ -499,7 +463,7 @@ export async function GET(
         return streamFile(filePath, stat, audioMime, request.headers.get("range"));
       }
       if (stat.size > TEXT_PREVIEW_MAX_BYTES) {
-        return NextResponse.json({ error: "File too large for preview (>256KB)" }, { status: 413 });
+        return NextResponse.json({ error: "File too large for preview (>2MB)" }, { status: 413 });
       }
       const content = fs.readFileSync(filePath, "utf-8");
       const language = getLanguage(filePath);
