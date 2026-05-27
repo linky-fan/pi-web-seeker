@@ -314,6 +314,13 @@ async function getAllowedRoots(): Promise<Set<string>> {
 
   const sessions = await listAllSessions();
   const roots = new Set<string>();
+  const envRoots = process.env.PI_WEB_ALLOWED_ROOTS;
+  if (envRoots) {
+    for (const root of envRoots.split(":")) {
+      const trimmed = root.trim();
+      if (trimmed) roots.add(trimmed);
+    }
+  }
   for (const s of sessions) {
     if (s.cwd) roots.add(s.cwd);
   }

@@ -1,0 +1,21 @@
+services:
+  pi-web:
+    build:
+      context: .
+    image: pi-web:local
+    container_name: pi-web
+    ports:
+      - "${PI_WEB_PORT:-30141}:30141"
+    environment:
+      PORT: 30141
+      PI_WEB_BIND_HOST: 0.0.0.0
+      PI_CODING_AGENT_DIR: /home/piweb/.pi/agent
+      PI_WEB_HOME: /workspace
+      PI_WEB_DEFAULT_CWD: /workspace
+      PI_WEB_ALLOWED_ROOTS: /workspace:/home/piweb
+      SKILLS_API_URL: ${SKILLS_API_URL:-https://skills.sh}
+    volumes:
+      - ${HOME}/.pi:/home/piweb/.pi
+      - ${PI_WEB_WORKSPACE:-.}:/workspace
+      - ${HOME}/.ssh:/home/piweb/.ssh:ro
+    restart: unless-stopped

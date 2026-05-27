@@ -29,6 +29,40 @@ pi-web -p 8080 -H 127.0.0.1     # 组合使用
 PORT=8080 pi-web                 # 也支持环境变量
 ```
 
+## Docker
+
+本机个人使用可以直接用 Docker Compose：
+
+```bash
+docker compose up --build
+```
+
+启动后打开 [http://localhost:30141](http://localhost:30141)。
+
+默认会挂载：
+
+- `~/.pi` → `/home/piweb/.pi`，保留会话和模型配置
+- 当前目录 → `/workspace`，作为容器内默认项目目录
+- `~/.ssh` → `/home/piweb/.ssh:ro`，方便智能体读取私有仓库
+
+如需换一个项目目录：
+
+```bash
+PI_WEB_WORKSPACE=/path/to/project docker compose up --build
+```
+
+也可以只用 `docker run`：
+
+```bash
+docker build -t pi-web:local .
+docker run --rm -it \
+  -p 30141:30141 \
+  -v "$HOME/.pi:/home/piweb/.pi" \
+  -v "$PWD:/workspace" \
+  -v "$HOME/.ssh:/home/piweb/.ssh:ro" \
+  pi-web:local
+```
+
 ## 功能介绍
 
 - **会话浏览器** — 按工作目录分组展示所有 pi 会话
@@ -46,6 +80,7 @@ PORT=8080 pi-web                 # 也支持环境变量
 - **数据目录** — 默认读取 `~/.pi/agent/sessions` 下的会话文件。可通过环境变量 `PI_CODING_AGENT_DIR` 指定其他目录。
 - **模型配置** — 从智能体数据目录下的 `models.json` 读取可用模型，可在侧边栏的「Models」面板中编辑。
 - **文件浏览** — 侧边栏内置文件浏览器，可在标签页中查看当前工作目录下的文件。
+- **Docker 路径** — 容器内默认项目目录是 `/workspace`。宿主机路径和容器路径不同，已有旧会话仍会显示原来的宿主机路径；新会话建议在 `/workspace` 下创建。
 
 ## 开发
 
