@@ -3,10 +3,13 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
+import { normalizeMarkdownMath } from "@/lib/markdown";
 import type {
   AgentMessage,
   UserMessage,
@@ -525,7 +528,8 @@ function TextBlock({ block }: { block: TextContent }) {
   return (
     <div className="markdown-body">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
         components={{
           code({ className, children, ...props }) {
             const lang = className?.replace("language-", "") ?? "";
@@ -555,7 +559,7 @@ function TextBlock({ block }: { block: TextContent }) {
           },
         }}
       >
-        {block.text}
+        {normalizeMarkdownMath(block.text)}
       </ReactMarkdown>
     </div>
   );
@@ -841,4 +845,3 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
     </div>
   );
 }
-
