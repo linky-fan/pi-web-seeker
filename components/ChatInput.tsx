@@ -14,6 +14,12 @@ interface ModelOption {
   name: string;
 }
 
+interface ContextUsage {
+  percent: number | null;
+  contextWindow: number;
+  tokens: number | null;
+}
+
 interface Props {
   onSend: (message: string, images?: AttachedImage[]) => boolean | Promise<boolean>;
   onAbort: () => void;
@@ -28,6 +34,7 @@ interface Props {
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
   compactError?: string | null;
+  contextUsage?: ContextUsage | null;
   toolPreset?: "none" | "default" | "full";
   onToolPresetChange?: (preset: "none" | "default" | "full") => void;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -113,9 +120,37 @@ function isLikelyFilePath(text: string): boolean {
   return /^[\w .@+-]+[\\/][\w .@+\-/\\]+\.[A-Za-z0-9]{1,12}$/.test(value);
 }
 
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
+  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`;
+  return String(value);
+}
+
+function getContextTone(percent: number | null | undefined): { color: string; bg: string; border: string } {
+  if (percent !== null && percent !== undefined && percent >= 95) {
+    return { color: "#ef4444", bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.28)" };
+  }
+  if (percent !== null && percent !== undefined && percent >= 80) {
+    return { color: "rgba(234,179,8,0.98)", bg: "rgba(234,179,8,0.10)", border: "rgba(234,179,8,0.28)" };
+  }
+  if (percent !== null && percent !== undefined && percent >= 60) {
+    return { color: "var(--accent)", bg: "rgba(37,99,235,0.09)", border: "rgba(37,99,235,0.22)" };
+  }
+  return { color: "var(--text-muted)", bg: "var(--bg-panel)", border: "var(--border)" };
+}
+
+function getContextUsageTitle(contextUsage: ContextUsage | null | undefined, isCompacting?: boolean): string {
+  const action = isCompacting ? "停止压缩" : "压缩上下文";
+  if (!contextUsage?.contextWindow) return `${action}\nContext: unavailable`;
+  const percent = contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : "unknown";
+  const tokens = contextUsage.tokens !== null ? `${formatTokenCount(contextUsage.tokens)} (${contextUsage.tokens.toLocaleString()})` : "unknown";
+  const windowSize = `${formatTokenCount(contextUsage.contextWindow)} (${contextUsage.contextWindow.toLocaleString()})`;
+  return `${action}\nContext: ${percent}\nTokens: ${tokens} / ${windowSize}`;
+}
+
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, modelNames, modelList, onModelChange,
-  onCompact, onAbortCompaction, isCompacting, compactError, toolPreset, onToolPresetChange,
+  onCompact, onAbortCompaction, isCompacting, compactError, contextUsage, toolPreset, onToolPresetChange,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
   soundEnabled, onSoundToggle,
@@ -1037,7 +1072,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             )}
 
-            {!isStreaming && onCompact && (
+            {!isStreaming && onCompact && (() => {
+              const contextPercent = contextUsage?.percent ?? null;
+              const contextTone = getContextTone(contextPercent);
+              const hasContextWindow = !!contextUsage?.contextWindow;
+              const contextLabel = hasContextWindow
+                ? (contextPercent !== null ? `${Math.round(contextPercent)}%` : "?")
+                : "--";
+              const contextFill = hasContextWindow && contextPercent !== null ? Math.max(4, Math.min(100, contextPercent)) : 0;
+              return (
               <div style={{ position: "relative" }}>
                 {compactError && (
                   <div style={{
@@ -1074,7 +1117,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     e.currentTarget.style.background = isCompacting ? "rgba(239,68,68,0.08)" : "none";
                     e.currentTarget.style.color = isCompacting ? "#ef4444" : "var(--text-muted)";
                   }}
-                  title={isCompacting ? "停止压缩" : "压缩上下文"}
+                  title={getContextUsageTitle(contextUsage, isCompacting)}
                 >
                   {isCompacting ? (
                     <><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" /></svg>Compacting…</>
@@ -1084,9 +1127,46 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       <line x1="10" y1="14" x2="3" y2="21" /><line x1="21" y1="3" x2="14" y2="10" />
                     </svg>Compact</>
                   )}
+                  <span
+                    aria-label={hasContextWindow ? `Context usage ${contextLabel}` : "Context usage unavailable"}
+                    style={{
+                      display: "grid",
+                      gap: 2,
+                      width: 34,
+                      minWidth: 34,
+                      padding: "3px 5px",
+                      borderRadius: 7,
+                      border: `1px solid ${contextTone.border}`,
+                      background: contextTone.bg,
+                      color: contextTone.color,
+                      fontSize: 10,
+                      lineHeight: 1,
+                      fontFamily: "var(--font-mono)",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    <span style={{ textAlign: "center" }}>{contextLabel}</span>
+                    <span style={{
+                      position: "relative",
+                      display: "block",
+                      height: 2,
+                      overflow: "hidden",
+                      borderRadius: 999,
+                      background: "rgba(127,127,127,0.18)",
+                    }}>
+                      <span style={{
+                        position: "absolute",
+                        inset: "0 auto 0 0",
+                        width: `${contextFill}%`,
+                        borderRadius: 999,
+                        background: contextTone.color,
+                      }} />
+                    </span>
+                  </span>
                 </button>
               </div>
-            )}
+              );
+            })()}
 
             {isStreaming && (
               <button
