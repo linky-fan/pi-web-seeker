@@ -3,12 +3,13 @@
 ## Quick Start
 
 ```bash
-npm run dev   # port 3030
+npm run dev   # port 30141
 ```
 
 Typecheck: `node_modules/.bin/tsc --noEmit`  
-Lint: `node node_modules/next/dist/bin/next lint`  
+Lint: `npm run lint`  
 **Never run `next build` during dev** — pollutes `.next/` and breaks `npm run dev`.
+If stale generated Next.js types mention a deleted route, remove `.next/types` or `.next/dev/types` and rerun typecheck; do not run `next build` just to refresh them.
 
 ---
 
@@ -42,18 +43,26 @@ app/api/
   sessions/[id]/route.ts          GET/PATCH/DELETE session
   sessions/[id]/context/route.ts  GET ?leafId= — context for a specific leaf
   sessions/new/route.ts           returns 410 (no longer used)
+  default-cwd/route.ts            GET default cwd helper
+  home/route.ts                   GET home directory
   agent/new/route.ts              POST { cwd, message, toolNames?, provider?, modelId? }
   agent/[id]/route.ts             GET state | POST any command
   agent/[id]/events/route.ts      GET SSE stream
-  files/[...path]/route.ts        GET file contents for viewer
+  auth/*                          OAuth/API-key provider login and logout
+  files/[...path]/route.ts        GET file tree, file contents, images/audio, SSE watch
   models/route.ts                 GET { models, modelList, defaultModel }
-  models-config/route.ts          GET/POST — read/write ~/.pi/agent/models.json
+  models-config/route.ts          GET/PUT — read/write ~/.pi/agent/models.json
+  models-config/test/route.ts     POST one-shot model connection test
+  skills/*                        list/install/search Codex skills
 
 lib/
   rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
   session-reader.ts   parse .jsonl; getModelNameMap/getModelList/getDefaultModel
   types.ts            shared TypeScript types
   normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
+  markdown.ts         normalize single-line $$...$$ blocks before rendering
+  file-paths.ts       shared path encoding/display helpers
+  path-identity.ts    cross-platform cwd/session path identity helpers
   system-prompt-off.ts  minimal system prompt when all tools are disabled
 
 components/
@@ -65,7 +74,8 @@ components/
   BranchNavigator.tsx in-session branch switcher
   ChatMinimap.tsx     scroll minimap alongside the message list
   ToolPanel.tsx       exports PRESET_NONE/DEFAULT/FULL + getPresetFromTools
-  ModelsConfig.tsx    modal for editing models.json (opened from sidebar bottom)
+  ModelsConfig.tsx    modal for editing/testing models.json (opened from sidebar bottom)
+  SkillsConfig.tsx    modal for project skill discovery/install/enablement
   FileExplorer.tsx    file tree inside sidebar
   FileViewer.tsx      file content in a tab
   TabBar.tsx          tab bar (Chat + open file tabs)
@@ -100,6 +110,12 @@ Tool names are passed at session creation (`POST /api/agent/new` → `toolNames[
 
 ### Model defaults for new sessions
 `GET /api/models` returns `defaultModel` read from `~/.pi/agent/settings.json`. `ChatWindow` pre-selects this on mount for new sessions.
+
+### Model connection tests
+`POST /api/models-config/test` builds a temporary `models.json` containing one provider/model, resolves auth through `ModelRegistry`, and calls `completeSimple()` with "Reply with OK only." The Models modal shows latency/status/response text. This is a real model request, so keep it user-triggered and expect tiny token usage.
+
+### Markdown math rendering
+Assistant messages and Markdown file previews use `remark-math` + `rehype-katex`, with `katex/dist/katex.min.css` imported globally from `app/layout.tsx`. `lib/markdown.ts` normalizes standalone single-line `$$...$$` blocks into multiline display math before `ReactMarkdown` renders them.
 
 ### SSE reconnect on page refresh mid-stream
 On `ChatWindow` mount, `GET /api/agent/[id]` is called. If `state.isStreaming === true`, SSE is reconnected automatically. `thinkingLevel` and `isCompacting` are also synced from this response.
