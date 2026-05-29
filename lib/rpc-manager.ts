@@ -1,4 +1,6 @@
-import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { existsSync } from "fs";
+import { join } from "path";
+import { createAgentSession, DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
 import { cacheSessionPath } from "./session-reader";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 
@@ -12,6 +14,54 @@ export interface AgentEvent {
 }
 
 type EventListener = (event: AgentEvent) => void;
+
+function getRuntimeOsLabel(): string {
+  switch (process.platform) {
+    case "darwin":
+      return "macOS";
+    case "win32":
+      return "Windows";
+    case "linux":
+      return "Linux";
+    default:
+      return process.platform;
+  }
+}
+
+function getShellLabel(): string {
+  return process.env.SHELL || process.env.ComSpec || "unknown";
+}
+
+function getPackageManagerSignals(cwd: string): string {
+  const signals = [
+    ["npm", "package-lock.json"],
+    ["bun", "bun.lock"],
+    ["pnpm", "pnpm-lock.yaml"],
+    ["yarn", "yarn.lock"],
+  ]
+    .filter(([, lockfile]) => existsSync(join(cwd, lockfile)))
+    .map(([name, lockfile]) => `${name} (${lockfile})`);
+
+  return signals.length > 0 ? signals.join(", ") : "none detected";
+}
+
+function buildRuntimeSystemPrompt(cwd: string): string {
+  const pathStyle = process.platform === "win32" ? "Windows" : "POSIX";
+  return [
+    "Runtime context:",
+    `- OS: ${getRuntimeOsLabel()} (${process.platform})`,
+    `- Shell: ${getShellLabel()}`,
+    `- Working directory: ${cwd.replace(/\\/g, "/")}`,
+    `- Path style: ${pathStyle}`,
+    `- Package manager signals: ${getPackageManagerSignals(cwd)}`,
+    "",
+    "Execution guidance:",
+    "- Prefer commands compatible with the current OS and shell.",
+    "- When path or shell syntax may differ across platforms, inspect before assuming.",
+    "- Prefer existing package scripts before inventing direct framework commands.",
+    "- Do not print secrets from environment variables, auth files, or local config.",
+  ].join("\n");
+}
 
 // ============================================================================
 // AgentSessionWrapper
@@ -302,10 +352,18 @@ export async function startRpcSession(
       toolsOption = toolNames.length === 0 ? [] : allCodingToolNames;
     }
 
+    const resourceLoader = new DefaultResourceLoader({
+      cwd,
+      agentDir,
+      appendSystemPromptOverride: (base) => [...base, buildRuntimeSystemPrompt(cwd)],
+    });
+    await resourceLoader.reload();
+
     const { session: inner } = await createAgentSession({
       cwd,
       agentDir,
       sessionManager,
+      resourceLoader,
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
 
