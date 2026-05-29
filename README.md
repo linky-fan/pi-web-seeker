@@ -74,7 +74,24 @@ docker run --rm -it \
 - **模型配置测试** — 在「Models」面板中测试单个模型连通性，查看延迟、HTTP 状态和简短响应
 - **工具面板** — 控制智能体可使用的工具
 - **压缩会话** — 对长会话进行摘要，节省上下文窗口
+- **运行时系统提示词上下文** — 新建会话时自动注入当前设备的 OS、shell、路径风格和包管理器线索，帮助智能体选择更合适的命令
 - **引导 / 追加** — 打断正在运行的智能体，或在其完成后追加消息
+
+## 运行时系统提示词上下文
+
+`runtime-system-prompt-context` 会在每次创建 AgentSession 时动态检测当前运行环境，并把一小段上下文追加到默认 system prompt 中。它不是在构建阶段写死的配置，因此同一份代码下载到 macOS、Linux、Windows 或 Docker 环境后，会按实际执行命令的环境生成提示。
+
+当前注入的信息包括：
+
+- 操作系统名称与 `process.platform`
+- 当前 shell（例如 zsh、bash、PowerShell 或 cmd）
+- 当前工作目录
+- 路径风格（POSIX 或 Windows）
+- 包管理器线索（`package-lock.json`、`bun.lock`、`pnpm-lock.yaml`、`yarn.lock`）
+
+这段提示还会提醒智能体优先使用当前 OS/shell 兼容的命令、遇到跨平台路径或 shell 语法差异时先检查环境、优先使用项目已有 package scripts，并避免打印环境变量、鉴权文件或本地配置里的敏感信息。
+
+如果用户在新会话中选择关闭全部工具，pi-web 仍会保持空 system prompt，不会强行注入运行时上下文。
 
 ## 注意事项
 
