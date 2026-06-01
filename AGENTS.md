@@ -1,4 +1,6 @@
-# Pi Agent Web - Development Notes
+# Pi Web Seeker - Development Notes
+
+Repository: https://github.com/linky-fan/pi-web-seeker
 
 ## Quick Start
 

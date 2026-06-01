@@ -1,19 +1,21 @@
-# pi-web
+# pi-web-seeker
 
 [pi 编程智能体](https://github.com/badlogic/pi-mono) 的网页界面。在浏览器中浏览会话、与智能体对话、分叉对话、切换消息分支。
 
+仓库地址：[linky-fan/pi-web-seeker](https://github.com/linky-fan/pi-web-seeker)
+
 ## 快速开始
 
-**无需安装，直接运行：**
+**无需安装，直接从当前仓库运行：**
 
 ```bash
-npx @agegr/pi-web@latest
+npx github:linky-fan/pi-web-seeker
 ```
 
 **或全局安装后使用：**
 
 ```bash
-npm install -g @agegr/pi-web
+npm install -g github:linky-fan/pi-web-seeker
 pi-web
 ```
 
@@ -103,6 +105,8 @@ docker run --rm -it \
 ## 开发
 
 ```bash
+git clone git@github.com:linky-fan/pi-web-seeker.git
+cd pi-web-seeker
 npm install
 npm run dev   # 端口 30141
 ```

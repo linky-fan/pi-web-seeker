@@ -1,8 +1,12 @@
 {
-  "name": "@agegr/pi-web",
+  "name": "pi-web-seeker",
   "version": "0.6.12",
   "description": "Web UI for the pi coding agent",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linky-fan/pi-web-seeker.git"
+  },
   "bin": {
     "pi-web": "bin/pi-web.js"
   },
