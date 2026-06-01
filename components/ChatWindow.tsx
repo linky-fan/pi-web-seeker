@@ -8,6 +8,7 @@ import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
+import { APP_NAME } from "@/lib/branding";
 
 interface Props {
   session: SessionInfo | null;
@@ -299,9 +300,28 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                 fontFamily: "var(--font-mono)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4 }}>
-                <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--text)" }}>π</span>
-                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 700, letterSpacing: "-0.01em" }}>Pi Agent Web</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4 }}>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: "grid",
+                    placeItems: "center",
+                    width: 36,
+                    height: 36,
+                    borderRadius: 8,
+                    background: "color-mix(in srgb, var(--accent) 14%, var(--bg))",
+                    border: "1px solid color-mix(in srgb, var(--accent) 34%, var(--border))",
+                    color: "var(--accent)",
+                    fontSize: 23,
+                    fontWeight: 800,
+                    lineHeight: 1,
+                    boxShadow: "0 8px 22px color-mix(in srgb, var(--accent) 12%, transparent)",
+                    flexShrink: 0,
+                  }}
+                >
+                  π
+                </span>
+                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 800, letterSpacing: 0, whiteSpace: "nowrap" }}>{APP_NAME}</span>
                 <span style={{ fontSize: 14, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
                   <Typewriter phrases={TYPEWRITER_PHRASES} />
                 </span>

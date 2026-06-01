@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { APP_DESCRIPTION, APP_NAME } from "@/lib/branding";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Pi Agent Web",
-  description: "Pi Coding Agent Web Interface",
+  title: APP_NAME,
+  description: APP_DESCRIPTION,
 };
 
 export default function RootLayout({

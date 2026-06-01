@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { APP_NAME } from "@/lib/branding";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
 
@@ -153,12 +154,12 @@ function useScramble(target: string, running: boolean): string {
   return display;
 }
 
-function PiAgentTitle() {
+function AppTitle() {
   const [showVersion, setShowVersion] = useState(false);
   const [scrambling, setScrambling] = useState(false);
   const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : "Pi Agent Web";
+  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : APP_NAME;
   const display = useScramble(target, scrambling);
 
   const triggerScramble = useCallback((toVersion: boolean) => {
@@ -184,14 +185,51 @@ function PiAgentTitle() {
     <button
       onClick={handleClick}
       style={{
-        background: "none", border: "none", padding: 0, cursor: "default",
-        fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        minWidth: 0,
+        background: "none",
+        border: "none",
+        padding: 0,
+        cursor: "default",
         color: showVersion ? "var(--accent)" : "var(--text)",
-        fontFamily: "var(--font-mono)",
-        minWidth: "6ch",
       }}
+      title={showVersion ? "Version" : APP_NAME}
     >
-      {display}
+      <span
+        aria-hidden="true"
+        style={{
+          display: "grid",
+          placeItems: "center",
+          width: 28,
+          height: 28,
+          borderRadius: 7,
+          background: "color-mix(in srgb, var(--accent) 14%, var(--bg))",
+          border: "1px solid color-mix(in srgb, var(--accent) 32%, var(--border))",
+          color: "var(--accent)",
+          fontSize: 17,
+          fontWeight: 800,
+          lineHeight: 1,
+          flexShrink: 0,
+        }}
+      >
+        π
+      </span>
+      <span
+        style={{
+          minWidth: "6ch",
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+          textOverflow: "ellipsis",
+          fontFamily: "var(--font-mono)",
+          fontWeight: 800,
+          fontSize: 15,
+          letterSpacing: 0,
+        }}
+      >
+        {display}
+      </span>
     </button>
   );
 }
@@ -344,7 +382,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <PiAgentTitle />
+          <AppTitle />
           <div style={{ display: "flex", gap: 6 }}>
             <button
               onClick={handleNewSession}
