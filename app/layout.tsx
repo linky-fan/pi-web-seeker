@@ -18,7 +18,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("pi-theme");if(t==="dark")document.documentElement.classList.add("dark")}catch(e){}})();`,
+            __html: `(function(){try{var allowed={mist:1,ink:1,sage:1,rose:1,midnight:1};var t=localStorage.getItem("pi-theme");if(t==="light")t="mist";if(t==="dark")t="ink";if(!allowed[t])t="mist";document.documentElement.dataset.theme=t;if(t==="ink"||t==="midnight")document.documentElement.classList.add("dark")}catch(e){}})();`,
           }}
         />
       </head>

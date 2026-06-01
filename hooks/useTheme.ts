@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-
-type Theme = "light" | "dark";
+import { DEFAULT_THEME, getNextTheme, getThemeOption, normalizeTheme, type ThemeId } from "@/lib/themes";
 
 const listeners = new Set<() => void>();
 
@@ -13,29 +12,32 @@ function subscribe(cb: () => void): () => void {
   };
 }
 
-function getSnapshot(): Theme {
-  if (typeof document === "undefined") return "light";
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+function applyTheme(theme: ThemeId): void {
+  const option = getThemeOption(theme);
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.toggle("dark", option.isDark);
 }
 
-function getServerSnapshot(): Theme {
-  return "light";
+function getSnapshot(): ThemeId {
+  if (typeof document === "undefined") return DEFAULT_THEME;
+  const theme = normalizeTheme(document.documentElement.dataset.theme);
+  if (document.documentElement.dataset.theme !== theme) applyTheme(theme);
+  return theme;
+}
+
+function getServerSnapshot(): ThemeId {
+  return DEFAULT_THEME;
 }
 
 type ToggleOrigin = { x: number; y: number };
 
 export function useTheme() {
   const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const themeOption = getThemeOption(theme);
 
-  const toggleTheme = useCallback((origin?: ToggleOrigin) => {
-    const next: Theme = getSnapshot() === "dark" ? "light" : "dark";
-
+  const setTheme = useCallback((next: ThemeId, origin?: ToggleOrigin) => {
     const apply = () => {
-      if (next === "dark") {
-        document.documentElement.classList.add("dark");
-      } else {
-        document.documentElement.classList.remove("dark");
-      }
+      applyTheme(next);
       try {
         localStorage.setItem("pi-theme", next);
       } catch {
@@ -81,5 +83,9 @@ export function useTheme() {
       });
   }, []);
 
-  return { theme, toggleTheme, isDark: theme === "dark" };
+  const toggleTheme = useCallback((origin?: ToggleOrigin) => {
+    setTheme(getNextTheme(getSnapshot()), origin);
+  }, [setTheme]);
+
+  return { theme, themeOption, setTheme, toggleTheme, isDark: themeOption.isDark };
 }
