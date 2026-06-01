@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { getFileIcon, FolderIcon } from "./FileIcons";
 import { encodeFilePathForApi, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 
@@ -73,6 +73,10 @@ function writeRecentFiles(files: RecentFile[]): void {
   } catch {
     // localStorage can be unavailable in restricted contexts
   }
+}
+
+function getFileDownloadUrl(filePath: string): string {
+  return `/api/files/${encodeFilePathForApi(filePath)}?type=download`;
 }
 
 async function fetchEntries(dirPath: string, options: FetchOptions = {}): Promise<{ nodes: FileNode[]; gitTrackedAvailable?: boolean }> {
@@ -219,40 +223,14 @@ function TreeNode({
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
           </svg>
         )}
-        {onAtMention && hovered && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onAtMention(getRelativeFilePath(node.fullPath, cwd));
-            }}
-            title="Insert path into chat"
-            style={{
-              position: "absolute",
-              right: 4,
-              top: "50%",
-              transform: "translateY(-50%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 4,
-              padding: "0 8px",
-              height: 20,
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              color: "var(--accent)",
-              cursor: "pointer",
-              fontSize: 11,
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
-            </svg>
-            mention
-          </button>
+        {!node.isDir && (
+          <FileRowActions
+            filePath={node.fullPath}
+            fileName={node.name}
+            cwd={cwd}
+            visible={hovered}
+            onAtMention={onAtMention}
+          />
         )}
       </div>
       {node.isDir && open && (
@@ -523,40 +501,84 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
 
 function FileRowActions({
   filePath,
+  fileName,
   cwd,
+  visible,
   onAtMention,
 }: {
   filePath: string;
+  fileName: string;
   cwd: string;
+  visible: boolean;
   onAtMention?: (relativePath: string) => void;
 }) {
-  if (!onAtMention) return null;
+  const [focused, setFocused] = useState(false);
+  const active = visible || focused;
+  const buttonBase = {
+    display: "grid",
+    placeItems: "center",
+    width: 22,
+    height: 20,
+    border: "1px solid var(--border)",
+    borderRadius: 4,
+    background: "var(--bg-panel)",
+    color: "var(--text-muted)",
+    cursor: "pointer",
+    flexShrink: 0,
+  } satisfies CSSProperties;
+
   return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onAtMention(getRelativeFilePath(filePath, cwd));
-      }}
-      title="Insert path into chat"
+    <span
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={{
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        width: 22,
-        height: 20,
-        border: "1px solid var(--border)",
-        borderRadius: 4,
-        background: "var(--bg-panel)",
-        color: "var(--accent)",
-        cursor: "pointer",
+        gap: 3,
+        width: onAtMention ? 47 : 22,
         flexShrink: 0,
       }}
     >
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="4" />
-        <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
-      </svg>
-    </button>
+      <a
+        href={getFileDownloadUrl(filePath)}
+        download={fileName}
+        onClick={(e) => e.stopPropagation()}
+        title="Download file"
+        style={{
+          ...buttonBase,
+          color: "var(--accent)",
+          opacity: active ? 1 : 0.68,
+          textDecoration: "none",
+          transition: "opacity 0.12s ease, background 0.12s ease",
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3v11" />
+          <path d="m7 10 5 5 5-5" />
+          <path d="M5 21h14" />
+        </svg>
+      </a>
+      {onAtMention && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onAtMention(getRelativeFilePath(filePath, cwd));
+          }}
+          title="Insert path into chat"
+          style={{
+            ...buttonBase,
+            opacity: active ? 1 : 0,
+            pointerEvents: active ? "auto" : "none",
+            transition: "opacity 0.12s ease",
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
+          </svg>
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -595,7 +617,7 @@ function RecentFileRow({
       <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: 12 }}>
         {getRelativeFilePath(file.filePath, cwd)}
       </span>
-      {hovered && <FileRowActions filePath={file.filePath} cwd={cwd} onAtMention={onAtMention} />}
+      <FileRowActions filePath={file.filePath} fileName={file.name} cwd={cwd} visible={hovered} onAtMention={onAtMention} />
     </div>
   );
 }
@@ -640,7 +662,7 @@ function SearchResult({
           {getRelativeFilePath(node.fullPath, cwd)}
         </span>
       </span>
-      {hovered && <FileRowActions filePath={node.fullPath} cwd={cwd} onAtMention={onAtMention} />}
+      <FileRowActions filePath={node.fullPath} fileName={node.name} cwd={cwd} visible={hovered} onAtMention={onAtMention} />
     </div>
   );
 }

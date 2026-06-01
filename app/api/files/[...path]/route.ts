@@ -367,11 +367,25 @@ function createFileBodyStream(filePath: string, range?: { start: number; end: nu
   return Readable.toWeb(fs.createReadStream(filePath, range)) as ReadableStream<Uint8Array>;
 }
 
-function streamFile(filePath: string, stat: fs.Stats, contentType: string, rangeHeader: string | null): Response {
+function contentDispositionForDownload(filePath: string): string {
+  const name = path.basename(filePath);
+  const fallback = name.replace(/[^\x20-\x7e]|[\\/\r\n"]/g, "_") || "download";
+  const encoded = encodeURIComponent(name);
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
+function streamFile(
+  filePath: string,
+  stat: fs.Stats,
+  contentType: string,
+  rangeHeader: string | null,
+  extraHeaders: Record<string, string> = {}
+): Response {
   const headers = {
     "Content-Type": contentType,
     "Cache-Control": "no-cache",
     "Accept-Ranges": "bytes",
+    ...extraHeaders,
   };
 
   if (!rangeHeader) {
@@ -468,6 +482,16 @@ export async function GET(
       const content = fs.readFileSync(filePath, "utf-8");
       const language = getLanguage(filePath);
       return NextResponse.json({ content, language, size: stat.size });
+    }
+
+    if (type === "download") {
+      if (!stat.isFile()) {
+        return NextResponse.json({ error: "Not a file" }, { status: 400 });
+      }
+      return streamFile(filePath, stat, "application/octet-stream", request.headers.get("range"), {
+        "Content-Disposition": contentDispositionForDownload(filePath),
+        "X-Content-Type-Options": "nosniff",
+      });
     }
 
     if (type === "watch") {
