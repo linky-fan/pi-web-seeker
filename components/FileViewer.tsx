@@ -10,7 +10,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { useTheme } from "@/hooks/useTheme";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
-import { normalizeMarkdownMath } from "@/lib/markdown";
+import { markdownMathOptions, normalizeMarkdownMath } from "@/lib/markdown";
 
 interface Props {
   filePath: string;
@@ -803,7 +803,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
             className="markdown-body markdown-file-preview"
             style={{ padding: "24px 32px", maxWidth: 800 }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{normalizeMarkdownMath(data.content)}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, markdownMathOptions]]} rehypePlugins={[rehypeKatex]}>{normalizeMarkdownMath(data.content)}</ReactMarkdown>
           </div>
         ) : (
           <SyntaxHighlighter

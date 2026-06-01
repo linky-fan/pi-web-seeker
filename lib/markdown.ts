@@ -1,3 +1,7 @@
+export const markdownMathOptions = {
+  singleDollarTextMath: false,
+};
+
 export function normalizeMarkdownMath(markdown: string): string {
   return markdown.replace(
     /(^|\n)([ \t]*)\$\$([^\n]+?)\$\$[ \t]*(?=\n|$)/g,

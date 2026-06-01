@@ -9,7 +9,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
-import { normalizeMarkdownMath } from "@/lib/markdown";
+import { markdownMathOptions, normalizeMarkdownMath } from "@/lib/markdown";
 import type {
   AgentMessage,
   UserMessage,
@@ -528,7 +528,7 @@ function TextBlock({ block }: { block: TextContent }) {
   return (
     <div className="markdown-body">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, [remarkMath, markdownMathOptions]]}
         rehypePlugins={[rehypeKatex]}
         components={{
           code({ className, children, ...props }) {
