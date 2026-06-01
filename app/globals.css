@@ -54,11 +54,11 @@ html.dark {
 }
 
 html[data-theme="sage"] {
-  --bg: #fbfdf9;
-  --bg-panel: #f1f5ef;
-  --bg-hover: #e7eee4;
-  --bg-selected: #dbe7d8;
-  --border: #d3ded0;
+  --bg: #f8fcf1;
+  --bg-panel: #eaf2df;
+  --bg-hover: #dceacb;
+  --bg-selected: #d0e1bf;
+  --border: #c5d6b8;
   --text: #18231d;
   --text-muted: #607065;
   --text-dim: #8b9a90;
@@ -71,11 +71,11 @@ html[data-theme="sage"] {
 }
 
 html[data-theme="rose"] {
-  --bg: #fffafa;
-  --bg-panel: #fff1f2;
-  --bg-hover: #ffe4e6;
-  --bg-selected: #ffdce1;
-  --border: #f4cdd4;
+  --bg: #fff8fb;
+  --bg-panel: #ffeaf1;
+  --bg-hover: #ffd9e5;
+  --bg-selected: #ffc8da;
+  --border: #efb8c8;
   --text: #26191d;
   --text-muted: #745f66;
   --text-dim: #a68c94;
