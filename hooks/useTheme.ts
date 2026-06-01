@@ -14,14 +14,29 @@ function subscribe(cb: () => void): () => void {
 
 function applyTheme(theme: ThemeId): void {
   const option = getThemeOption(theme);
+  const vars = option.vars;
   document.documentElement.dataset.theme = theme;
   document.documentElement.classList.toggle("dark", option.isDark);
+  document.documentElement.style.setProperty("--bg", vars.bg);
+  document.documentElement.style.setProperty("--bg-panel", vars.bgPanel);
+  document.documentElement.style.setProperty("--bg-hover", vars.bgHover);
+  document.documentElement.style.setProperty("--bg-selected", vars.bgSelected);
+  document.documentElement.style.setProperty("--border", vars.border);
+  document.documentElement.style.setProperty("--text", vars.text);
+  document.documentElement.style.setProperty("--text-muted", vars.textMuted);
+  document.documentElement.style.setProperty("--text-dim", vars.textDim);
+  document.documentElement.style.setProperty("--accent", vars.accent);
+  document.documentElement.style.setProperty("--accent-hover", vars.accentHover);
+  document.documentElement.style.setProperty("--user-bg", vars.userBg);
+  document.documentElement.style.setProperty("--assistant-bg", vars.assistantBg);
+  document.documentElement.style.setProperty("--tool-bg", vars.toolBg);
+  document.documentElement.style.setProperty("--bg-subtle", vars.bgSubtle);
 }
 
 function getSnapshot(): ThemeId {
   if (typeof document === "undefined") return DEFAULT_THEME;
   const theme = normalizeTheme(document.documentElement.dataset.theme);
-  if (document.documentElement.dataset.theme !== theme) applyTheme(theme);
+  applyTheme(theme);
   return theme;
 }
 

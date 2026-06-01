@@ -108,6 +108,8 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
           top: isTopbar ? "calc(100% + 6px)" : undefined,
           bottom: isFooter ? "calc(100% + 8px)" : undefined,
           width: 190,
+          maxHeight: 326,
+          overflowY: "auto",
           padding: 6,
           border: "1px solid var(--border)",
           borderRadius: 8,
