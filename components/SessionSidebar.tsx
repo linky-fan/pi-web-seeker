@@ -240,6 +240,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [homeDir, setHomeDir] = useState<string>("");
+  const [defaultCwd, setDefaultCwd] = useState<string | null>(null);
+  const [singleWorkspace, setSingleWorkspace] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [customPathOpen, setCustomPathOpen] = useState(false);
   const [customPathValue, setCustomPathValue] = useState("");
@@ -284,8 +286,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [explorerRefreshKey]);
 
   useEffect(() => {
-    fetch("/api/home").then((r) => r.json()).then((d: { home?: string }) => {
+    fetch("/api/home").then((r) => r.json()).then((d: { home?: string; defaultCwd?: string | null; singleWorkspace?: boolean }) => {
       if (d.home) setHomeDir(d.home);
+      if (d.defaultCwd) setDefaultCwd(d.defaultCwd);
+      setSingleWorkspace(!!d.singleWorkspace);
     }).catch(() => {});
   }, []);
 
@@ -297,11 +301,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   // Auto-select cwd and restore session from URL on first load
   useEffect(() => {
-    if (allSessions.length === 0) return;
-
     if (selectedCwd === null) {
       // If restoring a session, set cwd to match that session
       if (initialSessionId && !restoredRef.current) {
+        if (loading) return;
         restoredRef.current = true;
         const target = allSessions.find((s) => s.id === initialSessionId);
         if (target) {
@@ -312,10 +315,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         // Session not found — notify parent so it can show the placeholder
         onInitialRestoreDone?.();
       }
-      const cwds = getRecentCwds(allSessions);
+      const cwds = singleWorkspace && defaultCwd ? [defaultCwd] : getRecentCwds(allSessions);
       if (cwds.length > 0) setSelectedCwd(cwds[0]);
     }
-  }, [allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone]);
+  }, [allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone, loading, singleWorkspace, defaultCwd]);
 
   const commitCustomPath = useCallback(() => {
     const path = customPathValue.trim();
@@ -363,7 +366,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onNewSession?.(tempId, selectedCwd);
   }, [selectedCwd, onNewSession]);
 
-  const recentCwds = getRecentCwds(allSessions);
+  const recentCwds = singleWorkspace && defaultCwd ? [defaultCwd] : getRecentCwds(allSessions);
   const filteredSessions = selectedCwd
     ? allSessions.filter((s) => s.cwd === selectedCwd)
     : allSessions;
@@ -467,7 +470,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         {/* CWD picker */}
         <div ref={dropdownRef} style={{ position: "relative" }}>
           <button
-            onClick={() => setDropdownOpen((v) => !v)}
+            onClick={() => {
+              if (!singleWorkspace) setDropdownOpen((v) => !v);
+            }}
             style={{
               width: "100%",
               display: "flex",
@@ -476,7 +481,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               background: selectedCwd ? "var(--bg-hover)" : "rgba(37,99,235,0.06)",
               border: selectedCwd ? "1px solid var(--border)" : "1px solid rgba(37,99,235,0.4)",
               borderRadius: 7,
-              cursor: "pointer",
+              cursor: singleWorkspace ? "default" : "pointer",
               fontSize: 12,
               color: "var(--text)",
               textAlign: "left",
@@ -499,7 +504,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </span>
           </button>
 
-          {dropdownOpen && (
+          {dropdownOpen && !singleWorkspace && (
             <div
               style={{
                 position: "absolute",
@@ -554,7 +559,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               ))}
 
               {/* Default cwd shortcut */}
-              {!customPathOpen && (
+              {!customPathOpen && !singleWorkspace && (
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDefaultCwd(); }}
                   style={{
@@ -580,7 +585,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               )}
 
               {/* Custom path entry */}
-              {!customPathOpen ? (
+              {!customPathOpen && !singleWorkspace ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -607,7 +612,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   </svg>
                   <span>Custom path…</span>
                 </button>
-              ) : (
+              ) : !singleWorkspace ? (
                 <div style={{ padding: "6px 8px", borderTop: recentCwds.length > 0 ? "none" : undefined }}>
                   <input
                     ref={customPathInputRef}
@@ -668,7 +673,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     </button>
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
         </div>

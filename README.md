@@ -63,6 +63,8 @@ docker compose up --build
 - 当前目录 → `/workspace`，作为容器内默认项目目录
 - `~/.ssh` → `/home/piweb/.ssh:ro`，方便智能体读取私有仓库
 
+Docker Compose 默认启用单工作区模式：页面只会自动选择并展示 `/workspace` 一个工作目录，Explorer 也只允许浏览这个目录下的文件。
+
 用户数据默认会保存在宿主机当前目录的 `.pi-web-data/agent/` 下，例如：
 
 - `.pi-web-data/agent/models.json` — 模型配置

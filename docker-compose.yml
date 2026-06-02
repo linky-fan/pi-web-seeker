@@ -12,7 +12,8 @@ services:
       PI_CODING_AGENT_DIR: /home/piweb/.pi/agent
       PI_WEB_HOME: /workspace
       PI_WEB_DEFAULT_CWD: /workspace
-      PI_WEB_ALLOWED_ROOTS: /workspace:/home/piweb
+      PI_WEB_ALLOWED_ROOTS: /workspace
+      PI_WEB_SINGLE_WORKSPACE: "1"
       PI_WEB_UID: ${PI_WEB_UID:-1000}
       PI_WEB_GID: ${PI_WEB_GID:-1000}
       SKILLS_API_URL: ${SKILLS_API_URL:-https://skills.sh}
