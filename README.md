@@ -65,6 +65,12 @@ docker compose up --build
 
 Docker Compose 默认启用单工作区模式：页面会自动选择 `/workspace`，Explorer 只显示 `.pi-web-workspace` 这个独立工作目录里的文件，不会把 pi-web-seeker 仓库源码目录混进去。
 
+容器启动时会默认把 `/workspace` 和 `/home/piweb/.pi` 的权限修正给运行用户，确保 agent 可以在工作目录内写文件。如挂载大型外部项目且不希望递归修改宿主机文件所有者，可关闭工作目录权限修正：
+
+```bash
+PI_WEB_CHOWN_WORKSPACE=0 docker compose up --build
+```
+
 用户数据默认会保存在宿主机当前目录的 `.pi-web-data/agent/` 下，例如：
 
 - `.pi-web-data/agent/models.json` — 模型配置

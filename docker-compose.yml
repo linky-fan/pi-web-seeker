@@ -16,6 +16,7 @@ services:
       PI_WEB_SINGLE_WORKSPACE: "1"
       PI_WEB_UID: ${PI_WEB_UID:-1000}
       PI_WEB_GID: ${PI_WEB_GID:-1000}
+      PI_WEB_CHOWN_WORKSPACE: ${PI_WEB_CHOWN_WORKSPACE:-1}
       SKILLS_API_URL: ${SKILLS_API_URL:-https://skills.sh}
     volumes:
       - ${PI_WEB_DATA_DIR:-./.pi-web-data}:/home/piweb/.pi
