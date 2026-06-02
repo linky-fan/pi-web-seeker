@@ -40,7 +40,17 @@ const port     = cliArgs.port     ?? process.env.PORT             ?? "30141";
 const hostname = cliArgs.hostname ?? process.env.PI_WEB_BIND_HOST ?? "0.0.0.0";
 
 if (!fs.existsSync(nextDir)) {
-  console.error("Build artifacts not found. Please report this issue.");
+  console.error([
+    "Build artifacts not found.",
+    "",
+    "If you installed from GitHub, reinstall so npm can run the prepare build:",
+    "  npm install -g github:linky-fan/pi-web-seeker",
+    "",
+    "For a local checkout, run:",
+    "  npm install",
+    "  npm run build",
+    "  pi-web",
+  ].join("\n"));
   process.exit(1);
 }
 

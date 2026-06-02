@@ -17,6 +17,7 @@
     "!.next/dev",
     "!.next/**/*.js.map",
     "public",
+    "scripts/prepare-github-install.js",
     "next.config.ts",
     "package.json"
   ],
@@ -25,6 +26,7 @@
     "build": "next build --webpack",
     "start": "next start -p 30141 -H 0.0.0.0",
     "lint": "eslint .",
+    "prepare": "node scripts/prepare-github-install.js",
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
   },
   "dependencies": {
