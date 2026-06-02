@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
@@ -25,6 +25,11 @@ interface FileData {
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"]);
 const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "oga", "opus", "m4a", "aac", "flac", "weba", "webm"]);
+const CODE_HIGHLIGHT_MAX_BYTES = 100 * 1024;
+const MARKDOWN_AUTO_PREVIEW_MAX_BYTES = 80 * 1024;
+const MARKDOWN_PREVIEW_MAX_BYTES = 200 * 1024;
+const TEXT_TRUNCATE_BYTES = 300 * 1024;
+const TEXT_TRUNCATE_LINES = 2000;
 
 function isImagePath(filePath: string): boolean {
   const base = getFileName(filePath);
@@ -118,10 +123,10 @@ function diffLines(oldLines: string[], newLines: string[]): DiffLine[] {
   ];
 }
 
-function DiffView({ oldContent, newContent }: { oldContent: string; newContent: string; language: string }) {
-  const oldLines = oldContent.split("\n");
-  const newLines = newContent.split("\n");
-  const diff = diffLines(oldLines, newLines);
+function DiffView({ oldContent, newContent }: { oldContent: string; newContent: string }) {
+  const oldLines = useMemo(() => oldContent.split("\n"), [oldContent]);
+  const newLines = useMemo(() => newContent.split("\n"), [newContent]);
+  const diff = useMemo(() => diffLines(oldLines, newLines), [oldLines, newLines]);
 
   const hasChanges = diff.some((l) => l.type !== "unchanged");
   if (!hasChanges) {
@@ -270,6 +275,27 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
         return <div key={si}>{lines}</div>;
       })}
     </div>
+  );
+}
+
+function PlainTextView({ content, wrapLines }: { content: string; wrapLines: boolean }) {
+  return (
+    <pre
+      style={{
+        margin: 0,
+        padding: "12px 16px",
+        background: "var(--bg)",
+        color: "var(--text)",
+        fontSize: 13,
+        lineHeight: 1.6,
+        fontFamily: "var(--font-mono)",
+        whiteSpace: wrapLines ? "pre-wrap" : "pre",
+        overflow: "auto",
+        minHeight: "100%",
+      }}
+    >
+      {content}
+    </pre>
   );
 }
 
@@ -591,7 +617,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
     }
 
     fetchContent(filePath).then((d) => {
-      if (d?.language === "markdown") setPreviewMode(true);
+      if (d?.language === "markdown" && d.size <= MARKDOWN_AUTO_PREVIEW_MAX_BYTES) setPreviewMode(true);
     }).finally(() => setLoading(false));
 
     // Set up SSE watch
@@ -621,6 +647,27 @@ function TextFileViewer({ filePath, cwd }: Props) {
     };
   }, [filePath, fetchContent]);
 
+  const content = data?.content ?? "";
+  const language = data?.language ?? "text";
+  const size = data?.size ?? 0;
+  const isHtml = language === "html";
+  const isMarkdown = language === "markdown";
+  const lines = useMemo(() => content.split("\n"), [content]);
+  const hasDiff = prevContent !== null && prevContent !== content;
+  const isLargeTextFile = size > CODE_HIGHLIGHT_MAX_BYTES;
+  const isMarkdownPreviewTooLarge = size > MARKDOWN_PREVIEW_MAX_BYTES;
+  const isLargeDiff = content.length > CODE_HIGHLIGHT_MAX_BYTES || (prevContent?.length ?? 0) > CODE_HIGHLIGHT_MAX_BYTES;
+  const canShowDiff = hasDiff && !isLargeDiff;
+  const shouldTruncateRaw = size > TEXT_TRUNCATE_BYTES && lines.length > TEXT_TRUNCATE_LINES;
+  const rawContent = useMemo(() => {
+    if (!shouldTruncateRaw) return content;
+    return lines.slice(0, TEXT_TRUNCATE_LINES).join("\n");
+  }, [content, lines, shouldTruncateRaw]);
+  const markdownContent = useMemo(() => {
+    if (!isMarkdown || !previewMode || isMarkdownPreviewTooLarge) return "";
+    return normalizeMarkdownMath(content);
+  }, [content, isMarkdown, isMarkdownPreviewTooLarge, previewMode]);
+
   if (loading) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>
@@ -638,11 +685,6 @@ function TextFileViewer({ filePath, cwd }: Props) {
   }
 
   if (!data) return null;
-
-  const isHtml = data.language === "html";
-  const isMarkdown = data.language === "markdown";
-  const lines = data.content.split("\n");
-  const hasDiff = prevContent !== null && prevContent !== data.content;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -663,7 +705,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
         <span style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
           {getRelativeFilePath(filePath, cwd)}
         </span>
-        <span style={{ marginLeft: "auto" }}>{data.language}</span>
+        <span style={{ marginLeft: "auto" }}>{language}</span>
         {viewMode === "source" && <span>{lines.length} lines</span>}
         <span>{formatSize(data.size)}</span>
 
@@ -686,7 +728,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
         </span>
 
         {/* Diff / Source toggle — shown only when there are changes */}
-        {hasDiff && (
+        {canShowDiff && (
           <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
             <button
               onClick={() => setViewMode("source")}
@@ -789,25 +831,50 @@ function TextFileViewer({ filePath, cwd }: Props) {
 
       {/* Content area */}
       <div style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
-        {viewMode === "diff" && hasDiff ? (
-          <DiffView oldContent={prevContent!} newContent={data.content} language={data.language} />
+        {(isLargeTextFile || shouldTruncateRaw || (isMarkdown && previewMode && isMarkdownPreviewTooLarge) || (hasDiff && isLargeDiff)) && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              padding: "8px 16px",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--bg-panel)",
+              color: "var(--text-muted)",
+              fontSize: 12,
+            }}
+          >
+            {isLargeTextFile && <span>Large file: syntax highlighting disabled for faster preview.</span>}
+            {hasDiff && isLargeDiff && <span>Diff is disabled for large file updates.</span>}
+            {shouldTruncateRaw && viewMode === "source" && !previewMode && (
+              <span>Showing first {TEXT_TRUNCATE_LINES.toLocaleString()} of {lines.length.toLocaleString()} lines.</span>
+            )}
+            {isMarkdown && previewMode && isMarkdownPreviewTooLarge && (
+              <span>Markdown preview is disabled for files over {formatSize(MARKDOWN_PREVIEW_MAX_BYTES)}. Switch to Raw to inspect it.</span>
+            )}
+          </div>
+        )}
+        {viewMode === "diff" && canShowDiff ? (
+          <DiffView oldContent={prevContent!} newContent={content} />
         ) : isHtml && previewMode ? (
           <iframe
-            srcDoc={data.content}
+            srcDoc={content}
             sandbox="allow-scripts"
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
             title="HTML preview"
           />
-        ) : isMarkdown && previewMode ? (
+        ) : isMarkdown && previewMode && !isMarkdownPreviewTooLarge ? (
           <div
             className="markdown-body markdown-file-preview"
             style={{ padding: "24px 32px", maxWidth: 800 }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, markdownMathOptions]]} rehypePlugins={[rehypeKatex]}>{normalizeMarkdownMath(data.content)}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, markdownMathOptions]]} rehypePlugins={[rehypeKatex]}>{markdownContent}</ReactMarkdown>
           </div>
+        ) : isLargeTextFile || shouldTruncateRaw ? (
+          <PlainTextView content={rawContent} wrapLines={wrapLines} />
         ) : (
           <SyntaxHighlighter
-            language={data.language === "text" ? "plaintext" : data.language}
+            language={language === "text" ? "plaintext" : language}
             style={isDark ? vscDarkPlus : vs}
             showLineNumbers
             lineNumberStyle={{
@@ -828,7 +895,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
             codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
             wrapLongLines={wrapLines}
           >
-            {data.content}
+            {content}
           </SyntaxHighlighter>
         )}
       </div>
