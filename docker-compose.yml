@@ -19,6 +19,6 @@ services:
       SKILLS_API_URL: ${SKILLS_API_URL:-https://skills.sh}
     volumes:
       - ${PI_WEB_DATA_DIR:-./.pi-web-data}:/home/piweb/.pi
-      - ${PI_WEB_WORKSPACE:-.}:/workspace
+      - ${PI_WEB_WORKSPACE:-./.pi-web-workspace}:/workspace
       - ${HOME}/.ssh:/home/piweb/.ssh:ro
     restart: unless-stopped

@@ -22,6 +22,7 @@
 
 # local Docker runtime data
 /.pi-web-data
+/.pi-web-workspace
 
 # misc
 .DS_Store

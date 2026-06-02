@@ -8,6 +8,7 @@ yarn-error.log*
 .env
 .env.*
 .pi-web-data
+.pi-web-workspace
 coverage
 dist
 build

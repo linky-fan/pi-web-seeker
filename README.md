@@ -60,10 +60,10 @@ docker compose up --build
 默认会挂载：
 
 - `.pi-web-data` → `/home/piweb/.pi`，保留会话、模型、登录凭据、settings、skills、prompts、themes 等用户数据
-- 当前目录 → `/workspace`，作为容器内默认项目目录
+- `.pi-web-workspace` → `/workspace`，作为容器内默认工作目录
 - `~/.ssh` → `/home/piweb/.ssh:ro`，方便智能体读取私有仓库
 
-Docker Compose 默认启用单工作区模式：页面只会自动选择并展示 `/workspace` 一个工作目录，Explorer 也只允许浏览这个目录下的文件。
+Docker Compose 默认启用单工作区模式：页面会自动选择 `/workspace`，Explorer 只显示 `.pi-web-workspace` 这个独立工作目录里的文件，不会把 pi-web-seeker 仓库源码目录混进去。
 
 用户数据默认会保存在宿主机当前目录的 `.pi-web-data/agent/` 下，例如：
 
