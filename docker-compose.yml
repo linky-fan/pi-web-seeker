@@ -13,9 +13,11 @@ services:
       PI_WEB_HOME: /workspace
       PI_WEB_DEFAULT_CWD: /workspace
       PI_WEB_ALLOWED_ROOTS: /workspace:/home/piweb
+      PI_WEB_UID: ${PI_WEB_UID:-1000}
+      PI_WEB_GID: ${PI_WEB_GID:-1000}
       SKILLS_API_URL: ${SKILLS_API_URL:-https://skills.sh}
     volumes:
-      - ${HOME}/.pi:/home/piweb/.pi
+      - ${PI_WEB_DATA_DIR:-./.pi-web-data}:/home/piweb/.pi
       - ${PI_WEB_WORKSPACE:-.}:/workspace
       - ${HOME}/.ssh:/home/piweb/.ssh:ro
     restart: unless-stopped

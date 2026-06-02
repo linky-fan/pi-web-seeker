@@ -10,6 +10,7 @@ import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { BranchNavigator } from "./BranchNavigator";
 import { ThemeCycleButton } from "./ThemeCycleButton";
+import { TopBarTypewriter } from "./BrandTypewriter";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
 
@@ -394,6 +395,7 @@ export function AppShell() {
               </button>
             </div>
           )}
+          {showChat && <TopBarTypewriter />}
           {/* Session stats — right-aligned in top bar */}
           {showChat && (sessionStats || contextUsage) && (() => {
             const t = sessionStats?.tokens;

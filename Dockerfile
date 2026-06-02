@@ -30,23 +30,24 @@ ENV NODE_ENV=production \
   PI_WEB_ALLOWED_ROOTS=/workspace:/home/piweb
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates git openssh-client ripgrep bash \
+  && apt-get install -y --no-install-recommends ca-certificates git openssh-client ripgrep bash gosu \
   && rm -rf /var/lib/apt/lists/* \
-  && groupadd --system --gid 1000 piweb \
-  && useradd --system --uid 1000 --gid piweb --create-home --home-dir /home/piweb piweb \
   && mkdir -p /home/piweb/.pi/agent /workspace \
-  && chown -R piweb:piweb /home/piweb /workspace /app
+  && chown -R 1000:1000 /home/piweb /workspace /app
 
-COPY --from=builder --chown=piweb:piweb /app/package.json /app/package-lock.json ./
-COPY --from=builder --chown=piweb:piweb /app/node_modules ./node_modules
-COPY --from=builder --chown=piweb:piweb /app/.next ./.next
-COPY --from=builder --chown=piweb:piweb /app/public ./public
-COPY --from=builder --chown=piweb:piweb /app/next.config.ts ./next.config.ts
+COPY --from=builder --chown=1000:1000 /app/package.json /app/package-lock.json ./
+COPY --from=deps --chown=1000:1000 /app/node_modules ./node_modules
+COPY --from=builder --chown=1000:1000 /app/.next ./.next
+COPY --from=builder --chown=1000:1000 /app/public ./public
+COPY --from=builder --chown=1000:1000 /app/next.config.ts ./next.config.ts
+COPY --chown=1000:1000 docker-entrypoint.sh /usr/local/bin/pi-web-docker-entrypoint
+RUN chmod +x /usr/local/bin/pi-web-docker-entrypoint \
+  && test -x node_modules/.bin/next
 
-USER piweb
 EXPOSE 30141
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||30141)).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["sh", "-c", "exec node node_modules/next/dist/bin/next start -p ${PORT:-30141} -H ${PI_WEB_BIND_HOST:-0.0.0.0}"]
+ENTRYPOINT ["pi-web-docker-entrypoint"]
+CMD ["sh", "-c", "exec node_modules/.bin/next start -p ${PORT:-30141} -H ${PI_WEB_BIND_HOST:-0.0.0.0}"]

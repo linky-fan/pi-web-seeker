@@ -36,8 +36,8 @@ const { values: cliArgs } = parseArgs({
   strict: false,
 });
 
-const port     = cliArgs.port     ?? process.env.PORT     ?? "30141";
-const hostname = cliArgs.hostname ?? process.env.HOSTNAME ?? null;
+const port     = cliArgs.port     ?? process.env.PORT             ?? "30141";
+const hostname = cliArgs.hostname ?? process.env.PI_WEB_BIND_HOST ?? "0.0.0.0";
 
 if (!fs.existsSync(nextDir)) {
   console.error("Build artifacts not found. Please report this issue.");
@@ -56,7 +56,8 @@ const child = spawn(process.execPath, [nextBin, ...nextArgs], {
 });
 
 let browserOpened = false;
-const url = `http://${hostname ?? "localhost"}:${port}`;
+const openHost = hostname === "0.0.0.0" || hostname === "::" ? "localhost" : hostname;
+const url = `http://${openHost}:${port}`;
 
 child.stdout.on("data", (chunk) => {
   const text = chunk.toString();

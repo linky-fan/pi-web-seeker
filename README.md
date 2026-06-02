@@ -4,6 +4,20 @@
 
 仓库地址：[linky-fan/pi-web-seeker](https://github.com/linky-fan/pi-web-seeker)
 
+## 界面预览
+
+Pi Web Seeker 内置多套 theme，可在左下角或顶部工具栏快速切换。下面是几套代表性配色：
+
+| Rose | Solarized |
+| --- | --- |
+| ![Rose theme preview](docs/screenshots/theme-rose.png) | ![Solarized theme preview](docs/screenshots/theme-solarized.png) |
+| 柔和明亮，适合长时间阅读。 | 低对比暖色，代码和文档都清爽。 |
+
+| Tokyo Night | Gruvbox |
+| --- | --- |
+| ![Tokyo Night theme preview](docs/screenshots/theme-tokyo.png) | ![Gruvbox theme preview](docs/screenshots/theme-gruvbox.png) |
+| 深色蓝紫，适合夜间编码。 | 复古暖色终端风，辨识度高。 |
+
 ## 快速开始
 
 **无需安装，直接从当前仓库运行：**
@@ -19,16 +33,18 @@ npm install -g github:linky-fan/pi-web-seeker
 pi-web
 ```
 
-启动后打开 [http://localhost:30141](http://localhost:30141)。
+默认监听 `0.0.0.0`，本机打开 [http://localhost:30141](http://localhost:30141)，局域网设备可访问 `http://<你的局域网 IP>:30141`。
 
 **可选参数：**
 
 ```bash
 pi-web --port 8080               # 自定义端口
 pi-web --hostname 127.0.0.1      # 仅本机访问
+pi-web --hostname 0.0.0.0        # 允许局域网访问（默认）
 pi-web -p 8080 -H 127.0.0.1     # 组合使用
 
 PORT=8080 pi-web                 # 也支持环境变量
+PI_WEB_BIND_HOST=127.0.0.1 pi-web # 环境变量指定绑定地址
 ```
 
 ## Docker
@@ -43,14 +59,34 @@ docker compose up --build
 
 默认会挂载：
 
-- `~/.pi` → `/home/piweb/.pi`，保留会话和模型配置
+- `.pi-web-data` → `/home/piweb/.pi`，保留会话、模型、登录凭据、settings、skills、prompts、themes 等用户数据
 - 当前目录 → `/workspace`，作为容器内默认项目目录
 - `~/.ssh` → `/home/piweb/.ssh:ro`，方便智能体读取私有仓库
+
+用户数据默认会保存在宿主机当前目录的 `.pi-web-data/agent/` 下，例如：
+
+- `.pi-web-data/agent/models.json` — 模型配置
+- `.pi-web-data/agent/auth.json` — 登录凭据/API key
+- `.pi-web-data/agent/settings.json` — 用户设置与 skill 路径配置
+- `.pi-web-data/agent/sessions/` — 会话历史
+- `.pi-web-data/agent/skills/` — 全局 skills
+
+如需把数据放到固定目录：
+
+```bash
+PI_WEB_DATA_DIR=/opt/pi-web-seeker/data docker compose up --build
+```
 
 如需换一个项目目录：
 
 ```bash
 PI_WEB_WORKSPACE=/path/to/project docker compose up --build
+```
+
+如果宿主机用户不是 UID/GID 1000，建议对齐容器运行用户，避免模型配置或工作区文件写入失败：
+
+```bash
+PI_WEB_UID=$(id -u) PI_WEB_GID=$(id -g) docker compose up --build
 ```
 
 也可以只用 `docker run`：
@@ -59,7 +95,7 @@ PI_WEB_WORKSPACE=/path/to/project docker compose up --build
 docker build -t pi-web:local .
 docker run --rm -it \
   -p 30141:30141 \
-  -v "$HOME/.pi:/home/piweb/.pi" \
+  -v "$PWD/.pi-web-data:/home/piweb/.pi" \
   -v "$PWD:/workspace" \
   -v "$HOME/.ssh:/home/piweb/.ssh:ro" \
   pi-web:local
