@@ -7,8 +7,7 @@ APP_GID="${PI_WEB_GID:-1000}"
 mkdir -p /home/piweb/.pi/agent /workspace
 
 # Mounted host config directories may be created as root by Docker. Fix only
-# the Pi config area by default; recursively chowning /workspace can be slow and
-# surprising for large project mounts.
-chown -R "${APP_UID}:${APP_GID}" /home/piweb
+# the Pi config mount; /home/piweb/.ssh is often mounted read-only.
+chown -R "${APP_UID}:${APP_GID}" /home/piweb/.pi
 
 exec gosu "${APP_UID}:${APP_GID}" "$@"
