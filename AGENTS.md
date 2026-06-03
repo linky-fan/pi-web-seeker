@@ -65,7 +65,6 @@ lib/
   markdown.ts         normalize single-line $$...$$ blocks before rendering
   file-paths.ts       shared path encoding/display helpers
   path-identity.ts    cross-platform cwd/session path identity helpers
-  system-prompt-off.ts  minimal system prompt when all tools are disabled
 
 components/
   AppShell.tsx        layout + URL state + tab management
@@ -108,7 +107,7 @@ components/
 Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolCallContent` uses `{toolCallId, toolName, input}`. `normalizeToolCalls()` in `lib/normalize.ts` handles this — called in both `session-reader.ts` (file load) and `ChatWindow.handleAgentEvent()` (streaming).
 
 ### New session tool preset
-Tool names are passed at session creation (`POST /api/agent/new` → `toolNames[]`). For existing sessions, the active preset is inferred on mount via `get_tools` → `getPresetFromTools()`. When tools are fully disabled (`toolNames = []`), `rpc-manager.ts` injects a minimal system prompt via `system-prompt-off.ts` + `DefaultResourceLoader`.
+Tool names are passed at session creation (`POST /api/agent/new` → `toolNames[]`). For existing sessions, the active preset is inferred on mount via `get_tools` → `getPresetFromTools()`. When tools are fully disabled (`toolNames = []`), `rpc-manager.ts` clears the generated system prompt after session creation. For non-off presets, `rpc-manager.ts` keeps enabled extension tools active so packages such as `pi-subagents` are not hidden by the built-in tool preset.
 
 ### Model defaults for new sessions
 `GET /api/models` returns `defaultModel` read from `~/.pi/agent/settings.json`. `ChatWindow` pre-selects this on mount for new sessions.
