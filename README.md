@@ -1,6 +1,6 @@
-# pi-web-seeker
+# Pi Web Seeker
 
-[pi 编程智能体](https://github.com/badlogic/pi-mono) 的网页界面。在浏览器中浏览会话、与智能体对话、分叉对话、切换消息分支。
+[pi 编程智能体](https://github.com/earendil-works/pi) 的网页界面。在浏览器中浏览会话、与智能体对话、分叉对话、切换消息分支。
 
 仓库地址：[linky-fan/pi-web-seeker](https://github.com/linky-fan/pi-web-seeker)
 
@@ -104,13 +104,13 @@ PI_WEB_UID=$(id -u) PI_WEB_GID=$(id -g) docker compose up --build
 也可以只用 `docker run`：
 
 ```bash
-docker build -t pi-web:local .
+docker build -t pi-web-seeker:local .
 docker run --rm -it \
   -p 30141:30141 \
   -v "$PWD/.pi-web-data:/home/piweb/.pi" \
   -v "$PWD:/workspace" \
   -v "$HOME/.ssh:/home/piweb/.ssh:ro" \
-  pi-web:local
+  pi-web-seeker:local
 ```
 
 ## 功能介绍
@@ -160,8 +160,8 @@ pi install npm:@tintinweb/pi-subagents
 Docker Compose 环境需要在容器内安装，而不是在宿主机安装：
 
 ```bash
-docker compose exec pi-web node_modules/.bin/pi install npm:@tintinweb/pi-subagents
-docker compose restart pi-web
+docker compose exec pi-web-seeker node_modules/.bin/pi install npm:@tintinweb/pi-subagents
+docker compose restart pi-web-seeker
 ```
 
 Compose 默认把 `./.pi-web-data` 挂载到容器的 `/home/piweb/.pi`，所以扩展配置会保存在宿主机的 `./.pi-web-data/agent/settings.json`，重建容器不会丢失。

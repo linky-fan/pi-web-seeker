@@ -1,4 +1,4 @@
-// Types mirrored from pi-mono coding-agent session-manager
+// Types mirrored from the pi coding-agent session manager
 
 export interface SessionHeader {
   type: "session";

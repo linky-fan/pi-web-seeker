@@ -1,9 +1,9 @@
 services:
-  pi-web:
+  pi-web-seeker:
     build:
       context: .
-    image: pi-web:local
-    container_name: pi-web
+    image: pi-web-seeker:local
+    container_name: pi-web-seeker
     ports:
       - "${PI_WEB_PORT:-30141}:30141"
     environment:
