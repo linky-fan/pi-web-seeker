@@ -128,6 +128,90 @@ function contextCacheKey(leafId?: string | null): string {
   return `leaf:${leafId}`;
 }
 
+function isContextMessageEntry(entry: SessionEntry): boolean {
+  return entry.type === "message" || entry.type === "custom_message" || entry.type === "branch_summary";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function xmlTagText(xml: string, tag: string): string | undefined {
+  const match = xml.match(new RegExp(`<${escapeRegExp(tag)}>([\\s\\S]*?)<\\/${escapeRegExp(tag)}>`, "i"));
+  return match?.[1]?.trim();
+}
+
+function getSubagentRecordId(entry: SessionEntry): string | undefined {
+  if (entry.type !== "custom" || entry.customType !== "subagents:record") return undefined;
+  return isRecord(entry.data) ? stringField(entry.data.id) : undefined;
+}
+
+function getSubagentNotificationId(entry: SessionEntry): string | undefined {
+  if (entry.type !== "custom_message") return undefined;
+  if (entry.customType !== "subagent-notification") return undefined;
+
+  if (isRecord(entry.details)) {
+    const detailId = stringField(entry.details.id) ?? stringField(entry.details.agentId) ?? stringField(entry.details.agent_id);
+    if (detailId) return detailId;
+  }
+
+  const content = typeof entry.content === "string"
+    ? entry.content
+    : entry.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n");
+
+  return xmlTagText(content, "task-id") ?? xmlTagText(content, "agent-id") ?? xmlTagText(content, "id");
+}
+
+function subagentRecordToCustomMessage(entry: SessionEntry): SessionEntry {
+  if (entry.type !== "custom" || entry.customType !== "subagents:record" || !isRecord(entry.data)) return entry;
+
+  const description = stringField(entry.data.description) ?? stringField(entry.data.type) ?? "Subagent";
+  const status = stringField(entry.data.status) ?? "completed";
+  const result = stringField(entry.data.result) ?? "";
+
+  return {
+    type: "custom_message",
+    id: entry.id,
+    parentId: entry.parentId,
+    timestamp: entry.timestamp,
+    customType: "subagent-notification",
+    content: [
+      `Subagent record: ${description}`,
+      "",
+      `<task-notification><status>${status}</status><summary>${description}</summary><result>${result}</result></task-notification>`,
+    ].join("\n"),
+    details: entry.data,
+    display: true,
+  };
+}
+
+function normalizeSubagentRecordsForContext(entries: SessionEntry[]): SessionEntry[] {
+  const notifiedAgentIds = new Set<string>();
+  for (const entry of entries) {
+    const id = getSubagentNotificationId(entry);
+    if (id) notifiedAgentIds.add(id);
+  }
+
+  return entries.map((entry) => {
+    const recordId = getSubagentRecordId(entry);
+    if (recordId && !notifiedAgentIds.has(recordId)) {
+      return subagentRecordToCustomMessage(entry);
+    }
+    return entry;
+  });
+}
+
 export function getCachedSessionContext(snapshot: CachedSessionFile, leafId?: string | null): SessionContext {
   const key = contextCacheKey(leafId);
   const cached = snapshot.contexts.get(key);
@@ -185,10 +269,11 @@ export function buildTree(entries: SessionEntry[]): SessionTreeNode[] {
 }
 
 export function buildSessionContext(entries: SessionEntry[], leafId?: string | null): SessionContext {
+  const contextEntries = normalizeSubagentRecordsForContext(entries);
   const byId = new Map<string, SessionEntry>();
-  for (const e of entries) byId.set(e.id, e);
+  for (const e of contextEntries) byId.set(e.id, e);
 
-  const piEntries = entries as unknown as PiSessionEntry[];
+  const piEntries = contextEntries as unknown as PiSessionEntry[];
   const piCtx = piBuildSessionContext(piEntries, leafId, byId as unknown as Map<string, PiSessionEntry>);
 
   // Build entryIds: parallel array to messages[], mapping each message back to its entry id.
@@ -198,7 +283,7 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
     return { messages: [], entryIds: [], thinkingLevel: piCtx.thinkingLevel, model: piCtx.model };
   }
   if (leafId) targetLeaf = byId.get(leafId);
-  if (!targetLeaf) targetLeaf = entries[entries.length - 1];
+  if (!targetLeaf) targetLeaf = contextEntries[contextEntries.length - 1];
   if (!targetLeaf) {
     return { messages: [], entryIds: [], thinkingLevel: piCtx.thinkingLevel, model: piCtx.model };
   }
@@ -231,14 +316,14 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
       : -1;
     const startIdx = firstKeptIdx >= 0 ? firstKeptIdx : compactionIdx;
     for (let i = startIdx; i < compactionIdx; i++) {
-      if (path[i].type === "message") entryIds.push(path[i].id);
+      if (isContextMessageEntry(path[i])) entryIds.push(path[i].id);
     }
     for (let i = compactionIdx + 1; i < path.length; i++) {
-      if (path[i].type === "message") entryIds.push(path[i].id);
+      if (isContextMessageEntry(path[i])) entryIds.push(path[i].id);
     }
   } else {
     for (const e of path) {
-      if (e.type === "message") entryIds.push(e.id);
+      if (isContextMessageEntry(e)) entryIds.push(e.id);
     }
   }
 

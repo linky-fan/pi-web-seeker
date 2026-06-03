@@ -8,6 +8,7 @@ import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
+import { SubagentsConfig } from "./SubagentsConfig";
 import { BranchNavigator } from "./BranchNavigator";
 import { ThemeCycleButton } from "./ThemeCycleButton";
 import { TopBarTypewriter } from "./BrandTypewriter";
@@ -26,6 +27,7 @@ export function AppShell() {
   const [modelsConfigOpen, setModelsConfigOpen] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
+  const [subagentsConfigOpen, setSubagentsConfigOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -242,11 +244,12 @@ export function AppShell() {
         explorerRefreshKey={explorerRefreshKey}
         onAtMention={handleAtMention}
       />
-      <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
+      <div style={{ padding: "8px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
         <ThemeCycleButton variant="footer" />
         {([
           {
             label: "Models",
+            shortLabel: "Models",
             onClick: () => setModelsConfigOpen(true),
             disabled: false,
             icon: (
@@ -261,6 +264,7 @@ export function AppShell() {
           },
           {
             label: "Skills",
+            shortLabel: "Skills",
             onClick: () => setSkillsConfigOpen(true),
             disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
             icon: (
@@ -271,24 +275,40 @@ export function AppShell() {
               </svg>
             ),
           },
-        ] as { label: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ label, onClick, disabled, icon }) => (
+          {
+            label: "Subagents",
+            shortLabel: "Agents",
+            onClick: () => setSubagentsConfigOpen(true),
+            disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
+            icon: (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="6" cy="17" r="2" />
+                <circle cx="18" cy="17" r="2" />
+                <path d="M12 7v4" />
+                <path d="M6 15l6-4 6 4" />
+              </svg>
+            ),
+          },
+        ] as { label: string; shortLabel: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ label, shortLabel, onClick, disabled, icon }) => (
           <button
             key={label}
             onClick={onClick}
             disabled={disabled}
             title={label}
             style={{
-              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              height: 32, padding: 0, background: "none", border: "none",
-              borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
-              fontSize: 12, opacity: disabled ? 0.35 : 1,
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 3,
+              height: 32, minWidth: 0, padding: "0 3px", background: "none", border: "none",
+              borderRadius: 8, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
+              fontSize: 10.5,
+              opacity: disabled ? 0.35 : 1,
               transition: "background 0.12s, color 0.12s",
             }}
             onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; } }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
           >
             {icon}
-            {label}
+            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortLabel}</span>
           </button>
         ))}
       </div>
@@ -620,6 +640,9 @@ export function AppShell() {
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
     {skillsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
       <SkillsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSkillsConfigOpen(false)} />
+    )}
+    {subagentsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
+      <SubagentsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSubagentsConfigOpen(false)} />
     )}
     </>
   );

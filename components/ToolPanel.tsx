@@ -12,10 +12,12 @@ export type ToolPreset = "none" | "default" | "full";
 export const PRESET_NONE: string[] = [];
 export const PRESET_DEFAULT: string[] = ["read", "bash", "edit", "write"];
 export const PRESET_FULL: string[] = ["bash", "read", "edit", "write", "grep", "find", "ls"];
+const BUILTIN_TOOL_NAMES = new Set(PRESET_FULL);
 
 export function getPresetFromTools(tools: ToolEntry[]): ToolPreset {
-  const active = tools.filter(t => t.active).map(t => t.name).sort().join(",");
-  if (active === "") return "none";
+  const activeTools = tools.filter(t => t.active);
+  const active = activeTools.filter(t => BUILTIN_TOOL_NAMES.has(t.name)).map(t => t.name).sort().join(",");
+  if (activeTools.length === 0) return "none";
   if (active === [...PRESET_DEFAULT].sort().join(",")) return "default";
   if (active === [...PRESET_FULL].sort().join(",")) return "full";
   return "default"; // closest match
@@ -29,8 +31,8 @@ interface Props {
 
 const PRESETS: { id: ToolPreset; label: string; desc: string; tools: string[] }[] = [
   { id: "none",    label: "Off",  desc: "No tools",                                tools: PRESET_NONE },
-  { id: "default", label: "Low",  desc: "read · bash · edit · write",              tools: PRESET_DEFAULT },
-  { id: "full",    label: "High", desc: "read · bash · edit · write · grep · find · ls", tools: PRESET_FULL },
+  { id: "default", label: "Low",  desc: "read · bash · edit · write · enabled extensions",              tools: PRESET_DEFAULT },
+  { id: "full",    label: "High", desc: "read · bash · edit · write · grep · find · ls · enabled extensions", tools: PRESET_FULL },
 ];
 
 export function ToolPanel({ tools, onPreset, onClose }: Props) {

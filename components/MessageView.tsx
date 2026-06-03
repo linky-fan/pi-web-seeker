@@ -20,6 +20,7 @@ import type {
   ImageContent,
   ToolCallContent,
   ThinkingContent,
+  CustomMessage,
 } from "@/lib/types";
 
 interface Props {
@@ -69,6 +70,15 @@ function copyText(text: string): Promise<void> {
   }
 }
 
+function messageContentToText(content: string | (TextContent | ImageContent)[]): string {
+  return typeof content === "string"
+    ? content
+    : content
+        .filter((b): b is TextContent => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
+}
+
 export function MessageView({ message, isStreaming, toolResults, modelNames, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
@@ -79,6 +89,9 @@ export function MessageView({ message, isStreaming, toolResults, modelNames, ent
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
     return null;
+  }
+  if (message.role === "custom") {
+    return <CustomMessageView message={message as CustomMessage} showTimestamp={showTimestamp} />;
   }
   return null;
 }
@@ -95,13 +108,7 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const content =
-    typeof message.content === "string"
-      ? message.content
-      : message.content
-          .filter((b): b is TextContent => b.type === "text")
-          .map((b) => b.text)
-          .join("\n");
+  const content = messageContentToText(message.content);
 
   const imageBlocks: ImageContent[] =
     typeof message.content === "string"
@@ -276,6 +283,382 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
             </div>
           )}
           {time && <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{time}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface SubagentNotification {
+  id?: string;
+  agentType?: string;
+  toolCallId?: string;
+  description: string;
+  status: string;
+  resultPreview: string;
+  toolUses?: number;
+  turnCount?: number;
+  maxTurns?: number;
+  totalTokens?: number;
+  contextPercent?: number;
+  compactionCount?: number;
+  durationMs?: number;
+  outputFile?: string;
+  error?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function firstString(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = stringField(record[key]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function firstNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = numberField(record[key]);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function nestedNumber(record: Record<string, unknown>, key: string, nestedKey: string): number | undefined {
+  const nested = record[key];
+  return isRecord(nested) ? numberField(nested[nestedKey]) : undefined;
+}
+
+function childTagNumber(xml: string, tag: string): number | undefined {
+  const value = xmlTagText(xml, tag);
+  return value ? numberField(value) : undefined;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function xmlTagText(xml: string, tag: string): string | undefined {
+  const match = xml.match(new RegExp(`<${escapeRegExp(tag)}>([\\s\\S]*?)<\\/${escapeRegExp(tag)}>`, "i"));
+  return match?.[1]?.trim();
+}
+
+function decodeXml(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function parseSubagentXml(content: string): SubagentNotification[] {
+  const blocks = [...content.matchAll(/<task-notification\b[^>]*>([\s\S]*?)<\/task-notification>/gi)].map((m) => m[1]);
+  return blocks.map((xml) => {
+    const metrics = xmlTagText(xml, "metrics") ?? "";
+    const nums = metrics.match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+    const id = xmlTagText(xml, "id") ?? xmlTagText(xml, "agent-id") ?? xmlTagText(xml, "agent_id");
+    const toolCallId = xmlTagText(xml, "tool-use-id") ?? xmlTagText(xml, "toolCallId") ?? xmlTagText(xml, "tool_call_id");
+    const status = decodeXml(xmlTagText(xml, "status") ?? "completed");
+    const agentType = decodeXml(xmlTagText(xml, "type") ?? xmlTagText(xml, "agent-type") ?? "");
+    const description = decodeXml(xmlTagText(xml, "summary") ?? xmlTagText(xml, "description") ?? "Subagent");
+    const resultPreview = decodeXml(xmlTagText(xml, "result") ?? "No output.");
+    return {
+      id,
+      agentType: agentType || undefined,
+      toolCallId,
+      status,
+      description,
+      resultPreview,
+      totalTokens: childTagNumber(metrics, "tokens") ?? childTagNumber(metrics, "totalTokens") ?? nums[0],
+      toolUses: childTagNumber(metrics, "tool-use-count") ?? childTagNumber(metrics, "toolUses") ?? nums[1],
+      contextPercent: childTagNumber(metrics, "context-percent") ?? childTagNumber(metrics, "contextPercent") ?? nums[2],
+      compactionCount: childTagNumber(metrics, "compaction-count") ?? childTagNumber(metrics, "compactionCount") ?? nums[3],
+      durationMs: childTagNumber(metrics, "duration-ms") ?? childTagNumber(metrics, "durationMs") ?? (nums.length >= 5 ? nums[4] : undefined),
+      outputFile: decodeXml(xmlTagText(xml, "transcript") ?? xmlTagText(xml, "output-file") ?? ""),
+    };
+  });
+}
+
+function notificationFromDetails(details: unknown, content: string): SubagentNotification[] {
+  if (!isRecord(details)) return parseSubagentXml(content);
+  const extraRecords = ["others", "notifications", "agents", "records"]
+    .flatMap((key) => Array.isArray(details[key]) ? details[key] : [])
+    .filter(isRecord);
+  const records = [details, ...extraRecords];
+  const parsed = records.map((d) => ({
+    id: firstString(d, ["id", "agentId", "agent_id"]),
+    agentType: firstString(d, ["type", "agentType", "subagentType", "subagent_type"]),
+    toolCallId: firstString(d, ["toolCallId", "toolCallID", "tool_call_id"]),
+    description: firstString(d, ["description", "summary", "name"]) ?? "Subagent",
+    status: firstString(d, ["status", "state"]) ?? "completed",
+    resultPreview: firstString(d, ["resultPreview", "result", "output"]) ?? "No output.",
+    toolUses: firstNumber(d, ["toolUses", "toolUseCount", "tool_use_count"]),
+    turnCount: firstNumber(d, ["turnCount", "turns"]),
+    maxTurns: firstNumber(d, ["maxTurns", "max_turns"]),
+    totalTokens: firstNumber(d, ["totalTokens", "tokenCount"]) ?? nestedNumber(d, "tokens", "total"),
+    contextPercent: firstNumber(d, ["contextPercent", "context_percent"]),
+    compactionCount: firstNumber(d, ["compactionCount", "compaction_count"]),
+    durationMs: firstNumber(d, ["durationMs", "duration"]),
+    outputFile: firstString(d, ["outputFile", "transcript", "transcriptPath"]),
+    error: firstString(d, ["error", "errorMessage"]),
+  }));
+  return parsed.length > 0 ? parsed : parseSubagentXml(content);
+}
+
+function formatCompactNumber(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return value.toLocaleString();
+}
+
+function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}m ${rest}s`;
+}
+
+function getSubagentStatusStyle(status: string): { label: string; kind: "done" | "active" | "error"; color: string; bg: string; border: string } {
+  const s = status.toLowerCase();
+  if (s === "error" || s === "stopped" || s === "aborted") {
+    return { label: s, kind: "error", color: "#f87171", bg: "rgba(248,113,113,0.06)", border: "rgba(248,113,113,0.35)" };
+  }
+  if (s === "running" || s === "queued") {
+    return { label: s, kind: "active", color: "var(--accent)", bg: "rgba(96,165,250,0.06)", border: "rgba(96,165,250,0.32)" };
+  }
+  return { label: s === "steered" ? "completed (steered)" : "completed", kind: "done", color: "#16a34a", bg: "rgba(34,197,94,0.05)", border: "rgba(34,197,94,0.28)" };
+}
+
+function formatAgentName(id?: string): string {
+  if (!id) return "agent";
+  return id
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function CustomMessageView({ message, showTimestamp }: { message: CustomMessage; showTimestamp?: boolean }) {
+  if (message.display === false) return null;
+
+  const content = messageContentToText(message.content);
+  const time = showTimestamp ? formatTime(message.timestamp) : null;
+  const isSubagent = message.customType === "subagent-notification" || content.includes("<task-notification>");
+
+  if (isSubagent) {
+    const notifications = notificationFromDetails(message.details, content);
+    if (notifications.length > 0) {
+      return (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {notifications.map((notification, i) => (
+              <SubagentNotificationCard key={notification.id ?? i} notification={notification} />
+            ))}
+          </div>
+          {time && <div style={{ marginTop: 4, fontSize: 10, color: "var(--text-dim)" }}>{time}</div>}
+        </div>
+      );
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div className="markdown-body">
+        <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, markdownMathOptions]]} rehypePlugins={[rehypeKatex]}>
+          {normalizeMarkdownMath(content)}
+        </ReactMarkdown>
+      </div>
+      {time && <div style={{ marginTop: 4, fontSize: 10, color: "var(--text-dim)" }}>{time}</div>}
+    </div>
+  );
+}
+
+function SubagentNotificationCard({ notification }: { notification: SubagentNotification }) {
+  const [expanded, setExpanded] = useState(false);
+  const status = getSubagentStatusStyle(notification.status);
+  const agentName = formatAgentName(notification.id);
+  const agentLabel = notification.agentType ? `${notification.agentType} / ${agentName}` : agentName;
+  const preview = notification.error || notification.resultPreview || "No output.";
+  const parts: string[] = [];
+  if (notification.turnCount && notification.turnCount > 0) {
+    parts.push(notification.maxTurns ? `${notification.turnCount}/${notification.maxTurns} turns` : `${notification.turnCount} turns`);
+  }
+  if (notification.toolUses && notification.toolUses > 0) parts.push(`${notification.toolUses} tool uses`);
+  if (notification.totalTokens && notification.totalTokens > 0) parts.push(`${formatCompactNumber(notification.totalTokens)} tokens`);
+  if (notification.contextPercent && notification.contextPercent > 0) parts.push(`${Math.round(notification.contextPercent)}% ctx`);
+  if (notification.compactionCount && notification.compactionCount > 0) parts.push(`${notification.compactionCount} compact`);
+  if (notification.durationMs && notification.durationMs > 0) parts.push(formatDurationMs(notification.durationMs));
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${status.border}`,
+        borderLeft: `3px solid ${status.color}`,
+        background: `linear-gradient(135deg, ${status.bg}, var(--bg-panel))`,
+        borderRadius: 7,
+        overflow: "hidden",
+        fontSize: 13,
+        boxShadow: "0 4px 14px rgba(0,0,0,0.06)",
+      }}
+    >
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        title={expanded ? "Hide subagent result" : "Show subagent result"}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "7px 10px",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          color: "var(--text)",
+          textAlign: "left",
+          minWidth: 0,
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            width: 34,
+            height: 28,
+            borderRadius: 6,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: status.color,
+            background: "var(--bg)",
+            border: `1px solid ${status.border}`,
+            fontSize: 9,
+            fontWeight: 800,
+            letterSpacing: 0.2,
+            flexShrink: 0,
+          }}
+        >
+          SUB
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, marginBottom: 3 }}>
+            <span style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              height: 18,
+              padding: "0 7px",
+              borderRadius: 4,
+              border: `1px solid ${status.border}`,
+              background: "var(--bg)",
+              color: status.color,
+              fontSize: 10,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              flexShrink: 0,
+            }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="6" cy="17" r="2" />
+                <circle cx="18" cy="17" r="2" />
+                <path d="M12 7v4" />
+                <path d="M6 15l6-4 6 4" />
+              </svg>
+              Subagent run
+            </span>
+            <span style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {agentLabel}
+            </span>
+          </span>
+          <span style={{ display: "block", fontWeight: 650, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.25 }}>
+            {notification.description}
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, color: "var(--text-dim)", fontSize: 11, flexWrap: "wrap" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: status.color, fontWeight: 600 }}>
+              <span style={{ width: 6, height: 6, borderRadius: 999, background: status.color, display: "inline-block" }} />
+              {status.label}
+            </span>
+            {parts.map((part) => (
+              <span key={part} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ color: "var(--text-dim)" }}>/</span>
+                {part}
+              </span>
+            ))}
+          </span>
+        </span>
+        <span
+          aria-hidden="true"
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: 6,
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--text-dim)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+            <polyline points="2 3.5 5 6.5 8 3.5" />
+          </svg>
+        </span>
+      </button>
+
+      {expanded && (
+        <div
+          style={{
+            padding: "0 10px 10px 42px",
+            color: notification.error ? "#f87171" : "var(--text-muted)",
+            fontSize: 12,
+            lineHeight: 1.5,
+          }}
+        >
+          <div
+            style={{
+              border: "1px solid var(--border)",
+              background: "var(--bg)",
+              borderRadius: 6,
+              padding: "8px 9px",
+            }}
+          >
+            <div style={{ color: "var(--text-dim)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>
+              {notification.error ? "Error" : "Result"}
+            </div>
+            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 360, overflow: "hidden" }}>
+              {preview}
+            </div>
+          </div>
+          {notification.outputFile && (
+            <div style={{ marginTop: 8, color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={notification.outputFile}>
+              transcript: {notification.outputFile}
+            </div>
+          )}
+          {notification.toolCallId && (
+            <div style={{ marginTop: 4, color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={notification.toolCallId}>
+              tool call: {notification.toolCallId}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import { AppShell } from "@/components/AppShell";
+import { ClientOnlyAppShell } from "@/components/ClientOnlyAppShell";
 
 export default function Home() {
-  return (
-    <Suspense>
-      <AppShell />
-    </Suspense>
-  );
+  return <ClientOnlyAppShell />;
 }

@@ -35,10 +35,14 @@ const TYPEWRITER_PHRASES = [
 ];
 
 function Typewriter() {
-  const [phraseIdx, setPhraseIdx] = useState(() => Math.floor(Math.random() * TYPEWRITER_PHRASES.length));
+  const [phraseIdx, setPhraseIdx] = useState(0);
   const [text, setText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [caretOn, setCaretOn] = useState(true);
+
+  useEffect(() => {
+    setPhraseIdx(Math.floor(Math.random() * TYPEWRITER_PHRASES.length));
+  }, []);
 
   useEffect(() => {
     const blink = setInterval(() => setCaretOn((v) => !v), 530);

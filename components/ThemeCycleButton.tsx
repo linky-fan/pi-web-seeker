@@ -51,19 +51,19 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: isFooter ? 6 : 2,
+        gap: isFooter ? 3 : 2,
         flex: isFooter ? 1 : undefined,
         width: isTopbar ? 36 : undefined,
         height: isTopbar ? 36 : 32,
-        padding: 0,
+        padding: isFooter ? "0 3px" : 0,
         background: isTopbar ? "none" : "transparent",
         border: "none",
         borderRight: isTopbar ? "1px solid var(--border)" : undefined,
-        borderRadius: isTopbar ? 0 : 9,
+        borderRadius: isTopbar ? 0 : 8,
         color: "var(--text-muted)",
         cursor: "pointer",
         flexShrink: 0,
-        fontSize: 12,
+        fontSize: isFooter ? 10.5 : 12,
         transition: "color 0.12s, background 0.12s",
       }}
       onMouseEnter={(e) => {
@@ -98,7 +98,7 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
           }}
         />
       )}
-      {isFooter && <span>Theme</span>}
+      {isFooter && <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Theme</span>}
     </button>
     {open && (
       <div

@@ -63,6 +63,30 @@ function buildRuntimeSystemPrompt(cwd: string): string {
   ].join("\n");
 }
 
+const BUILTIN_CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+const BUILTIN_CODING_TOOL_SET = new Set(BUILTIN_CODING_TOOL_NAMES);
+
+function uniqueToolNames(names: string[]): string[] {
+  return Array.from(new Set(names));
+}
+
+function getLoadedExtensionToolNames(resourceLoader: DefaultResourceLoader): string[] {
+  const extensions = resourceLoader.getExtensions();
+  const names = new Set<string>();
+
+  for (const extension of extensions.extensions) {
+    for (const name of extension.tools.keys()) {
+      if (!BUILTIN_CODING_TOOL_SET.has(name)) names.add(name);
+    }
+  }
+
+  return Array.from(names).sort();
+}
+
+function includeExtensionTools(requestedToolNames: string[], extensionToolNames: string[]): string[] {
+  return requestedToolNames.length === 0 ? [] : uniqueToolNames([...requestedToolNames, ...extensionToolNames]);
+}
+
 // ============================================================================
 // AgentSessionWrapper
 // Wraps AgentSession with the same interface the rest of the app expects
@@ -258,7 +282,12 @@ export class AgentSessionWrapper {
       }
 
       case "set_tools": {
-        this.inner.setActiveToolsByName(command.toolNames as string[]);
+        const requestedToolNames = command.toolNames as string[];
+        const extensionToolNames = this.inner
+          .getAllTools()
+          .map((tool) => tool.name)
+          .filter((name) => !BUILTIN_CODING_TOOL_SET.has(name));
+        this.inner.setActiveToolsByName(includeExtensionTools(requestedToolNames, extensionToolNames));
         return null;
       }
 
@@ -343,21 +372,24 @@ export async function startRpcSession(
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
 
-    // Determine which tools to pass based on requested toolNames.
-    // Since v0.68.0, createAgentSession expects string[] tool names instead of Tool[] instances.
-    // Pass all built-in coding tool names by default; for "all off", pass empty array.
-    const allCodingToolNames = ["read", "bash", "edit", "write", "grep", "find", "ls"];
-    let toolsOption: string[] | undefined;
-    if (toolNames !== undefined) {
-      toolsOption = toolNames.length === 0 ? [] : allCodingToolNames;
-    }
-
     const resourceLoader = new DefaultResourceLoader({
       cwd,
       agentDir,
       appendSystemPromptOverride: (base) => [...base, buildRuntimeSystemPrompt(cwd)],
     });
     await resourceLoader.reload();
+
+    // Determine which tools to pass based on requested toolNames.
+    // Since v0.68.0, createAgentSession expects string[] tool names instead of Tool[] instances.
+    // For non-off presets, keep extension tools loaded so enabled packages such as pi-subagents
+    // are not hidden by the UI's built-in coding-tool presets.
+    const extensionToolNames = getLoadedExtensionToolNames(resourceLoader);
+    let toolsOption: string[] | undefined;
+    if (toolNames !== undefined) {
+      toolsOption = toolNames.length === 0
+        ? []
+        : uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES, ...extensionToolNames]);
+    }
 
     const { session: inner } = await createAgentSession({
       cwd,
@@ -369,7 +401,7 @@ export async function startRpcSession(
 
     // If specific tool names were requested (non-empty), narrow active tools now
     if (toolNames && toolNames.length > 0) {
-      inner.setActiveToolsByName(toolNames);
+      inner.setActiveToolsByName(includeExtensionTools(toolNames, extensionToolNames));
     }
 
     // When all tools are disabled, clear the system prompt entirely.
