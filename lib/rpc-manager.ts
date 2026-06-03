@@ -386,9 +386,10 @@ export async function startRpcSession(
     const extensionToolNames = getLoadedExtensionToolNames(resourceLoader);
     let toolsOption: string[] | undefined;
     if (toolNames !== undefined) {
-      toolsOption = toolNames.length === 0
-        ? []
-        : uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES, ...extensionToolNames]);
+      // Register tools even for the "Off" preset, then clear the active set below.
+      // Passing tools: [] makes pi create a session with no tool registry, so later
+      // switching back to Low/High cannot restore tools without recreating the session.
+      toolsOption = uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES, ...extensionToolNames]);
     }
 
     const { session: inner } = await createAgentSession({
@@ -399,8 +400,9 @@ export async function startRpcSession(
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
 
-    // If specific tool names were requested (non-empty), narrow active tools now
-    if (toolNames && toolNames.length > 0) {
+    // If a preset was requested, apply it now. Empty array means active tools off,
+    // but available tools stay registered so the preset can be changed later.
+    if (toolNames !== undefined) {
       inner.setActiveToolsByName(includeExtensionTools(toolNames, extensionToolNames));
     }
 
