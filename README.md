@@ -208,7 +208,8 @@ run_in_background: true
 ## 注意事项
 
 - **数据目录** — 默认读取 `~/.pi/agent/sessions` 下的会话文件。可通过环境变量 `PI_CODING_AGENT_DIR` 指定其他目录。
-- **模型配置** — 从智能体数据目录下的 `models.json` 读取可用模型，可在侧边栏的「Models」面板中编辑。模型详情页的「Test」按钮会发送一次真实的轻量请求，用于验证 API key、base URL、模型 ID 和接口兼容性，可能产生少量 token 消耗。
+- **模型配置** — 从智能体数据目录下的 `models.json` 读取可用模型，可在侧边栏的「Models」面板中编辑。`models.json` 适合保存 provider、base URL、API 类型、模型 ID、上下文窗口等非密钥配置。
+- **API key** — 不要写进仓库。推荐在「Models」面板中选择对应 provider 后保存 API key，例如 MiniMax 中国区应配置 `MiniMax (China)` / `minimax-cn`。这些密钥会保存到智能体数据目录下的 `auth.json`；Docker Compose 默认持久化到宿主机 `.pi-web-data/agent/auth.json`。也可以用环境变量提供，例如 `MINIMAX_CN_API_KEY=...`、`DEEPSEEK_API_KEY=...`。模型详情页的「Test」按钮会发送一次真实的轻量请求，用于验证 API key、base URL、模型 ID 和接口兼容性，可能产生少量 token 消耗。
 - **文件浏览** — 侧边栏内置文件浏览器，可在标签页中查看当前工作目录下的文件。
 - **Docker 路径** — 容器内默认项目目录是 `/workspace`。宿主机路径和容器路径不同，已有旧会话仍会显示原来的宿主机路径；新会话建议在 `/workspace` 下创建。
 
