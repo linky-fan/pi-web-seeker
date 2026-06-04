@@ -45,19 +45,28 @@ function getPackageManagerSignals(cwd: string): string {
   return signals.length > 0 ? signals.join(", ") : "none detected";
 }
 
+function getPathStyleGuidance(): string {
+  if (process.platform !== "win32") return "POSIX (/)";
+
+  return [
+    "Windows: many APIs and modern tools accept both / and \\",
+    "prefer \\ for cmd.exe and PowerShell-native commands",
+    "prefer / for POSIX-like shells such as Git Bash, MSYS, or WSL",
+  ].join("; ");
+}
+
 function buildRuntimeSystemPrompt(cwd: string): string {
-  const pathStyle = process.platform === "win32" ? "Windows" : "POSIX";
   return [
     "Runtime context:",
     `- OS: ${getRuntimeOsLabel()} (${process.platform})`,
     `- Shell: ${getShellLabel()}`,
     `- Working directory: ${cwd.replace(/\\/g, "/")}`,
-    `- Path style: ${pathStyle}`,
+    `- Path style: ${getPathStyleGuidance()}`,
     `- Package manager signals: ${getPackageManagerSignals(cwd)}`,
     "",
     "Execution guidance:",
     "- Prefer commands compatible with the current OS and shell.",
-    "- When path or shell syntax may differ across platforms, inspect before assuming.",
+    "- When path separators or shell syntax may differ across platforms, prefer the active shell's convention and inspect before assuming.",
     "- Prefer existing package scripts before inventing direct framework commands.",
     "- Do not print secrets from environment variables, auth files, or local config.",
   ].join("\n");

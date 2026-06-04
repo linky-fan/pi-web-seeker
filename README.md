@@ -197,10 +197,10 @@ run_in_background: true
 - 操作系统名称与 `process.platform`
 - 当前 shell（例如 zsh、bash、PowerShell 或 cmd）
 - 当前工作目录
-- 路径风格（POSIX 或 Windows）
+- 路径分隔符与当前 shell 约定。Windows 上很多 API 和现代工具同时接受 `/` 与 `\`，但 cmd/PowerShell 原生命令优先 `\`，Git Bash/MSYS/WSL 等 POSIX-like shell 优先 `/`
 - 包管理器线索（`package-lock.json`、`bun.lock`、`pnpm-lock.yaml`、`yarn.lock`）
 
-这段提示还会提醒智能体优先使用当前 OS/shell 兼容的命令、遇到跨平台路径或 shell 语法差异时先检查环境、优先使用项目已有 package scripts，并避免打印环境变量、鉴权文件或本地配置里的敏感信息。
+这段提示还会提醒智能体优先使用当前 OS/shell 兼容的命令、遇到跨平台路径分隔符或 shell 语法差异时按当前 shell 约定处理并先检查环境、优先使用项目已有 package scripts，并避免打印环境变量、鉴权文件或本地配置里的敏感信息。
 
 如果用户在新会话中选择关闭全部工具，pi-web 仍会保持空 system prompt，不会强行注入运行时上下文。
 
