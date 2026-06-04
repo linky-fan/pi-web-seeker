@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { LocaleProvider } from "@/lib/i18n";
 
 const AppShell = dynamic(() => import("./AppShell").then((mod) => mod.AppShell), {
   ssr: false,
@@ -8,5 +9,9 @@ const AppShell = dynamic(() => import("./AppShell").then((mod) => mod.AppShell),
 });
 
 export function ClientOnlyAppShell() {
-  return <AppShell />;
+  return (
+    <LocaleProvider>
+      <AppShell />
+    </LocaleProvider>
+  );
 }

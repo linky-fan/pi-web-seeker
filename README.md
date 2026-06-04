@@ -122,15 +122,16 @@ docker run --rm -it \
 - **分支导航器** — 可视化切换同一会话内的各个分支
 - **模型切换** — 对话中途随时切换模型
 - **模型配置测试** — 在「Models」面板中测试单个模型连通性，查看延迟、HTTP 状态和简短响应
+- **界面语言切换** — 顶部工具栏可在 English / 简体中文之间切换，英文作为兜底语言
 - **工具面板** — 控制智能体可使用的工具
 - **压缩会话** — 对长会话进行摘要，节省上下文窗口
-- **Subagent 通知渲染** — 自动识别 `subagent-notification` / `<task-notification>`，用紧凑卡片展示子代理状态、结果、tokens、工具调用次数和 transcript
+- **Subagent 通知渲染** — 自动识别 `subagent-notification` / `<task-notification>`，用紧凑卡片展示子智能体状态、结果、tokens、工具调用次数和 transcript
 - **运行时系统提示词上下文** — 新建会话时自动注入当前设备的 OS、shell、路径风格和包管理器线索，帮助智能体选择更合适的命令
 - **引导 / 追加** — 打断正在运行的智能体，或在其完成后追加消息
 
 ## Subagents
 
-Pi Web Seeker 不负责启动或管理子代理本身；它负责把会话文件中的 subagent 通知渲染成更清晰的网页卡片。要实际使用子代理，请先在 pi 中安装扩展：
+Pi Web Seeker 不负责启动或管理子智能体本身；它负责把会话文件中的 subagent 通知渲染成更清晰的网页卡片。要实际使用子智能体，请先在 pi 中安装扩展：
 
 ```bash
 pi install npm:@tintinweb/pi-subagents
@@ -166,14 +167,14 @@ docker compose restart pi-web-seeker
 
 Compose 默认把 `./.pi-web-data` 挂载到容器的 `/home/piweb/.pi`，所以扩展配置会保存在宿主机的 `./.pi-web-data/agent/settings.json`，重建容器不会丢失。
 
-安装完成后，刷新页面或重启本地 dev server，然后在左下角打开 `Agents` 面板确认状态是否变为 `Loaded`。扩展是在新的 AgentSession 启动时加载的；如果安装前已经打开了会话，建议新建会话再测试。
+安装完成后，刷新页面或重启本地 dev server，然后在左下角打开「智能体」面板确认状态是否变为 `Loaded`。扩展是在新的 AgentSession 启动时加载的；如果安装前已经打开了会话，建议新建会话再测试。
 
 Subagent 依赖 `Agent` / `get_subagent_result` / `steer_subagent` 这些扩展工具。Pi Web Seeker 的工具预设中，`Low` 和 `High` 会保留已启用的扩展工具；只有 `Off` 会关闭全部工具。如果测试时模型说没有 `Agent` 工具，请确认工具预设不是 `Off`，并新建一个会话。
 
 测试提示词示例：
 
 ```text
-请使用 Agent 工具启动一个 Explore 子代理，后台运行：
+请使用 Agent 工具启动一个 Explore 子智能体，后台运行：
 任务是检查当前项目的目录结构，并总结主要模块。
 description: Explore repo
 run_in_background: true

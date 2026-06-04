@@ -9,6 +9,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
+import { useLocale } from "@/lib/i18n";
 import { markdownMathOptions, normalizeMarkdownMath } from "@/lib/markdown";
 import { isSubagentCustomType, messageContentToText, parseSubagentNotifications, type SubagentNotification } from "@/lib/subagents";
 import type {
@@ -807,6 +808,7 @@ function TextBlock({ block }: { block: TextContent }) {
 }
 
 function ThinkingBlock({ block, duration }: { block: ThinkingContent; duration?: number }) {
+  const { t } = useLocale();
   const [expanded, setExpanded] = useState(false);
   return (
     <div
@@ -833,7 +835,7 @@ function ThinkingBlock({ block, duration }: { block: ThinkingContent; duration?:
           textAlign: "left",
         }}
       >
-        <span>Thinking</span>
+        <span>{t("message.thinking")}</span>
         {duration !== undefined && (
           <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
         )}

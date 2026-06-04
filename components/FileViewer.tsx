@@ -9,6 +9,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { useTheme } from "@/hooks/useTheme";
+import { useLocale } from "@/lib/i18n";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { markdownMathOptions, normalizeMarkdownMath } from "@/lib/markdown";
 
@@ -562,6 +563,7 @@ export function FileViewer({ filePath, cwd }: Props) {
 
 function TextFileViewer({ filePath, cwd }: Props) {
   const { isDark } = useTheme();
+  const { t } = useLocale();
   const [data, setData] = useState<FileData | null>(null);
   const [prevContent, setPrevContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -844,13 +846,13 @@ function TextFileViewer({ filePath, cwd }: Props) {
               fontSize: 12,
             }}
           >
-            {isLargeTextFile && <span>Large file: syntax highlighting disabled for faster preview.</span>}
-            {hasDiff && isLargeDiff && <span>Diff is disabled for large file updates.</span>}
+            {isLargeTextFile && <span>{t("viewer.largeFile")}</span>}
+            {hasDiff && isLargeDiff && <span>{t("viewer.largeDiff")}</span>}
             {shouldTruncateRaw && viewMode === "source" && !previewMode && (
-              <span>Showing first {TEXT_TRUNCATE_LINES.toLocaleString()} of {lines.length.toLocaleString()} lines.</span>
+              <span>{t("viewer.truncated", { shown: TEXT_TRUNCATE_LINES.toLocaleString(), total: lines.length.toLocaleString() })}</span>
             )}
             {isMarkdown && previewMode && isMarkdownPreviewTooLarge && (
-              <span>Markdown preview is disabled for files over {formatSize(MARKDOWN_PREVIEW_MAX_BYTES)}. Switch to Raw to inspect it.</span>
+              <span>{t("viewer.markdownTooLarge", { size: formatSize(MARKDOWN_PREVIEW_MAX_BYTES) })}</span>
             )}
           </div>
         )}

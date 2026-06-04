@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { APP_NAME } from "@/lib/branding";
+import { useLocale } from "@/lib/i18n";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
 
@@ -235,6 +236,7 @@ function AppTitle() {
 }
 
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention }: Props) {
+  const { t } = useLocale();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -580,7 +582,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
                   </svg>
-                  <span>Use default directory</span>
+                  <span>{t("sidebar.useDefaultDirectory")}</span>
                 </button>
               )}
 
@@ -610,7 +612,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     <line x1="5" y1="1" x2="5" y2="9" />
                     <line x1="1" y1="5" x2="9" y2="5" />
                   </svg>
-                  <span>Custom path…</span>
+                  <span>{t("sidebar.customPath")}</span>
                 </button>
               ) : !singleWorkspace ? (
                 <div style={{ padding: "6px 8px", borderTop: recentCwds.length > 0 ? "none" : undefined }}>
@@ -654,7 +656,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         cursor: "pointer",
                       }}
                     >
-                      Open
+                      {t("sidebar.open")}
                     </button>
                     <button
                       onClick={() => { setCustomPathOpen(false); setCustomPathValue(""); }}
@@ -669,7 +671,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         cursor: "pointer",
                       }}
                     >
-                      Cancel
+                      {t("common.cancel")}
                     </button>
                   </div>
                 </div>
@@ -887,6 +889,7 @@ function SessionItem({
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }) {
+  const { t } = useLocale();
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -972,7 +975,7 @@ function SessionItem({
         /* ── Delete confirmation: same height, two flat buttons ── */
         <>
           <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            Delete <span style={{ fontWeight: 600 }}>&ldquo;{title.slice(0, 22)}{title.length > 22 ? "…" : ""}&rdquo;</span>?
+            {t("sidebar.deleteConfirm", { title: title.slice(0, 22) + (title.length > 22 ? "..." : "") })}
           </div>
           <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
             <button
@@ -992,7 +995,7 @@ function SessionItem({
                 <path d="M10 11v6M14 11v6" />
                 <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
               </svg>
-              Delete
+              {t("common.delete")}
             </button>
             <button
               onClick={handleDeleteCancel}
@@ -1005,7 +1008,7 @@ function SessionItem({
                 whiteSpace: "nowrap",
               }}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </>

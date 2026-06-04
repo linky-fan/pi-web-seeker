@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useLocale } from "@/lib/i18n";
 
 export interface ToolEntry {
   name: string;
@@ -29,13 +30,14 @@ interface Props {
   onClose: () => void;
 }
 
-const PRESETS: { id: ToolPreset; label: string; desc: string; tools: string[] }[] = [
-  { id: "none",    label: "Off",  desc: "No tools",                                tools: PRESET_NONE },
-  { id: "default", label: "Low",  desc: "read · bash · edit · write · enabled extensions",              tools: PRESET_DEFAULT },
-  { id: "full",    label: "High", desc: "read · bash · edit · write · grep · find · ls · enabled extensions", tools: PRESET_FULL },
+const PRESETS: { id: ToolPreset; tools: string[] }[] = [
+  { id: "none", tools: PRESET_NONE },
+  { id: "default", tools: PRESET_DEFAULT },
+  { id: "full", tools: PRESET_FULL },
 ];
 
 export function ToolPanel({ tools, onPreset, onClose }: Props) {
+  const { t } = useLocale();
   const panelRef = useRef<HTMLDivElement>(null);
   const current = getPresetFromTools(tools);
 
@@ -98,7 +100,7 @@ export function ToolPanel({ tools, onPreset, onClose }: Props) {
                 transition: "all 0.12s",
               }}
             >
-              {preset.label}
+              {t(`toolPanel.${preset.id}.label`)}
             </button>
           );
         })}
@@ -106,8 +108,8 @@ export function ToolPanel({ tools, onPreset, onClose }: Props) {
 
       {/* Description of current selection */}
       <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
-        {currentIndex >= 0 ? PRESETS[currentIndex].desc || "No tools enabled" : ""}
-        {current === "none" && <span> — agent will not use any tools</span>}
+        {currentIndex >= 0 ? t(`toolPanel.${PRESETS[currentIndex].id}.desc`) || t("tools.noTools") : ""}
+        {current === "none" && <span>{t("tools.noneWarning")}</span>}
       </div>
 
       {/* Track bar */}
