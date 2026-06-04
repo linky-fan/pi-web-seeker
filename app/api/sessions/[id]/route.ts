@@ -12,6 +12,7 @@ import {
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { areSameFilePath, isWindowsStylePath } from "@/lib/path-identity";
+import { compressSessionTree } from "@/lib/session-tree";
 
 function getPathModule(filePath: string): typeof path.win32 | typeof path.posix {
   return isWindowsStylePath(filePath) ? path.win32 : path.posix;
@@ -29,7 +30,8 @@ export async function GET(
     }
 
     const snapshot = getCachedSessionFile(filePath);
-    const { tree, leafId, header } = snapshot;
+    const { leafId, header } = snapshot;
+    const tree = compressSessionTree(snapshot.tree);
     const context = getCachedSessionContext(snapshot, leafId);
 
     const modified = new Date(snapshot.mtimeMs).toISOString();
