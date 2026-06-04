@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
+import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent, useId } from "react";
 import { useLocale } from "@/lib/i18n";
 
 export interface AttachedImage {
@@ -150,6 +150,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   draftStorageKey,
 }: Props, ref) {
   const { t } = useLocale();
+  const imageInputId = useId();
   const [value, setValue] = useState("");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -503,11 +504,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     >
       {/* Hidden file input */}
       <input
+        id={imageInputId}
         ref={fileInputRef}
         type="file"
         accept="image/*"
         multiple
-        style={{ display: "none" }}
+        disabled={isStreaming}
+        tabIndex={-1}
+        style={{
+          position: "fixed",
+          left: -10000,
+          top: 0,
+          width: 1,
+          height: 1,
+          opacity: 0,
+          pointerEvents: "none",
+        }}
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
           processImageFiles(files);
@@ -691,9 +703,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           {/* LEFT: attach + model selector (idle) or steer/followup toggle (streaming) */}
           <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 2 }}>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isStreaming}
+            <label
+              htmlFor={isStreaming ? undefined : imageInputId}
+              role="button"
+              aria-disabled={isStreaming}
+              tabIndex={isStreaming ? -1 : 0}
+              onClick={(e) => {
+                if (isStreaming) e.preventDefault();
+              }}
+              onKeyDown={(e) => {
+                if (isStreaming) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
               title={t("chat.attachImage")}
               style={{
                 flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
@@ -720,7 +744,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <circle cx="8.5" cy="8.5" r="1.5" />
                 <polyline points="21 15 16 10 5 21" />
               </svg>
-            </button>
+            </label>
             {!isStreaming && (
               <div ref={snippetDropdownRef} style={{ position: "relative" }}>
                 <button
