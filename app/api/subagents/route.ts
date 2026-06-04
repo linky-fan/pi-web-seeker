@@ -7,12 +7,13 @@ export const dynamic = "force-dynamic";
 
 const PACKAGE_NAME = "@tintinweb/pi-subagents";
 const INSTALL_COMMAND = "npx --no-install pi install npm:@tintinweb/pi-subagents";
+const DOCKER_COMPOSE_SERVICE = "pi-web-seeker";
 
 function installCommands() {
   return [
     { label: "Local checkout", command: INSTALL_COMMAND },
     { label: "Direct bin", command: "node_modules/.bin/pi install npm:@tintinweb/pi-subagents" },
-    { label: "Docker Compose", command: "docker compose exec pi-web node_modules/.bin/pi install npm:@tintinweb/pi-subagents" },
+    { label: "Docker Compose", command: `docker compose exec ${DOCKER_COMPOSE_SERVICE} node_modules/.bin/pi install npm:@tintinweb/pi-subagents` },
   ];
 }
 
