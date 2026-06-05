@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode, TextContent } from "@/lib/types";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
@@ -24,6 +24,10 @@ interface Props {
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
 }
 
+const LAZY_RECENT_MESSAGE_COUNT = 24;
+const LAZY_MESSAGE_THRESHOLD = 60;
+const LAZY_ROOT_MARGIN_PX = 1600;
+
 function phaseLabel(phase: AgentPhase): string {
   if (phase?.kind === "running_tools") {
     const names = phase.tools.map((t) => t.name);
@@ -45,6 +49,123 @@ function userMessageText(message: AgentMessage): string | null {
     .join("\n")
     .trim();
   return text || null;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function estimateTextHeight(text: string, base = 52): number {
+  const explicitLines = text.split("\n").length;
+  const wrappedLines = Math.ceil(text.length / 90);
+  return base + Math.max(explicitLines, wrappedLines) * 20;
+}
+
+function estimateMessageHeight(message: AgentMessage): number {
+  if (message.role === "user") {
+    const content = message.content;
+    if (typeof content === "string") return clampNumber(estimateTextHeight(content, 44), 54, 360);
+    const text = content
+      .filter((block): block is TextContent => block.type === "text")
+      .map((block) => block.text)
+      .join("\n");
+    const imageCount = content.filter((block) => block.type === "image").length;
+    return clampNumber(estimateTextHeight(text, 44) + imageCount * 132, 76, 520);
+  }
+
+  if (message.role === "assistant") {
+    const blocks = message.content ?? [];
+    let textLength = 0;
+    let textLines = 0;
+    let extraBlocks = 0;
+    for (const block of blocks) {
+      if (block.type === "text") {
+        const text = block.text ?? "";
+        textLength += text.length;
+        textLines += text.split("\n").length;
+      } else {
+        extraBlocks += 1;
+      }
+    }
+    const lines = Math.max(textLines, Math.ceil(textLength / 90));
+    return clampNumber(54 + lines * 22 + extraBlocks * 76, 70, 640);
+  }
+
+  if (message.role === "custom") {
+    const content = typeof message.content === "string" ? message.content : "";
+    return clampNumber(estimateTextHeight(content, 54), 70, 420);
+  }
+
+  return 1;
+}
+
+function LazyMessageSlot({
+  children,
+  eager,
+  estimatedHeight,
+  registerRef,
+  scrollRoot,
+}: {
+  children: ReactNode;
+  eager: boolean;
+  estimatedHeight: number;
+  registerRef?: (el: HTMLDivElement | null) => void;
+  scrollRoot: RefObject<HTMLDivElement | null>;
+}) {
+  const [shouldRender, setShouldRender] = useState(eager);
+  const slotRef = useRef<HTMLDivElement | null>(null);
+
+  const setSlotRef = useCallback((el: HTMLDivElement | null) => {
+    slotRef.current = el;
+    registerRef?.(el);
+  }, [registerRef]);
+
+  useEffect(() => {
+    if (eager) {
+      setShouldRender(true);
+      return;
+    }
+    if (shouldRender) return;
+
+    const el = slotRef.current;
+    const root = scrollRoot.current;
+    if (!el || !root || typeof IntersectionObserver === "undefined") {
+      setShouldRender(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
+        setShouldRender(true);
+        observer.disconnect();
+      }
+    }, {
+      root,
+      rootMargin: `${LAZY_ROOT_MARGIN_PX}px 0px`,
+      threshold: 0,
+    });
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [eager, scrollRoot, shouldRender]);
+
+  const style = shouldRender
+    ? ({
+        contentVisibility: "auto",
+        containIntrinsicSize: `${estimatedHeight}px`,
+      } as CSSProperties)
+    : ({
+        minHeight: estimatedHeight,
+        contentVisibility: "auto",
+        containIntrinsicSize: `${estimatedHeight}px`,
+        contain: "layout style paint",
+      } as CSSProperties);
+
+  return (
+    <div ref={setSlotRef} style={style}>
+      {shouldRender ? children : null}
+    </div>
+  );
 }
 
 export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange }: Props) {
@@ -284,6 +405,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
             {(() => {
               let refIdx = 0;
+              const shouldUseLazyMessages = messages.length >= LAZY_MESSAGE_THRESHOLD;
               return messages.map((msg, idx) => {
                 const prevAssistantEntryId =
                   msg.role === "user" && idx > 0 && messages[idx - 1].role === "assistant"
@@ -291,9 +413,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     : undefined;
                 const isVisible = msg.role === "user" || msg.role === "assistant";
                 const currentRefIdx = isVisible ? refIdx++ : -1;
+                const shouldRenderEagerly =
+                  !shouldUseLazyMessages ||
+                  idx >= messages.length - LAZY_RECENT_MESSAGE_COUNT ||
+                  idx === messageRenderData.lastUserIdx ||
+                  forkingEntryId === entryIds[idx];
                 const view = (
                   <MessageView
-                    key={idx}
                     message={msg}
                     toolResults={messageRenderData.toolResultsMap}
                     modelNames={modelNames}
@@ -307,14 +433,27 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as import("@/lib/types").AgentMessage & { timestamp?: number }).timestamp : undefined}
                   />
                 );
-                if (!isVisible) return view;
+                if (msg.role === "toolResult") return view;
+
+                const registerRef = isVisible
+                  ? (el: HTMLDivElement | null) => {
+                      messageRefs.current[currentRefIdx] = el;
+                      if (idx === messageRenderData.lastUserIdx) {
+                        (lastUserMsgRef as { current: HTMLDivElement | null }).current = el;
+                      }
+                    }
+                  : undefined;
+
                 return (
-                  <div key={idx} ref={(el) => {
-                    messageRefs.current[currentRefIdx] = el;
-                    if (idx === messageRenderData.lastUserIdx) { (lastUserMsgRef as { current: HTMLDivElement | null }).current = el; }
-                  }}>
+                  <LazyMessageSlot
+                    key={idx}
+                    eager={shouldRenderEagerly}
+                    estimatedHeight={estimateMessageHeight(msg)}
+                    registerRef={registerRef}
+                    scrollRoot={scrollContainerRef}
+                  >
                     {view}
-                  </div>
+                  </LazyMessageSlot>
                 );
               });
             })()}
