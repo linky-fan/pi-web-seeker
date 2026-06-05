@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { memo, useState, useRef, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -72,7 +72,24 @@ function copyText(text: string): Promise<void> {
   }
 }
 
-export function MessageView({ message, isStreaming, toolResults, modelNames, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
+function estimateToolInputLength(input: unknown): number {
+  if (input === null || input === undefined) return 0;
+  if (typeof input === "string") return input.length;
+  try {
+    return JSON.stringify(input).length;
+  } catch {
+    return 0;
+  }
+}
+
+function estimateBlockChars(block: AssistantContentBlock): number {
+  if (block.type === "text") return (block as TextContent).text?.length ?? 0;
+  if (block.type === "thinking") return (block as ThinkingContent).thinking?.length ?? 0;
+  if (block.type === "toolCall") return estimateToolInputLength((block as ToolCallContent).input);
+  return 0;
+}
+
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
   }
@@ -87,7 +104,7 @@ export function MessageView({ message, isStreaming, toolResults, modelNames, ent
     return <CustomMessageView message={message as CustomMessage} showTimestamp={showTimestamp} />;
   }
   return null;
-}
+});
 
 function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent }: {
   message: UserMessage;
@@ -540,13 +557,20 @@ function AssistantMessageView({
   prevTimestamp?: number;
 }) {
   const time = showTimestamp ? formatTime(message.timestamp) : null;
-  const blocks = message.content ?? [];
+  const blocks = useMemo(() => message.content ?? [], [message.content]);
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const streamStartRef = useRef<number | null>(null);
   const [tps, setTps] = useState<number | null>(null);
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
+  const estimatedChars = useMemo(() => {
+    let chars = 0;
+    for (const block of blocks) chars += estimateBlockChars(block);
+    return chars;
+  }, [blocks]);
+  const estimatedCharsRef = useRef(estimatedChars);
+  estimatedCharsRef.current = estimatedChars;
 
   // Streaming-based timing for thinking blocks
   const blockStartTimesRef = useRef<Map<number, number>>(new Map());
@@ -575,10 +599,10 @@ function AssistantMessageView({
     return map;
   }, [toolResults, message.timestamp]);
 
-  const textContent = blocks
+  const textContent = useMemo(() => blocks
     .filter((b): b is TextContent => b.type === "text")
     .map((b) => b.text)
-    .join("\n");
+    .join("\n"), [blocks]);
 
   const copyContent = () => {
     copyText(textContent).then(() => {
@@ -626,18 +650,13 @@ function AssistantMessageView({
         return changed ? next : prev;
       });
 
-      let chars = 0;
-      for (const b of bs) {
-        if (b.type === "text") chars += (b as TextContent).text?.length ?? 0;
-        else if (b.type === "thinking") chars += (b as ThinkingContent).thinking?.length ?? 0;
-        else if (b.type === "toolCall") chars += JSON.stringify((b as ToolCallContent).input ?? {}).length;
-      }
+      const chars = estimatedCharsRef.current;
       if (chars === 0) return;
       if (streamStartRef.current === null) streamStartRef.current = now;
       const elapsed = (now - streamStartRef.current) / 1000;
       if (elapsed > 0.5) setTps(chars / 4 / elapsed);
     };
-    const id = setInterval(tick, 300);
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [isStreaming]);
 
@@ -662,13 +681,7 @@ function AssistantMessageView({
           <span>{modelNames?.[`${message.provider}:${message.model}`] ?? modelNames?.[message.model] ?? message.model}</span>
         )}
         {isStreaming && (() => {
-          let chars = 0;
-          for (const b of blocks) {
-            if (b.type === "text") chars += (b as TextContent).text?.length ?? 0;
-            else if (b.type === "thinking") chars += (b as ThinkingContent).thinking?.length ?? 0;
-            else if (b.type === "toolCall") chars += JSON.stringify((b as ToolCallContent).input ?? {}).length;
-          }
-          const est = Math.round(chars / 4);
+          const est = Math.round(estimatedChars / 4);
           return (
             <>
 

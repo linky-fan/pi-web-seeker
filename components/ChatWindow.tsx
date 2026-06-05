@@ -111,7 +111,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
 
-  const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+  const visibleMessages = useMemo(() => messages.filter((m) => m.role === "user" || m.role === "assistant"), [messages]);
   const messageRefs = useMessageRefs(visibleMessages.length);
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
@@ -136,6 +136,37 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     }
     return history;
   }, [messages]);
+
+  const messageRenderData = useMemo(() => {
+    const toolResultsMap = new Map<string, import("@/lib/types").ToolResultMessage>();
+    const showTimestamp = new Array<boolean>(messages.length).fill(false);
+    let lastUserIdx = -1;
+    let seenAssistantSinceUser = false;
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === "toolResult") {
+        toolResultsMap.set((msg as import("@/lib/types").ToolResultMessage).toolCallId, msg as import("@/lib/types").ToolResultMessage);
+      }
+      if (lastUserIdx < 0 && msg.role === "user") lastUserIdx = i;
+      if (msg.role === "user") {
+        seenAssistantSinceUser = false;
+      } else if (msg.role === "assistant") {
+        showTimestamp[i] = !seenAssistantSinceUser;
+        seenAssistantSinceUser = true;
+      }
+    }
+
+    if (streamState.isStreaming && messages.length > 0) {
+      showTimestamp[messages.length - 1] = false;
+    }
+
+    return { toolResultsMap, lastUserIdx, showTimestamp };
+  }, [messages, streamState.isStreaming]);
+
+  const handleEditMessageContent = useCallback((content: string) => {
+    chatInputRef?.current?.insertIfEmpty(content);
+  }, [chatInputRef]);
 
   const draftStorageKey = session?.id
     ? `session:${session.id}`
@@ -252,16 +283,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           <div className="mx-auto max-w-[820px] px-4">
 
             {(() => {
-              const toolResultsMap = new Map<string, import("@/lib/types").ToolResultMessage>();
-              for (const msg of messages) {
-                if (msg.role === "toolResult") {
-                  toolResultsMap.set((msg as import("@/lib/types").ToolResultMessage).toolCallId, msg as import("@/lib/types").ToolResultMessage);
-                }
-              }
-              let lastUserIdx = -1;
-              for (let i = messages.length - 1; i >= 0; i--) {
-                if (messages[i].role === "user") { lastUserIdx = i; break; }
-              }
               let refIdx = 0;
               return messages.map((msg, idx) => {
                 const prevAssistantEntryId =
@@ -270,32 +291,19 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     : undefined;
                 const isVisible = msg.role === "user" || msg.role === "assistant";
                 const currentRefIdx = isVisible ? refIdx++ : -1;
-                let showTimestamp = false;
-                if (msg.role === "assistant") {
-                  showTimestamp = true;
-                  for (let j = idx + 1; j < messages.length; j++) {
-                    const r = messages[j].role;
-                    if (r === "user") break;
-                    if (r === "assistant") { showTimestamp = false; break; }
-                  }
-                  // Hide on the currently-streaming tail (the streaming bubble owns the live timestamp)
-                  if (showTimestamp && streamState.isStreaming && idx === messages.length - 1) {
-                    showTimestamp = false;
-                  }
-                }
                 const view = (
                   <MessageView
                     key={idx}
                     message={msg}
-                    toolResults={toolResultsMap}
+                    toolResults={messageRenderData.toolResultsMap}
                     modelNames={modelNames}
                     entryId={entryIds[idx]}
                     onFork={agentRunning || isNew || (idx === 0 && msg.role === "user") ? undefined : handleFork}
                     forking={forkingEntryId === entryIds[idx]}
                     onNavigate={agentRunning ? undefined : handleNavigate}
                     prevAssistantEntryId={agentRunning ? undefined : prevAssistantEntryId}
-                    onEditContent={(content) => chatInputRef?.current?.insertIfEmpty(content)}
-                    showTimestamp={showTimestamp}
+                    onEditContent={handleEditMessageContent}
+                    showTimestamp={messageRenderData.showTimestamp[idx]}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as import("@/lib/types").AgentMessage & { timestamp?: number }).timestamp : undefined}
                   />
                 );
@@ -303,7 +311,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                 return (
                   <div key={idx} ref={(el) => {
                     messageRefs.current[currentRefIdx] = el;
-                    if (idx === lastUserIdx) { (lastUserMsgRef as { current: HTMLDivElement | null }).current = el; }
+                    if (idx === messageRenderData.lastUserIdx) { (lastUserMsgRef as { current: HTMLDivElement | null }).current = el; }
                   }}>
                     {view}
                   </div>

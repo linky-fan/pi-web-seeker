@@ -12,15 +12,33 @@ export function getSessionsDir(): string {
   return `${getAgentDir()}/sessions`;
 }
 
-export async function listAllSessions(): Promise<SessionInfo[]> {
+interface CachedSessionListIndex {
+  sessions: SessionInfo[];
+  idToPath: Map<string, string>;
+  pathToId: Map<string, string>;
+  parentById: Map<string, string>;
+  cwdRoots: Set<string>;
+  expiresAt: number;
+}
+
+const SESSION_LIST_CACHE_TTL_MS = 5_000;
+
+async function buildSessionListIndex(): Promise<CachedSessionListIndex> {
   const piSessions: PiSessionInfo[] = await SessionManager.listAll();
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(normalizePathForComparison(s.path), s.id);
 
   const cache = getPathCache();
-  return piSessions.map((s) => {
+  const idToPath = new Map<string, string>();
+  const parentById = new Map<string, string>();
+  const cwdRoots = new Set<string>();
+  const sessions = piSessions.map((s) => {
     // Populate path cache so resolveSessionPath works without a full scan
     cache.set(s.id, s.path);
+    idToPath.set(s.id, s.path);
+    if (s.cwd) cwdRoots.add(s.cwd);
+    const parentSessionId = s.parentSessionPath ? pathToId.get(normalizePathForComparison(s.parentSessionPath)) : undefined;
+    if (parentSessionId) parentById.set(s.id, parentSessionId);
     return {
       path: s.path,
       id: s.id,
@@ -30,9 +48,41 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
       modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
       messageCount: s.messageCount,
       firstMessage: s.firstMessage || "(no messages)",
-      parentSessionId: s.parentSessionPath ? pathToId.get(normalizePathForComparison(s.parentSessionPath)) : undefined,
+      parentSessionId,
     };
   });
+  return { sessions, idToPath, pathToId, parentById, cwdRoots, expiresAt: Date.now() + SESSION_LIST_CACHE_TTL_MS };
+}
+
+export async function getSessionListIndex(options: { force?: boolean } = {}): Promise<CachedSessionListIndex> {
+  const now = Date.now();
+  const cached = globalThis.__piSessionListCache;
+  if (!options.force && cached && cached.expiresAt > now) return cached;
+  if (!options.force && globalThis.__piSessionListCachePromise) return globalThis.__piSessionListCachePromise;
+
+  const promise = buildSessionListIndex();
+  globalThis.__piSessionListCachePromise = promise;
+  try {
+    const index = await promise;
+    globalThis.__piSessionListCache = index;
+    return index;
+  } finally {
+    if (globalThis.__piSessionListCachePromise === promise) {
+      globalThis.__piSessionListCachePromise = undefined;
+    }
+  }
+}
+
+export async function listAllSessions(options: { force?: boolean } = {}): Promise<SessionInfo[]> {
+  return (await getSessionListIndex(options)).sessions;
+}
+
+export async function getSessionParentId(sessionId: string): Promise<string | undefined> {
+  return (await getSessionListIndex()).parentById.get(sessionId);
+}
+
+export async function getSessionCwdRoots(): Promise<Set<string>> {
+  return new Set((await getSessionListIndex()).cwdRoots);
 }
 
 // ============================================================================
@@ -42,6 +92,8 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
 declare global {
   var __piSessionPathCache: Map<string, string> | undefined;
   var __piSessionFileCache: Map<string, CachedSessionFile> | undefined;
+  var __piSessionListCache: CachedSessionListIndex | undefined;
+  var __piSessionListCachePromise: Promise<CachedSessionListIndex> | undefined;
 }
 
 function getPathCache(): Map<string, string> {
@@ -54,8 +106,8 @@ export async function resolveSessionPath(sessionId: string): Promise<string | nu
   if (cached) return cached;
 
   // Cache miss: scan all sessions to populate cache, then retry
-  await listAllSessions();
-  return getPathCache().get(sessionId) ?? null;
+  const index = await getSessionListIndex();
+  return index.idToPath.get(sessionId) ?? getPathCache().get(sessionId) ?? null;
 }
 
 export function cacheSessionPath(sessionId: string, filePath: string): void {
@@ -64,6 +116,12 @@ export function cacheSessionPath(sessionId: string, filePath: string): void {
 
 export function invalidateSessionPathCache(sessionId: string): void {
   getPathCache().delete(sessionId);
+  invalidateSessionListCache();
+}
+
+export function invalidateSessionListCache(): void {
+  globalThis.__piSessionListCache = undefined;
+  globalThis.__piSessionListCachePromise = undefined;
 }
 
 export interface CachedSessionFile {

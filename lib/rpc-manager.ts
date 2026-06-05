@@ -1,7 +1,7 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { createAgentSession, DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
-import { cacheSessionPath } from "./session-reader";
+import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 
 // ============================================================================
@@ -222,6 +222,7 @@ export class AgentSessionWrapper {
 
         const newSessionId = SessionManager.open(newSessionFile, sessionDir).getSessionId();
         cacheSessionPath(newSessionId, newSessionFile);
+        invalidateSessionListCache();
         this.destroy();
         return { cancelled: false, newSessionId };
       }
@@ -427,7 +428,10 @@ export async function startRpcSession(
 
     const realSessionId = inner.sessionId as string;
     const realSessionFile = inner.sessionFile as string | undefined;
-    if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
+    if (realSessionFile) {
+      cacheSessionPath(realSessionId, realSessionFile);
+      invalidateSessionListCache();
+    }
 
     wrapper.onDestroy(() => registry.delete(realSessionId));
     registry.set(realSessionId, wrapper);

@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { Readable } from "stream";
-import { listAllSessions } from "@/lib/session-reader";
+import { getSessionCwdRoots } from "@/lib/session-reader";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -301,6 +301,18 @@ function isWindowsAbsolutePath(filePath: string): boolean {
   return WINDOWS_ABSOLUTE_RE.test(filePath) || filePath.startsWith("\\\\") || filePath.startsWith("//");
 }
 
+function addConfiguredRoots(roots: Set<string>): void {
+  const envRoots = process.env.PI_WEB_ALLOWED_ROOTS;
+  if (envRoots) {
+    for (const root of envRoots.split(path.delimiter)) {
+      const trimmed = root.trim();
+      if (trimmed) roots.add(trimmed);
+    }
+  }
+  const defaultCwd = process.env.PI_WEB_DEFAULT_CWD?.trim();
+  if (defaultCwd) roots.add(defaultCwd);
+}
+
 function filePathFromSegments(segments: string[]): string {
   if (segments[0] === "__unc__") {
     return "//" + segments.slice(1).join("/");
@@ -317,17 +329,16 @@ async function getAllowedRoots(): Promise<Set<string>> {
   const cached = globalThis.__piAllowedRootsCache;
   if (cached && cached.expiresAt > now) return cached.roots;
 
-  const sessions = await listAllSessions();
   const roots = new Set<string>();
-  const envRoots = process.env.PI_WEB_ALLOWED_ROOTS;
-  if (envRoots) {
-    for (const root of envRoots.split(":")) {
-      const trimmed = root.trim();
-      if (trimmed) roots.add(trimmed);
-    }
+  addConfiguredRoots(roots);
+
+  if (process.env.PI_WEB_SINGLE_WORKSPACE === "1" && roots.size > 0) {
+    globalThis.__piAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
+    return roots;
   }
-  for (const s of sessions) {
-    if (s.cwd) roots.add(s.cwd);
+
+  for (const cwd of await getSessionCwdRoots()) {
+    if (cwd) roots.add(cwd);
   }
   // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint
   const home = (await import("os")).homedir();

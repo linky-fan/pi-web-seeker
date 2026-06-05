@@ -8,7 +8,8 @@ import {
   invalidateSessionFileCache,
   getCachedSessionContext,
   getCachedSessionFile,
-  listAllSessions,
+  getSessionParentId,
+  invalidateSessionListCache,
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { areSameFilePath, isWindowsStylePath } from "@/lib/path-identity";
@@ -35,8 +36,7 @@ export async function GET(
     const context = getCachedSessionContext(snapshot, leafId);
 
     const modified = new Date(snapshot.mtimeMs).toISOString();
-    const allSessions = await listAllSessions();
-    const parentSessionId = allSessions.find((s) => s.id === id)?.parentSessionId;
+    const parentSessionId = await getSessionParentId(id);
     const info = header ? {
       path: filePath,
       id: header.id,
@@ -99,6 +99,7 @@ export async function PATCH(
     const sm = SessionManager.open(filePath);
     sm.appendSessionInfo(name.trim());
     invalidateSessionFileCache(filePath);
+    invalidateSessionListCache();
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -155,6 +156,7 @@ export async function DELETE(
     unlinkSync(filePath);
     invalidateSessionPathCache(id);
     invalidateSessionFileCache(filePath);
+    invalidateSessionListCache();
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
