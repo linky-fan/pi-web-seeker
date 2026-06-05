@@ -132,6 +132,7 @@ docker run --rm -it \
 - **文件浏览器** — 在侧边栏搜索文件、查看最近文件、切换 Git tracked-only 模式、下载文件，或把文件路径插入到输入框
 - **文件查看器** — 标签页内查看代码、Markdown + KaTeX 数学公式、HTML、图片和音频，支持自动同步、变更 diff、换行和大文件保护
 - **聊天 Minimap** — 长会话右侧显示消息缩略导航，方便快速定位历史节点
+- **性能优化** — Web 层缓存 session list index、parent session 映射和 cwd roots；Docker 单工作区优先使用显式 workspace roots；长会话历史消息按需懒渲染，减少 streaming 时的历史消息重绘
 - **Subagent 通知渲染** — 自动识别 `subagent-notification` / `<task-notification>`，用紧凑卡片展示子智能体状态、结果、tokens、工具调用次数和 transcript
 - **运行时系统提示词上下文** — 新建会话时自动注入当前设备的 OS、shell、路径风格和包管理器线索，帮助智能体选择更合适的命令
 - **引导 / 追加** — 打断正在运行的智能体，或在其完成后追加消息
@@ -218,6 +219,7 @@ run_in_background: true
 - **模型配置** — 从智能体数据目录下的 `models.json` 读取可用模型，可在侧边栏的「Models」面板中编辑。`models.json` 适合保存 provider、base URL、API 类型、模型 ID、上下文窗口等非密钥配置。
 - **API key** — 不要写进仓库。推荐在「Models」面板中选择对应 provider 后保存 API key，例如 MiniMax 中国区应配置 `MiniMax (China)` / `minimax-cn`。这些密钥会保存到智能体数据目录下的 `auth.json`；Docker Compose 默认持久化到宿主机 `.pi-web-data/agent/auth.json`。也可以用环境变量提供，例如 `MINIMAX_CN_API_KEY=...`、`DEEPSEEK_API_KEY=...`。模型详情页的「Test」按钮会发送一次真实的轻量请求，用于验证 API key、base URL、模型 ID 和接口兼容性，可能产生少量 token 消耗。
 - **文件浏览** — 侧边栏内置文件浏览器，可在标签页中查看当前工作目录下的文件；Docker Compose 默认只暴露 `/workspace` 单工作区。
+- **缓存行为** — session list index 和 allowed roots 使用短 TTL 缓存，并在新建、分叉、重命名、删除会话时失效。Docker 单工作区模式会优先使用 `PI_WEB_ALLOWED_ROOTS` / `PI_WEB_DEFAULT_CWD`，避免 Explorer 权限检查频繁扫描历史会话。
 - **Docker 路径** — 容器内默认项目目录是 `/workspace`。宿主机路径和容器路径不同，已有旧会话仍会显示原来的宿主机路径；新会话建议在 `/workspace` 下创建。
 
 ## 开发
