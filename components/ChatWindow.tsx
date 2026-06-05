@@ -407,6 +407,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               let refIdx = 0;
               const shouldUseLazyMessages = messages.length >= LAZY_MESSAGE_THRESHOLD;
               return messages.map((msg, idx) => {
+                const messageKey = entryIds[idx] ?? `${msg.role}-${idx}`;
                 const prevAssistantEntryId =
                   msg.role === "user" && idx > 0 && messages[idx - 1].role === "assistant"
                     ? entryIds[idx - 1]
@@ -420,6 +421,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                   forkingEntryId === entryIds[idx];
                 const view = (
                   <MessageView
+                    key={messageKey}
                     message={msg}
                     toolResults={messageRenderData.toolResultsMap}
                     modelNames={modelNames}
@@ -446,7 +448,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
                 return (
                   <LazyMessageSlot
-                    key={idx}
+                    key={messageKey}
                     eager={shouldRenderEagerly}
                     estimatedHeight={estimateMessageHeight(msg)}
                     registerRef={registerRef}

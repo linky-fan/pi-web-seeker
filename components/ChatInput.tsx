@@ -702,7 +702,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
 
           {/* LEFT: attach + model selector (idle) or steer/followup toggle (streaming) */}
-          <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 2 }}>
+          <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 4 }}>
             <label
               htmlFor={isStreaming ? undefined : imageInputId}
               role="button"
@@ -720,63 +720,83 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               }}
               title={t("chat.attachImage")}
               style={{
-                flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                width: 32, height: 32, padding: 0,
-                background: "none", border: "none",
-                borderRadius: 9,
+                flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                height: 32, padding: "0 8px",
+                background: attachedImages.length ? "var(--bg-selected)" : "var(--bg-panel)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
                 color: attachedImages.length ? "var(--accent)" : "var(--text-muted)",
                 cursor: isStreaming ? "not-allowed" : "pointer",
                 opacity: isStreaming ? 0.5 : 1,
-                transition: "background 0.12s, color 0.12s",
+                fontSize: 11,
+                fontWeight: 600,
+                transition: "background 0.12s, color 0.12s, border-color 0.12s",
               }}
               onMouseEnter={(e) => {
                 if (isStreaming) return;
                 e.currentTarget.style.background = "var(--bg-hover)";
                 e.currentTarget.style.color = attachedImages.length ? "var(--accent)" : "var(--text)";
+                e.currentTarget.style.borderColor = "var(--accent)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "none";
+                e.currentTarget.style.background = attachedImages.length ? "var(--bg-selected)" : "var(--bg-panel)";
                 e.currentTarget.style.color = attachedImages.length ? "var(--accent)" : "var(--text-muted)";
+                e.currentTarget.style.borderColor = "var(--border)";
               }}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                 <circle cx="8.5" cy="8.5" r="1.5" />
                 <polyline points="21 15 16 10 5 21" />
               </svg>
+              <span style={{ lineHeight: 1 }}>{t("chat.attachImageShort")}</span>
+              {attachedImages.length > 0 && (
+                <span style={{
+                  minWidth: 15, height: 15, padding: "0 4px",
+                  borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  background: "var(--accent)", color: "#fff",
+                  fontSize: 10, fontWeight: 700, lineHeight: 1,
+                }}>
+                  {attachedImages.length}
+                </span>
+              )}
             </label>
             {!isStreaming && (
               <div ref={snippetDropdownRef} style={{ position: "relative" }}>
                 <button
                   onClick={() => setSnippetDropdownOpen((v) => !v)}
-                  title={t("chat.promptSnippets")}
-                  aria-label={t("chat.promptSnippets")}
+                  title={t("chat.promptSnippetsTitle")}
+                  aria-label={t("chat.promptSnippetsTitle")}
                   style={{
-                    flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                    width: 32, height: 32, padding: 0,
-                    background: snippetDropdownOpen ? "var(--bg-hover)" : "none",
-                    border: "none",
-                    borderRadius: 9,
-                    color: "var(--text-muted)",
+                    flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                    height: 32, padding: "0 9px",
+                    background: snippetDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    color: snippetDropdownOpen ? "var(--accent)" : "var(--text-muted)",
                     cursor: "pointer",
-                    fontSize: 12,
-                    transition: "background 0.12s, color 0.12s",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    transition: "background 0.12s, color 0.12s, border-color 0.12s",
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = "var(--bg-hover)";
                     e.currentTarget.style.color = "var(--text)";
+                    e.currentTarget.style.borderColor = "var(--accent)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = snippetDropdownOpen ? "var(--bg-hover)" : "none";
-                    e.currentTarget.style.color = "var(--text-muted)";
+                    e.currentTarget.style.background = snippetDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)";
+                    e.currentTarget.style.color = snippetDropdownOpen ? "var(--accent)" : "var(--text-muted)";
+                    e.currentTarget.style.borderColor = "var(--border)";
                   }}
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 4h16v16H4z" />
-                    <path d="M8 8h8" />
-                    <path d="M8 12h8" />
-                    <path d="M8 16h5" />
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 6h16" />
+                    <path d="M4 12h10" />
+                    <path d="M4 18h7" />
+                    <path d="M17 14l3 3-3 3" />
                   </svg>
+                  <span style={{ lineHeight: 1 }}>{t("chat.promptSnippetsShort")}</span>
                 </button>
                 {snippetDropdownOpen && (
                   <div style={{

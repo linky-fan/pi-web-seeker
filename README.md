@@ -39,6 +39,14 @@ pi-web
 
 开发模式也已放行常见私网来源：`127.*.*.*`、`10.*.*.*`、`172.16.*.*` 到 `172.31.*.*`、`192.168.*.*`。如果浏览器仍无法访问，请确认系统防火墙和虚拟机/容器端口映射允许 `30141` 入站。
 
+如果机器所在局域网并不完全可信，建议开启访问令牌：
+
+```bash
+PI_WEB_ACCESS_TOKEN=your-long-random-token pi-web
+```
+
+首次访问时打开 `http://<host>:30141/?token=your-long-random-token`，服务端会写入 HttpOnly cookie 并跳转回普通页面。设置后页面入口和 `/api/*` 都需要这个 cookie；脚本调用 API 时也可以使用 `Authorization: Bearer <token>` 或 `x-pi-web-token: <token>`。
+
 **可选参数：**
 
 ```bash
@@ -68,6 +76,12 @@ docker compose up --build
 - `~/.ssh` → `/home/piweb/.ssh:ro`，方便智能体读取私有仓库
 
 Docker Compose 默认启用单工作区模式：页面会自动选择 `/workspace`，Explorer 只显示 `.pi-web-workspace` 这个独立工作目录里的文件，不会把 pi-web-seeker 仓库源码目录混进去。
+
+内网部署建议同时设置访问令牌：
+
+```bash
+PI_WEB_ACCESS_TOKEN=your-long-random-token docker compose up --build
+```
 
 容器启动时会默认把 `/workspace` 和 `/home/piweb/.pi` 的权限修正给运行用户，确保 agent 可以在工作目录内写文件。如挂载大型外部项目且不希望递归修改宿主机文件所有者，可关闭工作目录权限修正：
 
@@ -218,7 +232,8 @@ run_in_background: true
 - **数据目录** — 默认读取 `~/.pi/agent/sessions` 下的会话文件。可通过环境变量 `PI_CODING_AGENT_DIR` 指定其他目录。
 - **模型配置** — 从智能体数据目录下的 `models.json` 读取可用模型，可在侧边栏的「Models」面板中编辑。`models.json` 适合保存 provider、base URL、API 类型、模型 ID、上下文窗口等非密钥配置。
 - **API key** — 不要写进仓库。推荐在「Models」面板中选择对应 provider 后保存 API key，例如 MiniMax 中国区应配置 `MiniMax (China)` / `minimax-cn`。这些密钥会保存到智能体数据目录下的 `auth.json`；Docker Compose 默认持久化到宿主机 `.pi-web-data/agent/auth.json`。也可以用环境变量提供，例如 `MINIMAX_CN_API_KEY=...`、`DEEPSEEK_API_KEY=...`。模型详情页的「Test」按钮会发送一次真实的轻量请求，用于验证 API key、base URL、模型 ID 和接口兼容性，可能产生少量 token 消耗。
-- **文件浏览** — 侧边栏内置文件浏览器，可在标签页中查看当前工作目录下的文件；Docker Compose 默认只暴露 `/workspace` 单工作区。
+- **访问保护** — 默认不启用登录，适合可信本机/可信内网使用。设置 `PI_WEB_ACCESS_TOKEN` 后，页面入口和所有 `/api/*` 请求都需要同源 cookie 或 Bearer/header token。
+- **文件浏览** — 侧边栏内置文件浏览器，可在标签页中查看当前工作目录下的文件；Docker Compose 默认只暴露 `/workspace` 单工作区。文件 API 会用真实路径校验 allowed roots，避免通过符号链接读取工作区外文件。
 - **缓存行为** — session list index 和 allowed roots 使用短 TTL 缓存，并在新建、分叉、重命名、删除会话时失效。Docker 单工作区模式会优先使用 `PI_WEB_ALLOWED_ROOTS` / `PI_WEB_DEFAULT_CWD`，避免 Explorer 权限检查频繁扫描历史会话。
 - **Docker 路径** — 容器内默认项目目录是 `/workspace`。宿主机路径和容器路径不同，已有旧会话仍会显示原来的宿主机路径；新会话建议在 `/workspace` 下创建。
 

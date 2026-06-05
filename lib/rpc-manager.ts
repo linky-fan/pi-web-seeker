@@ -15,6 +15,11 @@ export interface AgentEvent {
 
 type EventListener = (event: AgentEvent) => void;
 
+interface PendingGuide {
+  message: string;
+  images?: Array<{ type: "image"; data: string; mimeType: string }>;
+}
+
 function getRuntimeOsLabel(): string {
   switch (process.platform) {
     case "darwin":
@@ -106,6 +111,7 @@ export class AgentSessionWrapper {
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
+  private pendingGuide: PendingGuide | null = null;
   private _alive = true;
 
   constructor(public readonly inner: AgentSessionLike) {}
@@ -126,8 +132,29 @@ export class AgentSessionWrapper {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.resetIdleTimer();
       for (const l of this.listeners) l(event);
+      if (event.type === "agent_end") {
+        this.flushPendingGuideSoon();
+      }
     });
     this.resetIdleTimer();
+  }
+
+  private promptNow(guide: PendingGuide): void {
+    this.inner.prompt(
+      guide.message,
+      guide.images?.length ? { images: guide.images } : undefined
+    ).catch(() => {});
+  }
+
+  private flushPendingGuideSoon(): void {
+    const guide = this.pendingGuide;
+    if (!guide) return;
+    this.pendingGuide = null;
+    // Keep guidance as a normal visible user prompt after the aborted turn settles.
+    setTimeout(() => {
+      if (!this._alive) return;
+      this.promptNow(guide);
+    }, 0);
   }
 
   private resetIdleTimer(): void {
@@ -271,6 +298,27 @@ export class AgentSessionWrapper {
 
       case "steer": {
         const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
+        if (command.interrupt === true) {
+          const guide = {
+            message: command.message as string,
+            ...(steerImages?.length ? { images: steerImages } : {}),
+          };
+          if (this.inner.isStreaming) {
+            this.pendingGuide = guide;
+            try {
+              await this.inner.abort();
+            } catch (error) {
+              if (this.pendingGuide === guide) this.pendingGuide = null;
+              throw error;
+            }
+            if (!this.inner.isStreaming && this.pendingGuide === guide) {
+              this.flushPendingGuideSoon();
+            }
+          } else {
+            this.promptNow(guide);
+          }
+          return null;
+        }
         await this.inner.steer(command.message as string, steerImages?.length ? steerImages : undefined);
         return null;
       }
@@ -319,6 +367,7 @@ export class AgentSessionWrapper {
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
+    this.pendingGuide = null;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
     this.onDestroyCallback?.();

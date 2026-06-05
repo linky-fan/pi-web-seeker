@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { existsSync, readFileSync, writeFileSync } from "fs";
+import path from "path";
 import { DefaultResourceLoader, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { assertPathAllowed, getAllowedRoots, isPathAllowed } from "@/lib/allowed-roots";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +15,11 @@ export async function GET(req: Request) {
   if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
 
   try {
+    try {
+      await assertPathAllowed(cwd);
+    } catch {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
     const loader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir() });
     await loader.reload();
     const { skills, diagnostics } = loader.getSkills();
@@ -29,6 +36,15 @@ export async function PATCH(req: Request) {
     const { filePath, disableModelInvocation } = body;
     if (!filePath) return NextResponse.json({ error: "filePath required" }, { status: 400 });
     if (!existsSync(filePath)) return NextResponse.json({ error: "file not found" }, { status: 404 });
+    if (path.basename(filePath) !== "SKILL.md") {
+      return NextResponse.json({ error: "Only SKILL.md can be updated" }, { status: 400 });
+    }
+
+    const allowedRoots = await getAllowedRoots();
+    allowedRoots.add(getAgentDir());
+    if (!isPathAllowed(filePath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
 
     const content = readFileSync(filePath, "utf8");
     const key = "disable-model-invocation";

@@ -535,12 +535,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleSteer = useCallback(async (message: string, images?: AttachedImage[]) => {
     const sid = sessionIdRef.current;
     if (!sid) return;
-    setMessages((prev) => [...prev, { role: "user", content: `[steer] ${message}`, timestamp: Date.now() } as AgentMessage]);
+    setMessages((prev) => [...prev, { role: "user", content: message, timestamp: Date.now() } as AgentMessage]);
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     try {
       await sendAgentCommand(sid, {
         type: "steer",
         message,
+        interrupt: true,
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
