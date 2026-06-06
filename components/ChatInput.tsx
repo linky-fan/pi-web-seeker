@@ -509,7 +509,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         type="file"
         accept="image/*"
         multiple
-        disabled={isStreaming}
         tabIndex={-1}
         style={{
           position: "fixed",
@@ -555,6 +554,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 />
                 <button
                   onClick={() => removeImage(i)}
+                  aria-label={t("chat.removeImage")}
+                  title={t("chat.removeImage")}
                   style={{
                     position: "absolute", top: -4, right: -4,
                     width: 16, height: 16, borderRadius: "50%",
@@ -699,20 +700,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         </div>
 
         {/* Bottom bar: left | center (context) | right */}
-        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", rowGap: 6 }}>
 
-          {/* LEFT: attach + model selector (idle) or steer/followup toggle (streaming) */}
-          <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 4 }}>
+          {/* LEFT: attach + snippets + model selector */}
+          <div style={{ flex: "1 1 280px", minWidth: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", rowGap: 4 }}>
             <label
-              htmlFor={isStreaming ? undefined : imageInputId}
+              htmlFor={imageInputId}
               role="button"
-              aria-disabled={isStreaming}
-              tabIndex={isStreaming ? -1 : 0}
-              onClick={(e) => {
-                if (isStreaming) e.preventDefault();
-              }}
+              aria-label={t("chat.attachImage")}
+              tabIndex={0}
               onKeyDown={(e) => {
-                if (isStreaming) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   fileInputRef.current?.click();
@@ -726,14 +723,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 border: "1px solid var(--border)",
                 borderRadius: 8,
                 color: attachedImages.length ? "var(--accent)" : "var(--text-muted)",
-                cursor: isStreaming ? "not-allowed" : "pointer",
-                opacity: isStreaming ? 0.5 : 1,
+                cursor: "pointer",
                 fontSize: 11,
                 fontWeight: 600,
+                whiteSpace: "nowrap",
                 transition: "background 0.12s, color 0.12s, border-color 0.12s",
               }}
               onMouseEnter={(e) => {
-                if (isStreaming) return;
                 e.currentTarget.style.background = "var(--bg-hover)";
                 e.currentTarget.style.color = attachedImages.length ? "var(--accent)" : "var(--text)";
                 e.currentTarget.style.borderColor = "var(--accent)";
@@ -761,81 +757,86 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </span>
               )}
             </label>
-            {!isStreaming && (
-              <div ref={snippetDropdownRef} style={{ position: "relative" }}>
-                <button
-                  onClick={() => setSnippetDropdownOpen((v) => !v)}
-                  title={t("chat.promptSnippetsTitle")}
-                  aria-label={t("chat.promptSnippetsTitle")}
+            <div ref={snippetDropdownRef} style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                onClick={() => setSnippetDropdownOpen((v) => !v)}
+                title={t("chat.promptSnippetsTitle")}
+                aria-label={t("chat.promptSnippetsTitle")}
+                aria-haspopup="menu"
+                aria-expanded={snippetDropdownOpen}
+                style={{
+                  flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                  height: 32, padding: "0 9px",
+                  background: snippetDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  color: snippetDropdownOpen ? "var(--accent)" : "var(--text-muted)",
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  transition: "background 0.12s, color 0.12s, border-color 0.12s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--bg-hover)";
+                  e.currentTarget.style.color = "var(--text)";
+                  e.currentTarget.style.borderColor = "var(--accent)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = snippetDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)";
+                  e.currentTarget.style.color = snippetDropdownOpen ? "var(--accent)" : "var(--text-muted)";
+                  e.currentTarget.style.borderColor = "var(--border)";
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 6h16" />
+                  <path d="M4 12h10" />
+                  <path d="M4 18h7" />
+                  <path d="M17 14l3 3-3 3" />
+                </svg>
+                <span style={{ lineHeight: 1 }}>{t("chat.promptSnippetsShort")}</span>
+              </button>
+              {snippetDropdownOpen && (
+                <div
+                  role="menu"
                   style={{
-                    flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                    height: 32, padding: "0 9px",
-                    background: snippetDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 8,
-                    color: snippetDropdownOpen ? "var(--accent)" : "var(--text-muted)",
-                    cursor: "pointer",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    transition: "background 0.12s, color 0.12s, border-color 0.12s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "var(--bg-hover)";
-                    e.currentTarget.style.color = "var(--text)";
-                    e.currentTarget.style.borderColor = "var(--accent)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = snippetDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)";
-                    e.currentTarget.style.color = snippetDropdownOpen ? "var(--accent)" : "var(--text-muted)";
-                    e.currentTarget.style.borderColor = "var(--border)";
-                  }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 6h16" />
-                    <path d="M4 12h10" />
-                    <path d="M4 18h7" />
-                    <path d="M17 14l3 3-3 3" />
-                  </svg>
-                  <span style={{ lineHeight: 1 }}>{t("chat.promptSnippetsShort")}</span>
-                </button>
-                {snippetDropdownOpen && (
-                  <div style={{
                     position: "absolute", bottom: "calc(100% + 6px)", left: 0,
                     zIndex: 100, background: "var(--bg)", border: "1px solid var(--border)",
                     borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
-                    overflow: "hidden", minWidth: 260,
-                  }}>
-                    {PROMPT_SNIPPETS.map((snippet) => (
-                      <button
-                        key={snippet.labelKey}
-                        onClick={() => {
-                          setSnippetDropdownOpen(false);
-                          insertSnippet(snippet.text);
-                        }}
-                        style={{
-                          display: "grid", gridTemplateColumns: "72px minmax(0, 1fr)", gap: 8,
-                          width: "100%", padding: "8px 12px",
-                          background: "none", border: "none",
-                          color: "var(--text-muted)",
-                          cursor: "pointer", fontSize: 12, textAlign: "left",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "var(--bg-hover)";
-                          e.currentTarget.style.color = "var(--text)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "none";
-                          e.currentTarget.style.color = "var(--text-muted)";
-                        }}
-                      >
-                        <span style={{ color: "var(--text)", fontWeight: 600 }}>{t(snippet.labelKey)}</span>
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{snippet.text}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                    overflow: "hidden", minWidth: 260, maxWidth: "calc(100vw - 32px)",
+                  }}
+                >
+                  {PROMPT_SNIPPETS.map((snippet) => (
+                    <button
+                      key={snippet.labelKey}
+                      role="menuitem"
+                      onClick={() => {
+                        setSnippetDropdownOpen(false);
+                        insertSnippet(snippet.text);
+                      }}
+                      style={{
+                        display: "grid", gridTemplateColumns: "72px minmax(0, 1fr)", gap: 8,
+                        width: "100%", padding: "8px 12px",
+                        background: "none", border: "none",
+                        color: "var(--text-muted)",
+                        cursor: "pointer", fontSize: 12, textAlign: "left",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "var(--bg-hover)";
+                        e.currentTarget.style.color = "var(--text)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "none";
+                        e.currentTarget.style.color = "var(--text-muted)";
+                      }}
+                    >
+                      <span style={{ color: "var(--text)", fontWeight: 600 }}>{t(snippet.labelKey)}</span>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{snippet.text}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             {/* Model selector — visible always, disabled during streaming */}
             {modelOptions.length > 0 && currentName && onModelChange && (
                 <div ref={dropdownRef} style={{ position: "relative" }}>
@@ -940,10 +941,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </div>
 
           {/* spacer */}
-          <div style={{ flex: 1 }} />
+          <div style={{ flex: "1 1 24px", minWidth: 0 }} />
 
           {/* RIGHT: thinking + tools preset + compact + sound (idle) | Stop + sound (streaming) */}
-          <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 2, marginLeft: "auto" }}>
+          <div style={{ flex: "0 1 auto", minWidth: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2, marginLeft: "auto", flexWrap: "wrap", rowGap: 4 }}>
             {!isStreaming && onThinkingLevelChange && (
               <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
                 <button
