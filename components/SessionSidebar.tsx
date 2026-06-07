@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { APP_NAME } from "@/lib/branding";
 import { useLocale } from "@/lib/i18n";
 import type { SessionInfo } from "@/lib/types";
+import { getPathRelativeToRoot } from "@/lib/path-identity";
 import { FileExplorer } from "./FileExplorer";
 
 interface Props {
@@ -52,11 +53,12 @@ function getRecentCwds(sessions: SessionInfo[]): string[] {
 }
 
 function shortenCwd(cwd: string, homeDir?: string): string {
-  const path = (homeDir && cwd.startsWith(homeDir)) ? "~" + cwd.slice(homeDir.length) : cwd;
-  const sep = path.includes("/") ? "/" : "\\";
-  const parts = path.split(sep).filter(Boolean);
-  if (parts.length <= 2) return path;
-  return "…/" + parts.slice(-2).join(sep);
+  const rel = homeDir ? getPathRelativeToRoot(cwd, homeDir) : null;
+  const displayPath = rel !== null ? (rel ? `~/${rel}` : "~") : cwd;
+  const sep = displayPath.includes("/") ? "/" : "\\";
+  const parts = displayPath.split(sep).filter(Boolean);
+  if (parts.length <= 2) return displayPath;
+  return `…${sep}${parts.slice(-2).join(sep)}`;
 }
 
 
@@ -64,6 +66,20 @@ function shortenCwd(cwd: string, homeDir?: string): string {
 interface SessionTreeNode {
   session: SessionInfo;
   children: SessionTreeNode[];
+}
+
+interface WorkspaceDirectoryEntry {
+  name: string;
+  path: string;
+}
+
+interface WorkspaceDirectoryResponse {
+  path?: string;
+  parent?: string | null;
+  roots?: string[];
+  entries?: WorkspaceDirectoryEntry[];
+  cwd?: string;
+  error?: string;
 }
 
 function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
@@ -244,9 +260,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [homeDir, setHomeDir] = useState<string>("");
   const [defaultCwd, setDefaultCwd] = useState<string | null>(null);
   const [singleWorkspace, setSingleWorkspace] = useState(false);
+  const [runtimePlatform, setRuntimePlatform] = useState<string>("");
+  const [nativeDirectoryPicker, setNativeDirectoryPicker] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [customPathOpen, setCustomPathOpen] = useState(false);
   const [customPathValue, setCustomPathValue] = useState("");
+  const [pathError, setPathError] = useState<string | null>(null);
+  const [directoryBrowserOpen, setDirectoryBrowserOpen] = useState(false);
+  const [directoryBrowserPath, setDirectoryBrowserPath] = useState<string | null>(null);
+  const [directoryEntries, setDirectoryEntries] = useState<WorkspaceDirectoryEntry[]>([]);
+  const [directoryParent, setDirectoryParent] = useState<string | null>(null);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [nativePickerLoading, setNativePickerLoading] = useState(false);
   const customPathInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [explorerOpen, setExplorerOpen] = useState(true);
@@ -288,10 +313,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [explorerRefreshKey]);
 
   useEffect(() => {
-    fetch("/api/home").then((r) => r.json()).then((d: { home?: string; defaultCwd?: string | null; singleWorkspace?: boolean }) => {
+    fetch("/api/home").then((r) => r.json()).then((d: { home?: string; defaultCwd?: string | null; singleWorkspace?: boolean; platform?: string; nativeDirectoryPicker?: boolean }) => {
       if (d.home) setHomeDir(d.home);
       if (d.defaultCwd) setDefaultCwd(d.defaultCwd);
       setSingleWorkspace(!!d.singleWorkspace);
+      setRuntimePlatform(d.platform ?? "");
+      const localHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "::1";
+      setNativeDirectoryPicker(!!d.nativeDirectoryPicker && localHost);
     }).catch(() => {});
   }, []);
 
@@ -322,15 +350,90 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }
   }, [allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone, loading, singleWorkspace, defaultCwd]);
 
-  const commitCustomPath = useCallback(() => {
-    const path = customPathValue.trim();
-    if (path) {
-      setSelectedCwd(path);
-    }
+  const resetDirectoryPicker = useCallback(() => {
     setCustomPathOpen(false);
     setCustomPathValue("");
+    setPathError(null);
+    setDirectoryBrowserOpen(false);
+    setDirectoryBrowserPath(null);
+    setDirectoryEntries([]);
+    setDirectoryParent(null);
+    setDirectoryLoading(false);
+    setNativePickerLoading(false);
+  }, []);
+
+  const selectWorkspaceDirectory = useCallback(async (cwd: string) => {
+    setPathError(null);
+    const res = await fetch("/api/workspaces", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd }),
+    });
+    const data = await res.json() as WorkspaceDirectoryResponse;
+    if (!res.ok || !data.cwd) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    setSelectedCwd(data.cwd);
     setDropdownOpen(false);
-  }, [customPathValue]);
+    resetDirectoryPicker();
+  }, [resetDirectoryPicker]);
+
+  const loadWorkspaceDirectory = useCallback(async (dirPath?: string | null) => {
+    setDirectoryLoading(true);
+    setPathError(null);
+    try {
+      const query = dirPath ? `?path=${encodeURIComponent(dirPath)}` : "";
+      const res = await fetch(`/api/workspaces${query}`);
+      const data = await res.json() as WorkspaceDirectoryResponse;
+      if (!res.ok || !data.path) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      setDirectoryBrowserPath(data.path);
+      setDirectoryParent(data.parent ?? null);
+      setDirectoryEntries(data.entries ?? []);
+    } catch (e) {
+      setPathError(String(e));
+    } finally {
+      setDirectoryLoading(false);
+    }
+  }, []);
+
+  const openDirectoryBrowser = useCallback(() => {
+    setCustomPathOpen(false);
+    setCustomPathValue("");
+    setDirectoryBrowserOpen(true);
+    void loadWorkspaceDirectory((selectedCwd ?? defaultCwd ?? homeDir) || undefined);
+  }, [defaultCwd, homeDir, loadWorkspaceDirectory, selectedCwd]);
+
+  const commitCustomPath = useCallback(async () => {
+    const path = customPathValue.trim();
+    if (!path) return;
+    try {
+      await selectWorkspaceDirectory(path);
+    } catch (e) {
+      setPathError(String(e));
+    }
+  }, [customPathValue, selectWorkspaceDirectory]);
+
+  const openNativeDirectoryPicker = useCallback(async () => {
+    setNativePickerLoading(true);
+    setPathError(null);
+    try {
+      const res = await fetch("/api/workspaces/pick", { method: "POST" });
+      const data = await res.json() as WorkspaceDirectoryResponse & { cancelled?: boolean };
+      if (data.cancelled) return;
+      if (!res.ok || !data.cwd) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      setSelectedCwd(data.cwd);
+      setDropdownOpen(false);
+      resetDirectoryPicker();
+    } catch (e) {
+      setPathError(String(e));
+    } finally {
+      setNativePickerLoading(false);
+    }
+  }, [resetDirectoryPicker]);
 
   const handleDefaultCwd = useCallback(async () => {
     try {
@@ -339,24 +442,24 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       if (data.cwd) {
         setSelectedCwd(data.cwd);
         setDropdownOpen(false);
+        resetDirectoryPicker();
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [resetDirectoryPicker]);
 
   // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
-        setCustomPathOpen(false);
-        setCustomPathValue("");
+        resetDirectoryPicker();
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [resetDirectoryPicker]);
 
   const handleNewSession = useCallback(() => {
     if (!selectedCwd) return;
@@ -526,9 +629,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   key={cwd}
                   onClick={() => {
                     setSelectedCwd(cwd);
-                    setCustomPathOpen(false);
-                    setCustomPathValue("");
                     setDropdownOpen(false);
+                    resetDirectoryPicker();
                   }}
                   style={{
                     display: "flex",
@@ -586,12 +688,234 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 </button>
               )}
 
+              {nativeDirectoryPicker && !customPathOpen && !directoryBrowserOpen && !singleWorkspace && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void openNativeDirectoryPicker();
+                  }}
+                  disabled={nativePickerLoading}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    width: "100%",
+                    padding: "8px 10px",
+                    background: "none",
+                    border: "none",
+                    color: nativePickerLoading ? "var(--text-dim)" : "var(--text-muted)",
+                    cursor: nativePickerLoading ? "wait" : "pointer",
+                    textAlign: "left",
+                    fontSize: 11,
+                  }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <rect x="1.2" y="2" width="7.6" height="6.8" rx="1" />
+                    <path d="M3 4.2h4M3 6h2.8" />
+                  </svg>
+                  <span>
+                    {nativePickerLoading
+                      ? t("sidebar.openingDirectoryPicker")
+                      : runtimePlatform === "darwin"
+                        ? t("sidebar.chooseInFinder")
+                        : t("sidebar.chooseInExplorer")}
+                  </span>
+                </button>
+              )}
+
+              {!customPathOpen && !directoryBrowserOpen && !singleWorkspace && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openDirectoryBrowser();
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    width: "100%",
+                    padding: "8px 10px",
+                    background: "none",
+                    border: "none",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontSize: 11,
+                  }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M1 3A1 1 0 0 1 2 2h2l1 1.5h3A1 1 0 0 1 9 4.5V8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3Z" />
+                    <path d="M4 6h3M5.5 4.5v3" />
+                  </svg>
+                  <span>{t("sidebar.browseDirectories")}</span>
+                </button>
+              )}
+
+              {directoryBrowserOpen && !singleWorkspace && (
+                <div style={{ padding: "7px 8px", borderTop: "1px solid var(--border)" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                      marginBottom: 6,
+                    }}
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (directoryParent) void loadWorkspaceDirectory(directoryParent);
+                      }}
+                      disabled={!directoryParent || directoryLoading}
+                      title={t("sidebar.parentDirectory")}
+                      style={{
+                        width: 26,
+                        height: 24,
+                        display: "grid",
+                        placeItems: "center",
+                        flexShrink: 0,
+                        border: "1px solid var(--border)",
+                        borderRadius: 5,
+                        background: "var(--bg-hover)",
+                        color: directoryParent ? "var(--text-muted)" : "var(--text-dim)",
+                        cursor: directoryParent && !directoryLoading ? "pointer" : "not-allowed",
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 9V3" />
+                        <path d="M3.5 5.5 6 3l2.5 2.5" />
+                      </svg>
+                    </button>
+                    <div
+                      title={directoryBrowserPath ?? ""}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        color: "var(--text-dim)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 5,
+                        padding: "5px 7px",
+                      }}
+                    >
+                      {directoryBrowserPath ?? t("sidebar.loadingDirectories")}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      maxHeight: 190,
+                      overflowY: "auto",
+                      border: "1px solid var(--border)",
+                      borderRadius: 5,
+                      background: "var(--bg)",
+                    }}
+                  >
+                    {directoryLoading && (
+                      <div style={{ padding: "8px", fontSize: 11, color: "var(--text-dim)" }}>
+                        {t("sidebar.loadingDirectories")}
+                      </div>
+                    )}
+                    {!directoryLoading && directoryEntries.map((entry) => (
+                      <button
+                        key={entry.path}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void loadWorkspaceDirectory(entry.path);
+                        }}
+                        title={entry.path}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 7,
+                          width: "100%",
+                          height: 26,
+                          padding: "0 8px",
+                          border: "none",
+                          borderBottom: "1px solid var(--border)",
+                          background: "none",
+                          color: "var(--text-muted)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          fontSize: 11,
+                          fontFamily: "var(--font-mono)",
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                          <path d="M1.5 4A1 1 0 0 1 2.5 3h2l1 1.3h4A1 1 0 0 1 10.5 5.3V9a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1V4Z" />
+                        </svg>
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {entry.name}
+                        </span>
+                      </button>
+                    ))}
+                    {!directoryLoading && directoryEntries.length === 0 && (
+                      <div style={{ padding: "8px", fontSize: 11, color: "var(--text-dim)" }}>
+                        {t("sidebar.noDirectories")}
+                      </div>
+                    )}
+                  </div>
+
+                  {pathError && (
+                    <div style={{ marginTop: 6, color: "#f87171", fontSize: 10, lineHeight: 1.35 }}>
+                      {pathError}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: 5, marginTop: 6 }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (directoryBrowserPath) void selectWorkspaceDirectory(directoryBrowserPath).catch((err) => setPathError(String(err)));
+                      }}
+                      disabled={!directoryBrowserPath || directoryLoading}
+                      style={{
+                        flex: 1,
+                        padding: "5px 0",
+                        background: directoryBrowserPath && !directoryLoading ? "var(--accent)" : "var(--bg-panel)",
+                        border: "none",
+                        borderRadius: 5,
+                        color: directoryBrowserPath && !directoryLoading ? "#fff" : "var(--text-dim)",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: directoryBrowserPath && !directoryLoading ? "pointer" : "not-allowed",
+                      }}
+                    >
+                      {t("sidebar.selectDirectory")}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        resetDirectoryPicker();
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: "5px 0",
+                        background: "var(--bg-hover)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 5,
+                        color: "var(--text-muted)",
+                        fontSize: 11,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {t("common.cancel")}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Custom path entry */}
-              {!customPathOpen && !singleWorkspace ? (
+              {!customPathOpen && !directoryBrowserOpen && !singleWorkspace ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setCustomPathOpen(true);
+                    setPathError(null);
                     setTimeout(() => customPathInputRef.current?.focus(), 0);
                   }}
                   style={{
@@ -621,10 +945,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     value={customPathValue}
                     onChange={(e) => setCustomPathValue(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") commitCustomPath();
+                      if (e.key === "Enter") void commitCustomPath();
                       if (e.key === "Escape") {
                         setCustomPathOpen(false);
                         setCustomPathValue("");
+                        setPathError(null);
                       }
                     }}
                     placeholder="/path/to/project"
@@ -641,9 +966,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                       boxSizing: "border-box",
                     }}
                   />
+                  {pathError && (
+                    <div style={{ marginTop: 5, color: "#f87171", fontSize: 10, lineHeight: 1.35 }}>
+                      {pathError}
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
                     <button
-                      onClick={commitCustomPath}
+                      onClick={() => void commitCustomPath()}
                       style={{
                         flex: 1,
                         padding: "4px 0",
@@ -659,7 +989,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                       {t("sidebar.open")}
                     </button>
                     <button
-                      onClick={() => { setCustomPathOpen(false); setCustomPathValue(""); }}
+                      onClick={() => { setCustomPathOpen(false); setCustomPathValue(""); setPathError(null); }}
                       style={{
                         flex: 1,
                         padding: "4px 0",

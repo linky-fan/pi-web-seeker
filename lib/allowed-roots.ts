@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { homedir } from "os";
 import { getSessionCwdRoots } from "@/lib/session-reader";
+import { getRegisteredWorkspaceRoots } from "@/lib/workspace-roots";
 
 declare global {
   var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
@@ -44,6 +45,10 @@ export async function getAllowedRoots(): Promise<Set<string>> {
   }
 
   for (const cwd of await getSessionCwdRoots()) {
+    if (cwd) roots.add(cwd);
+  }
+
+  for (const cwd of getRegisteredWorkspaceRoots()) {
     if (cwd) roots.add(cwd);
   }
 

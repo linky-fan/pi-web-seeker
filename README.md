@@ -75,6 +75,39 @@ PORT=8080 pi-web                 # 也支持环境变量
 PI_WEB_BIND_HOST=127.0.0.1 pi-web # 环境变量指定绑定地址
 ```
 
+## 本地构建
+
+项目的正式构建入口是：
+
+```bash
+npm run build
+```
+
+这个命令会调用 `scripts/next-build.mjs`，再用当前 Node.js 直接执行 Next.js CLI，避免依赖 `node_modules/.bin/next`。这样在 Windows 上可以减少 `.cmd`、符号链接和路径中包含空格时的差异。
+
+构建脚本会按平台选择默认构建器：
+
+- Windows：默认使用 Turbopack，也就是等价于 `next build --turbo`
+- macOS / Linux：默认使用 webpack，也就是等价于 `next build --webpack`
+
+Windows 默认避开 webpack，是因为 webpack 构建链路里可能触发 `jiti` / `fast-glob` 扫描用户 profile 下的兼容 junction，例如 `C:\Users\<user>\Application Data`、`Local Settings`、`My Documents` 等目录；这些目录在现代 Windows 中通常是为兼容旧程序保留的 junction，递归扫描时可能遇到访问错误或 `errno 4048`。
+
+如果需要手动切换构建器，可以直接给脚本传参数：
+
+```bash
+npm run build -- --turbo
+npm run build -- --webpack
+```
+
+也可以通过环境变量指定：
+
+```bash
+PI_WEB_BUILD_ENGINE=turbo npm run build
+PI_WEB_BUILD_ENGINE=webpack npm run build
+```
+
+Next 配置中还额外排除了常见 Windows profile junction，并关闭了 Next 的开发 indicator，避免 Windows/Turbopack 构建后的页面角落出现 dev tools 小圆点。
+
 ## Docker
 
 本机个人使用可以直接用 Docker Compose：
@@ -162,9 +195,24 @@ docker run --rm -it \
 | 输入与控制 | 图片上传 / 粘贴、提示词片段、输入历史、草稿保留、完成提示音、运行中引导、完成后追加 |
 | 模型与工具 | 对话中切换模型，管理 provider / model / API key / OAuth，测试模型连通性，控制工具预设与 thinking level |
 | 上下文与统计 | 会话压缩、input / output / cache tokens、费用、上下文使用率、system prompt 查看、长上下文 CLI needle 测试 |
-| 文件与工作区 | 文件搜索、最近文件、Git tracked-only、下载文件、路径插入输入框、代码 / Markdown / HTML / 图片 / 音频预览 |
+| 文件与工作区 | 项目目录选择、文件搜索、最近文件、Git tracked-only、下载文件、路径插入输入框、代码 / Markdown / HTML / 图片 / 音频预览 |
 | 扩展能力 | Skills 管理、Subagent 通知卡片、AGENTS.md 模板与检查器、运行时 OS/shell/path 系统提示词上下文 |
 | 体验与性能 | 多主题、English / 简体中文、聊天 Minimap、session/index/allowed-roots 缓存、长会话懒渲染 |
+
+## 项目目录选择
+
+侧边栏顶部的项目目录下拉用于选择新会话和 Explorer 的工作区。
+
+在 Windows 或 macOS 本机运行、并通过 `localhost` / `127.0.0.1` 访问时，菜单会显示原生目录选择入口：
+
+- Windows：在资源管理器中选择目录
+- macOS：在 Finder 中选择目录
+
+选择完成后，目录会在服务端验证并临时登记为允许的 workspace root，因此新会话、Explorer 和文件预览可以直接使用该目录。
+
+在 Docker、Linux/headless 环境，或从局域网其他设备访问服务时，不会显示原生选择器，因为原生窗口会弹在运行 pi-web 的服务端机器上。此时菜单会显示网页内目录浏览器，可从 home、默认目录、最近会话目录等允许范围逐级选择。Docker Compose 默认只暴露 `/workspace` 单工作区。
+
+手动输入路径仍然可用，但会先通过 `/api/workspaces` 验证目录存在且可访问，避免发送第一条消息时才发现 `Access denied`。
 
 ## AGENTS.md 项目规范
 
