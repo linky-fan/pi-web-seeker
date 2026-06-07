@@ -51,6 +51,8 @@
     ".pi-web-workspace",
     "**/Application Data",
     "**/Application Data/**",
+    "**/ApplicationData",
+    "**/ApplicationData/**",
     "**/Cookies",
     "**/Cookies/**",
     "**/Local Settings",

@@ -14,15 +14,27 @@ try {
 }
 
 const protectedWindowsProfileJunctions = [
+  "**/Application Data",
   "**/Application Data/**",
+  "**/ApplicationData",
+  "**/ApplicationData/**",
+  "**/Cookies",
   "**/Cookies/**",
+  "**/Local Settings",
   "**/Local Settings/**",
+  "**/My Documents",
   "**/My Documents/**",
+  "**/NetHood",
   "**/NetHood/**",
+  "**/PrintHood",
   "**/PrintHood/**",
+  "**/Recent",
   "**/Recent/**",
+  "**/SendTo",
   "**/SendTo/**",
+  "**/Start Menu",
   "**/Start Menu/**",
+  "**/Templates",
   "**/Templates/**",
 ];
 
