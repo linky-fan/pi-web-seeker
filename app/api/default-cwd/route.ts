@@ -3,6 +3,8 @@ import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/default-cwd
 // Creates ~/pi-cwd-<YYYYMMDD> if it doesn't exist and returns the path.
 export async function POST() {

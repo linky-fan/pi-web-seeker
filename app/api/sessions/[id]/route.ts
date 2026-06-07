@@ -15,6 +15,8 @@ import { getRpcSession } from "@/lib/rpc-manager";
 import { areSameFilePath, isWindowsStylePath } from "@/lib/path-identity";
 import { compressSessionTree } from "@/lib/session-tree";
 
+export const dynamic = "force-dynamic";
+
 function getPathModule(filePath: string): typeof path.win32 | typeof path.posix {
   return isWindowsStylePath(filePath) ? path.win32 : path.posix;
 }

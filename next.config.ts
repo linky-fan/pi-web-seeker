@@ -11,6 +11,20 @@ try {
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"],
+  outputFileTracingExcludes: {
+    "*": [
+      "**/Application Data/**",
+      "**/Cookies/**",
+      "**/Local Settings/**",
+      "**/My Documents/**",
+      "**/NetHood/**",
+      "**/PrintHood/**",
+      "**/Recent/**",
+      "**/SendTo/**",
+      "**/Start Menu/**",
+      "**/Templates/**",
+    ],
+  },
   allowedDevOrigins: [
     "127.*.*.*",
     "10.*.*.*",

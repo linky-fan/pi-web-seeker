@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getCachedSessionFile, resolveSessionPath } from "@/lib/session-reader";
 import { startRpcSession, getRpcSession } from "@/lib/rpc-manager";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
   req: Request,

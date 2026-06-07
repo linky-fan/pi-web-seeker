@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { resolveSessionPath, getCachedSessionContext, getCachedSessionFile } from "@/lib/session-reader";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }

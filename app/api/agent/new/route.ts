@@ -3,6 +3,8 @@ import { existsSync } from "fs";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { assertPathAllowed } from "@/lib/allowed-roots";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/agent/new  body: { cwd: string; type: string; message: string; ... }
 // Spawns a brand-new pi session and immediately sends the first command.
 // Returns { sessionId, data } where sessionId is pi's real session id.

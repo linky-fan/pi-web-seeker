@@ -5,6 +5,8 @@ import { execFileSync } from "child_process";
 import { Readable } from "stream";
 import { getAllowedRoots, isPathAllowed, isWindowsAbsolutePath } from "@/lib/allowed-roots";
 
+export const dynamic = "force-dynamic";
+
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
   ".turbo", ".cache", "coverage", ".pytest_cache", ".mypy_cache",
