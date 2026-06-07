@@ -11,6 +11,10 @@ try {
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"],
+  outputFileTracingRoot: __dirname,
+  turbopack: {
+    root: __dirname,
+  },
   outputFileTracingExcludes: {
     "*": [
       "**/Application Data/**",
