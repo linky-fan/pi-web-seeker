@@ -9,6 +9,7 @@ import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { BrandTypewriterHeader } from "./BrandTypewriter";
+import { useLocale } from "@/lib/i18n";
 
 interface Props {
   session: SessionInfo | null;
@@ -164,6 +165,176 @@ function LazyMessageSlot({
   return (
     <div ref={setSlotRef} style={style}>
       {shouldRender ? children : null}
+    </div>
+  );
+}
+
+interface AgentsMdReport {
+  approxTokens?: number;
+  warnings?: string[];
+  errors?: string[];
+}
+
+interface AgentsMdStatus {
+  exists: boolean;
+  filePath?: string;
+  result?: AgentsMdReport | null;
+}
+
+function AgentsMdHint({ cwd }: { cwd: string }) {
+  const { t } = useLocale();
+  const [status, setStatus] = useState<AgentsMdStatus | null>(null);
+  const [busy, setBusy] = useState<"init" | "check" | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/agents-md?cwd=${encodeURIComponent(cwd)}`);
+      const data = await res.json() as AgentsMdStatus & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to load AGENTS.md status");
+      setStatus({ exists: data.exists, filePath: data.filePath });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [cwd]);
+
+  useEffect(() => {
+    setStatus(null);
+    setMessage(null);
+    setError(null);
+    void loadStatus();
+  }, [loadStatus]);
+
+  const runAction = useCallback(async (action: "init" | "check") => {
+    setBusy(action);
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/agents-md", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, action, template: "standard" }),
+      });
+      const data = await res.json() as {
+        ok?: boolean;
+        exists?: boolean;
+        filePath?: string;
+        result?: AgentsMdReport | null;
+        error?: string;
+        stderr?: string;
+      };
+      if (!res.ok || data.ok === false) throw new Error(data.stderr || data.error || "AGENTS.md action failed");
+      setStatus({ exists: Boolean(data.exists), filePath: data.filePath, result: data.result ?? null });
+      const warnings = data.result?.warnings?.length ?? 0;
+      const errors = data.result?.errors?.length ?? 0;
+      if (action === "init") {
+        setMessage(t("agentsMd.created"));
+      } else if (warnings === 0 && errors === 0) {
+        setMessage(t("agentsMd.clean"));
+      } else {
+        setMessage(t("agentsMd.summary", {
+          tokens: data.result?.approxTokens ?? 0,
+          warnings,
+          errors,
+        }));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }, [cwd, t]);
+
+  const report = status?.result;
+  const warnings = report?.warnings?.length ?? 0;
+  const errors = report?.errors?.length ?? 0;
+  const statusText = !status
+    ? t("subagents.checking")
+    : status.exists
+      ? t("agentsMd.ready")
+      : t("agentsMd.missing");
+  const summary = report
+    ? t("agentsMd.summary", { tokens: report.approxTokens ?? 0, warnings, errors })
+    : message;
+
+  return (
+    <div
+      style={{
+        margin: "-2px 52px 8px 16px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        minHeight: 24,
+      }}
+    >
+      <div
+        title={error ?? summary ?? statusText}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          maxWidth: "100%",
+          color: error ? "#ef4444" : "var(--text-dim)",
+          fontSize: 11,
+          lineHeight: 1,
+          opacity: 0.78,
+        }}
+      >
+        <span style={{
+          width: 5,
+          height: 5,
+          borderRadius: 999,
+          background: errors > 0 ? "#ef4444" : warnings > 0 ? "rgba(234,179,8,0.98)" : status?.exists ? "#16a34a" : "var(--text-dim)",
+          flexShrink: 0,
+          opacity: 0.75,
+        }} />
+        <span style={{ fontWeight: 600, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{t("agentsMd.title")}</span>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {error ?? summary ?? statusText}
+        </span>
+        {status && !status.exists && (
+          <button
+            type="button"
+            onClick={() => void runAction("init")}
+            disabled={busy !== null}
+            style={{
+              height: 20,
+              padding: 0,
+              border: "none",
+              background: "transparent",
+              color: "var(--accent)",
+              fontSize: 11,
+              fontWeight: 650,
+              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            {busy === "init" ? t("agentsMd.creating") : t("agentsMd.create")}
+          </button>
+        )}
+        {status?.exists && (
+          <button
+            type="button"
+            onClick={() => void runAction("check")}
+            disabled={busy !== null}
+            style={{
+              height: 20,
+              padding: 0,
+              border: "none",
+              background: "transparent",
+              color: "var(--accent)",
+              fontSize: 11,
+              fontWeight: 650,
+              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            {busy === "check" ? t("agentsMd.checking") : t("agentsMd.check")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -394,6 +565,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             >
               <BrandTypewriterHeader />
             </div>
+            {newSessionCwd && <AgentsMdHint cwd={newSessionCwd} />}
             {chatInputElement}
           </div>
         </div>

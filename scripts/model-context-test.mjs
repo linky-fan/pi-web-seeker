@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 const DEFAULT_AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
+const SUPPORTED_APIS = new Set(["openai-completions", "anthropic-messages"]);
 
 function parseArgs(argv) {
   const args = new Map();
@@ -21,6 +22,16 @@ function parseArgs(argv) {
     }
   }
   return args;
+}
+
+function readPositiveInteger(args, name, fallback) {
+  const raw = args.get(name);
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`--${name} must be a positive integer.`);
+  }
+  return value;
 }
 
 function readJsonIfExists(filePath) {
@@ -111,6 +122,9 @@ function resolveConfig(args) {
   }
 
   const api = args.get("api") ?? providerModel.api ?? providerConfig.api ?? "openai-completions";
+  if (!SUPPORTED_APIS.has(api)) {
+    throw new Error(`Unsupported API "${api}". This context test currently supports: ${Array.from(SUPPORTED_APIS).join(", ")}.`);
+  }
   const defaultBaseUrl = provider === "deepseek" ? "https://api.deepseek.com" : "";
   const baseUrl = args.get("base-url") ?? args.get("url") ?? providerConfig.baseUrl ?? defaultBaseUrl;
   if (!baseUrl) {
@@ -199,21 +213,64 @@ function usageFrom(json) {
   return json?.usage ?? null;
 }
 
+function promptTokenCount(usage) {
+  const value = usage?.prompt_tokens
+    ?? usage?.input_tokens
+    ?? usage?.promptTokens
+    ?? usage?.inputTokens
+    ?? null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function failureReasons(response, businessOk, found, usagePromptTokens) {
+  const reasons = [];
+  if (!response.httpOk) reasons.push(`HTTP status ${response.status}`);
+  if (!businessOk) reasons.push("API response did not include a completion choice/content block");
+  const missing = Object.entries(found).filter(([, ok]) => !ok).map(([needle]) => needle);
+  if (missing.length > 0) reasons.push(`Missing needles: ${missing.join(", ")}`);
+  if (!usagePromptTokens || usagePromptTokens <= 0) reasons.push("Missing non-zero prompt token usage");
+  return reasons;
+}
+
 const args = parseArgs(process.argv.slice(2));
-const targetWords = Number(args.get("tokens") ?? args.get("words") ?? "8192");
-const timeoutMs = Number(args.get("timeout-ms") ?? "600000");
-const { agentDir, provider, model, api, endpoint, apiKey } = resolveConfig(args);
-const { text, needles } = makeNeedleDoc(targetWords);
-const prompt = [
-  "You are testing long-context retrieval. The following document contains exactly three XML <needle> values.",
-  "Return only a compact JSON object with keys start, middle, end. Do not add explanation.",
-  "",
-  text,
-].join("\n");
-const body = makeBody(api, model, prompt, args);
 const started = Date.now();
+let testContext = {
+  provider: args.get("provider") ?? args.get("p") ?? null,
+  model: args.get("model") ?? args.get("m") ?? null,
+  api: args.get("api") ?? null,
+  endpoint: null,
+  agentDir: null,
+  targetWords: null,
+  approximateChars: null,
+  expected: [],
+};
 
 try {
+  const targetWords = args.has("tokens")
+    ? readPositiveInteger(args, "tokens", 8192)
+    : readPositiveInteger(args, "words", 8192);
+  const timeoutMs = readPositiveInteger(args, "timeout-ms", 600000);
+  testContext = { ...testContext, targetWords };
+  const { agentDir, provider, model, api, endpoint, apiKey } = resolveConfig(args);
+  const { text, needles } = makeNeedleDoc(targetWords);
+  const prompt = [
+    "You are testing long-context retrieval. The following document contains exactly three XML <needle> values.",
+    "Return only a compact JSON object with keys start, middle, end. Do not add explanation.",
+    "",
+    text,
+  ].join("\n");
+  const body = makeBody(api, model, prompt, args);
+  testContext = {
+    provider,
+    model,
+    api,
+    endpoint,
+    agentDir,
+    targetWords,
+    approximateChars: prompt.length,
+    expected: needles,
+  };
   const response = await postJson(endpoint, body, apiKey, api, timeoutMs);
   const raw = response.text;
   let json;
@@ -226,39 +283,38 @@ try {
   const businessOk = isBusinessOk(api, json);
   const answer = extractText(json);
   const found = Object.fromEntries(needles.map((needle) => [needle, answer.includes(needle)]));
+  const usage = usageFrom(json);
+  const usagePromptTokens = promptTokenCount(usage);
+  const failures = failureReasons(response, businessOk, found, usagePromptTokens);
+  const passed = failures.length === 0;
   console.log(JSON.stringify({
-    ok: response.httpOk && businessOk,
+    ok: passed,
     httpOk: response.httpOk,
     status: response.status,
     businessOk,
-    provider,
-    model,
-    api,
-    endpoint,
-    agentDir,
-    targetWords,
-    approximateChars: prompt.length,
+    needlesFound: Object.values(found).every(Boolean),
+    usagePromptTokens,
+    ...testContext,
     elapsedMs: Date.now() - started,
-    expected: needles,
     found,
+    failures,
     answer,
-    usage: usageFrom(json),
-    error: response.httpOk && businessOk ? null : json,
+    usage,
+    error: passed ? null : json,
   }, null, 2));
+  if (!passed) process.exitCode = 1;
 } catch (error) {
   console.log(JSON.stringify({
     ok: false,
+    httpOk: false,
     status: null,
-    provider,
-    model,
-    api,
-    endpoint,
-    agentDir,
-    targetWords,
-    approximateChars: prompt.length,
+    businessOk: false,
+    needlesFound: false,
+    usagePromptTokens: null,
+    ...testContext,
     elapsedMs: Date.now() - started,
-    expected: needles,
-    found: Object.fromEntries(needles.map((needle) => [needle, false])),
+    found: Object.fromEntries(testContext.expected.map((needle) => [needle, false])),
+    failures: [error instanceof Error ? error.message : String(error)],
     answer: null,
     usage: null,
     error: error instanceof Error ? error.message : String(error),

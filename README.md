@@ -4,6 +4,22 @@
 
 仓库地址：[linky-fan/pi-web-seeker](https://github.com/linky-fan/pi-web-seeker)
 
+## 工作方式
+
+Pi Web Seeker 本身是浏览器 UI；会话浏览直接读取 pi 的 session 文件，真正发送消息时才创建 in-process `AgentSession`。
+
+```mermaid
+flowchart LR
+  Browser["Browser UI"] --> SessionsApi["/api/sessions<br/>read .jsonl"]
+  Browser --> AgentApi["/api/agent/*<br/>send command / SSE"]
+  SessionsApi --> SessionFiles["~/.pi/agent/sessions"]
+  AgentApi --> RpcManager["rpc-manager<br/>AgentSessionWrapper"]
+  RpcManager --> PiAgent["Pi AgentSession"]
+  PiAgent --> SessionFiles
+  Browser --> FilesApi["/api/files<br/>Explorer / Viewer"]
+  FilesApi --> Workspace["workspace roots"]
+```
+
 ## 界面预览
 
 Pi Web Seeker 内置多套 theme，可在左下角或顶部工具栏快速切换。下面是几套代表性配色：
@@ -69,6 +85,17 @@ docker compose up --build
 
 启动后打开 [http://localhost:30141](http://localhost:30141)。
 
+默认挂载关系如下。更新镜像或重建容器时，用户数据仍保留在宿主机目录里：
+
+```mermaid
+flowchart LR
+  HostData["./.pi-web-data"] --> ContainerPi["/home/piweb/.pi"]
+  HostWorkspace["./.pi-web-workspace<br/>或 PI_WEB_WORKSPACE"] --> ContainerWorkspace["/workspace"]
+  HostSsh["~/.ssh read-only"] --> ContainerSsh["/home/piweb/.ssh"]
+  ContainerPi --> AgentData["agent/models.json<br/>agent/auth.json<br/>agent/sessions<br/>agent/skills"]
+  ContainerWorkspace --> Explorer["Explorer 默认工作区"]
+```
+
 默认会挂载：
 
 - `.pi-web-data` → `/home/piweb/.pi`，保留会话、模型、登录凭据、settings、skills、prompts、themes 等用户数据
@@ -129,32 +156,30 @@ docker run --rm -it \
 
 ## 功能介绍
 
-- **主题与语言** — 内置多套 theme，可在左下角或顶部工具栏切换；界面语言支持 English / 简体中文，英文作为兜底语言
-- **会话浏览器** — 按工作目录分组展示所有 pi 会话，支持选择默认 / 自定义工作目录、重命名和删除会话
-- **实时对话** — 通过 SSE 流式输出与智能体实时交互，刷新页面后可自动重连仍在运行的会话
-- **会话分叉** — 从任意用户消息创建独立的新会话分支
-- **会话内分支** — 回退到任意节点继续对话，在同一文件内创建分支
-- **分支导航器** — 可视化切换同一会话内的各个分支
-- **消息操作** — 支持复制消息、从历史用户消息新建独立会话、从历史节点继续分支
-- **输入增强** — 支持图片上传 / 粘贴、提示词片段、输入历史、草稿保留和完成提示音
-- **模型管理** — 对话中途可切换模型；在「Models」面板中编辑 provider / model、base URL、API 类型、上下文窗口、最大输出、费用和 Thinking level map，并管理 API key / OAuth 登录
-- **模型配置测试** — 在「Models」面板中测试单个模型连通性，查看延迟、HTTP 状态和简短响应；也可用 CLI 做长上下文 needle 测试
-- **工具与推理控制** — 控制智能体可使用的工具预设，按模型能力切换 thinking level
-- **压缩会话** — 对长会话进行摘要，节省上下文窗口
-- **状态统计** — 顶部栏显示 input / output / cache tokens、费用和上下文使用率，并可查看当前 system prompt
-- **Skills 管理** — 在「Skills」面板中查看项目 / 全局 skills，搜索安装 skills，并控制 skill 是否进入模型提示词
-- **文件浏览器** — 在侧边栏搜索文件、查看最近文件、切换 Git tracked-only 模式、下载文件，或把文件路径插入到输入框
-- **文件查看器** — 标签页内查看代码、Markdown + KaTeX 数学公式、HTML、图片和音频，支持自动同步、变更 diff、换行和大文件保护
-- **聊天 Minimap** — 长会话右侧显示消息缩略导航，方便快速定位历史节点
-- **性能优化** — Web 层缓存 session list index、parent session 映射和 cwd roots；Docker 单工作区优先使用显式 workspace roots；长会话历史消息按需懒渲染，减少 streaming 时的历史消息重绘
-- **Subagent 通知渲染** — 自动识别 `subagent-notification` / `<task-notification>`，用紧凑卡片展示子智能体状态、结果、tokens、工具调用次数和 transcript
-- **运行时系统提示词上下文** — 新建会话时自动注入当前设备的 OS、shell、路径风格和包管理器线索，帮助智能体选择更合适的命令
-- **AGENTS.md 项目规范** — 提供模板生成和结构/长度检查器，帮助新项目建立高密度、可维护的智能体协作规则
-- **引导 / 追加** — 打断正在运行的智能体，或在其完成后追加消息
+| 场景 | 能力 |
+| --- | --- |
+| 对话与会话 | SSE 流式对话、刷新后重连、会话分叉、会话内分支、分支导航、消息复制与从历史节点继续 |
+| 输入与控制 | 图片上传 / 粘贴、提示词片段、输入历史、草稿保留、完成提示音、运行中引导、完成后追加 |
+| 模型与工具 | 对话中切换模型，管理 provider / model / API key / OAuth，测试模型连通性，控制工具预设与 thinking level |
+| 上下文与统计 | 会话压缩、input / output / cache tokens、费用、上下文使用率、system prompt 查看、长上下文 CLI needle 测试 |
+| 文件与工作区 | 文件搜索、最近文件、Git tracked-only、下载文件、路径插入输入框、代码 / Markdown / HTML / 图片 / 音频预览 |
+| 扩展能力 | Skills 管理、Subagent 通知卡片、AGENTS.md 模板与检查器、运行时 OS/shell/path 系统提示词上下文 |
+| 体验与性能 | 多主题、English / 简体中文、聊天 Minimap、session/index/allowed-roots 缓存、长会话懒渲染 |
 
 ## AGENTS.md 项目规范
 
 `AGENTS.md` 会进入智能体的 system prompt，适合保存每次都值得加载的高频规则；长篇架构说明、完整 schema、文件树和示例应放到 `docs/agent-notes/` 后按需读取。
+
+打开一个工作区的新会话首页时，页面会提示当前项目是否已有 `AGENTS.md`，并提供创建模板或运行检查的按钮。
+
+推荐的文档分层：
+
+```mermaid
+flowchart TB
+  Agents["AGENTS.md<br/>高频规则 / 命令 / 陷阱"] --> Notes["docs/agent-notes/*<br/>低频架构细节 / schema / 示例"]
+  Tool["scripts/agents-md.mjs check"] --> Agents
+  Tool --> Report["tokens / sections / secrets / large blocks"]
+```
 
 为新项目生成模板：
 
@@ -193,6 +218,20 @@ npm run agents:check -- --path /path/to/project/AGENTS.md
 ## Subagents
 
 Pi Web Seeker 不负责启动或管理子智能体本身；它负责把会话文件中的 subagent 通知渲染成更清晰的网页卡片。要实际使用子智能体，请先在 pi 中安装扩展：
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant Web as Pi Web Seeker
+  participant Pi as Pi AgentSession
+  participant Sub as pi-subagents
+  User->>Web: send task
+  Web->>Pi: POST /api/agent/[id]
+  Pi->>Sub: Agent tool starts subagent
+  Sub-->>Pi: subagent-notification / task-notification
+  Pi-->>Web: SSE event + session jsonl
+  Web-->>User: compact subagent card
+```
 
 ```bash
 pi install npm:@tintinweb/pi-subagents
@@ -266,16 +305,48 @@ run_in_background: true
 
 如果用户在新会话中选择关闭全部工具，pi-web 仍会保持空 system prompt，不会强行注入运行时上下文。
 
+## 模型与长上下文
+
+API key 不要写进仓库。推荐在「Models」面板中选择对应 provider 后保存；MiniMax 中国区应配置 `MiniMax (China)` / `minimax-cn`。密钥会保存到智能体数据目录下的 `auth.json`，Docker Compose 默认持久化到 `.pi-web-data/agent/auth.json`。
+
+模型详情页的「Test」按钮会发送一次真实轻量请求，用于验证 API key、base URL、模型 ID 和接口兼容性。长上下文能力可以用 CLI 做 needle-in-context 测试：
+
+```bash
+npm run test:context -- --provider deepseek --model deepseek-v4-pro --tokens 128000
+```
+
+脚本会读取 `models.json` 和 `auth.json`，也支持 `--agent-dir`、`--base-url`、`--api`、`--api-key-env`、`--timeout-ms`。当前支持 `openai-completions` 和 `anthropic-messages`；`openai-responses` / `google-generative-ai` 会明确报不支持。
+
+长上下文测试和右下角压缩按钮的关系：
+
+```mermaid
+flowchart LR
+  Test["npm run test:context"] --> Needle["needle-in-context<br/>start / middle / end"]
+  Needle --> Result{"ok?"}
+  Result -->|true| Verified["记录可用区间"]
+  Result -->|false| Failures["输出 failures<br/>非 0 退出码"]
+  Verified --> Button["压缩按钮颜色提示"]
+  Failures --> Button
+  Button --> Compact["接近风险区间时提前压缩"]
+```
+
+当前内置提示：
+
+| 模型 | 本地测试结论 | 压缩按钮提示 |
+| --- | --- | --- |
+| DeepSeek V4 Pro | 约 `990k` prompt tokens needle 测试通过 | `900k+` 黄色，`980k+` 红色 |
+| MiniMax M3 | `128k` 通过，`256k` 部分通过，`384k/512k` 超时，`900k` 被拒绝 | `128k+` 黄色，`256k+` 红色 |
+
+`ok: true` 表示 HTTP 成功、API 返回有效内容、start / middle / end 三个 needle 全部命中，并且有非 0 prompt token usage。否则脚本会输出 `failures` 并以非 0 状态退出。真实上下文长度以返回的 `usagePromptTokens` / `usage.prompt_tokens` 为准。
+
 ## 注意事项
 
 - **数据目录** — 默认读取 `~/.pi/agent/sessions` 下的会话文件。可通过环境变量 `PI_CODING_AGENT_DIR` 指定其他目录。
-- **模型配置** — 从智能体数据目录下的 `models.json` 读取可用模型，可在侧边栏的「Models」面板中编辑。`models.json` 适合保存 provider、base URL、API 类型、模型 ID、上下文窗口等非密钥配置。
-- **API key** — 不要写进仓库。推荐在「Models」面板中选择对应 provider 后保存 API key，例如 MiniMax 中国区应配置 `MiniMax (China)` / `minimax-cn`。这些密钥会保存到智能体数据目录下的 `auth.json`；Docker Compose 默认持久化到宿主机 `.pi-web-data/agent/auth.json`。也可以用环境变量提供，例如 `MINIMAX_CN_API_KEY=...`、`DEEPSEEK_API_KEY=...`。模型详情页的「Test」按钮会发送一次真实的轻量请求，用于验证 API key、base URL、模型 ID 和接口兼容性，可能产生少量 token 消耗。
-- **上下文窗口测试** — 可用 `npm run test:context -- --provider deepseek --model deepseek-v4-pro --tokens 128000` 做 needle-in-context 测试。脚本会读取 `~/.pi/agent/models.json` 和 `~/.pi/agent/auth.json`，也支持 `--agent-dir`、`--base-url`、`--api`、`--api-key-env`、`--timeout-ms`。`--tokens` 是生成测试文本的目标填充词数，真实上下文长度以返回的 `usage.prompt_tokens` 为准。它会发送真实长上下文请求并产生 token 消耗，建议从 `8192`、`128000` 逐步增加；通过标准应同时满足 `ok: true`、`businessOk: true`、`usage.prompt_tokens` 非 0，并且 `found` 中 start / middle / end 都为 `true`。
+- **模型配置** — 从智能体数据目录下的 `models.json` 读取可用模型，可在侧边栏的「Models」面板中编辑。
 - **访问保护** — 默认不启用登录，适合可信本机/可信内网使用。设置 `PI_WEB_ACCESS_TOKEN` 后，页面入口和所有 `/api/*` 请求都需要同源 cookie 或 Bearer/header token。
-- **文件浏览** — 侧边栏内置文件浏览器，可在标签页中查看当前工作目录下的文件；Docker Compose 默认只暴露 `/workspace` 单工作区。文件 API 会用真实路径校验 allowed roots，避免通过符号链接读取工作区外文件。
-- **缓存行为** — session list index 和 allowed roots 使用短 TTL 缓存，并在新建、分叉、重命名、删除会话时失效。Docker 单工作区模式会优先使用 `PI_WEB_ALLOWED_ROOTS` / `PI_WEB_DEFAULT_CWD`，避免 Explorer 权限检查频繁扫描历史会话。
-- **Docker 路径** — 容器内默认项目目录是 `/workspace`。宿主机路径和容器路径不同，已有旧会话仍会显示原来的宿主机路径；新会话建议在 `/workspace` 下创建。
+- **文件浏览** — Docker Compose 默认只暴露 `/workspace` 单工作区；文件 API 会用真实路径校验 allowed roots，避免通过符号链接读取工作区外文件。
+- **缓存行为** — session list index 和 allowed roots 使用短 TTL 缓存，并在新建、分叉、重命名、删除会话时失效。
+- **Docker 路径** — 容器内默认项目目录是 `/workspace`。宿主机路径和容器路径不同，已有旧会话仍会显示原来的宿主机路径。
 
 ## 开发
 

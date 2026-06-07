@@ -176,7 +176,7 @@ function getContextUsageTitle(
     : profile === "minimax-m3"
       ? t("chat.contextHint.minimaxM3")
       : t("chat.contextHint.generic");
-  return `${action}\nContext: ${percent}\nTokens: ${tokens} / ${windowSize}\n${hint}`;
+  return `${action}\n${t("stats.context")}: ${percent}\n${t("chat.contextTokens")}: ${tokens} / ${windowSize}\n${hint}`;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
