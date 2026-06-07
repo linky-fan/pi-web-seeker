@@ -20,13 +20,14 @@
     "templates/agents",
     "scripts/agents-md.mjs",
     "scripts/model-context-test.mjs",
+    "scripts/next-build.mjs",
     "scripts/prepare-github-install.js",
-    "next.config.ts",
+    "next.config.mjs",
     "package.json"
   ],
   "scripts": {
     "dev": "next dev -p 30141 -H 0.0.0.0",
-    "build": "next build --webpack",
+    "build": "node scripts/next-build.mjs",
     "start": "next start -p 30141 -H 0.0.0.0",
     "lint": "eslint .",
     "agents": "node scripts/agents-md.mjs",
