@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties }
 import { getFileIcon, FolderIcon } from "./FileIcons";
 import { encodeFilePathForApi, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { useLocale } from "@/lib/i18n";
+import { isPathInOrEqualToRoot } from "@/lib/path-identity";
 
 interface FileEntry {
   name: string;
@@ -277,7 +278,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
 
   const visibleRecentFiles = useMemo(() => (
     trackedOnly ? [] : recentFiles
-      .filter((file) => file.filePath === cwd || file.filePath.startsWith(cwd.replace(/\/$/, "") + "/"))
+      .filter((file) => isPathInOrEqualToRoot(file.filePath, cwd))
       .slice(0, 5)
   ), [cwd, recentFiles, trackedOnly]);
 

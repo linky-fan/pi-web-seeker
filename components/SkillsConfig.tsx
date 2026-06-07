@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { SkillSearchResult } from "@/app/api/skills/search/route";
+import { getPathRelativeToRoot } from "@/lib/path-identity";
 
 interface Skill {
   name: string;
@@ -94,8 +95,8 @@ function SkillDetail({
   const enabled = !skill.disableModelInvocation;
 
   function displayPath(p: string): string {
-    if (label === "project" && p.startsWith(cwd)) {
-      const rel = p.slice(cwd.length).replace(/^[/\\]/, "");
+    const rel = label === "project" ? getPathRelativeToRoot(p, cwd) : null;
+    if (rel !== null) {
       return `./${rel}`;
     }
     return shortenPath(p);

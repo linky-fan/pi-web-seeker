@@ -301,6 +301,7 @@ function filePathFromSegments(segments: string[]): string {
   }
 
   const joined = segments.join("/");
+  if (/^[a-zA-Z]:$/.test(joined)) return `${joined}/`;
   const slashJoined = normalizeSlashes(joined);
   if (isWindowsAbsolutePath(slashJoined)) return slashJoined;
   return "/" + joined.replace(/^\/+/, "");
