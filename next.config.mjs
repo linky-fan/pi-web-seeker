@@ -39,23 +39,7 @@ const nextConfig = {
   webpack: (config) => {
     config.watchOptions = {
       ...(config.watchOptions ?? {}),
-      ignored: [
-        ...(Array.isArray(config.watchOptions?.ignored)
-          ? config.watchOptions.ignored
-          : config.watchOptions?.ignored
-            ? [config.watchOptions.ignored]
-            : []),
-        "**/Application Data/**",
-        "**/Cookies/**",
-        "**/Local Settings/**",
-        "**/My Documents/**",
-        "**/NetHood/**",
-        "**/PrintHood/**",
-        "**/Recent/**",
-        "**/SendTo/**",
-        "**/Start Menu/**",
-        "**/Templates/**",
-      ],
+      ignored: protectedWindowsProfileJunctions,
     };
     return config;
   },
