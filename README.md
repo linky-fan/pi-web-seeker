@@ -138,7 +138,7 @@ docker run --rm -it \
 - **消息操作** — 支持复制消息、从历史用户消息新建独立会话、从历史节点继续分支
 - **输入增强** — 支持图片上传 / 粘贴、提示词片段、输入历史、草稿保留和完成提示音
 - **模型管理** — 对话中途可切换模型；在「Models」面板中编辑 provider / model、base URL、API 类型、上下文窗口、最大输出、费用和 Thinking level map，并管理 API key / OAuth 登录
-- **模型配置测试** — 在「Models」面板中测试单个模型连通性，查看延迟、HTTP 状态和简短响应
+- **模型配置测试** — 在「Models」面板中测试单个模型连通性，查看延迟、HTTP 状态和简短响应；也可用 CLI 做长上下文 needle 测试
 - **工具与推理控制** — 控制智能体可使用的工具预设，按模型能力切换 thinking level
 - **压缩会话** — 对长会话进行摘要，节省上下文窗口
 - **状态统计** — 顶部栏显示 input / output / cache tokens、费用和上下文使用率，并可查看当前 system prompt
@@ -149,7 +149,46 @@ docker run --rm -it \
 - **性能优化** — Web 层缓存 session list index、parent session 映射和 cwd roots；Docker 单工作区优先使用显式 workspace roots；长会话历史消息按需懒渲染，减少 streaming 时的历史消息重绘
 - **Subagent 通知渲染** — 自动识别 `subagent-notification` / `<task-notification>`，用紧凑卡片展示子智能体状态、结果、tokens、工具调用次数和 transcript
 - **运行时系统提示词上下文** — 新建会话时自动注入当前设备的 OS、shell、路径风格和包管理器线索，帮助智能体选择更合适的命令
+- **AGENTS.md 项目规范** — 提供模板生成和结构/长度检查器，帮助新项目建立高密度、可维护的智能体协作规则
 - **引导 / 追加** — 打断正在运行的智能体，或在其完成后追加消息
+
+## AGENTS.md 项目规范
+
+`AGENTS.md` 会进入智能体的 system prompt，适合保存每次都值得加载的高频规则；长篇架构说明、完整 schema、文件树和示例应放到 `docs/agent-notes/` 后按需读取。
+
+为新项目生成模板：
+
+```bash
+npm run agents:init -- --template standard --dir /path/to/project
+```
+
+可用模板：
+
+```bash
+npm run agents:templates
+```
+
+当前内置：
+
+- `standard`
+- `next-app`
+- `python`
+- `docker-service`
+
+检查已有项目：
+
+```bash
+npm run agents:check -- --path /path/to/project/AGENTS.md
+```
+
+检查器会输出字符数、近似 token 数、章节长度、缺失章节、疑似密钥、大文件树和过长代码块等提示。默认只报告 warning，不会因为过长直接失败；如果希望用于 CI，可加 `--strict`。
+
+推荐目标：
+
+- 小项目：约 500-1000 tokens
+- 中型项目：约 1000-1800 tokens
+- 大项目：尽量不超过 2500 tokens
+- 超过目标时，把低频细节移到 `docs/agent-notes/*.md`，在 `AGENTS.md` 中只保留索引
 
 ## Subagents
 
@@ -232,6 +271,7 @@ run_in_background: true
 - **数据目录** — 默认读取 `~/.pi/agent/sessions` 下的会话文件。可通过环境变量 `PI_CODING_AGENT_DIR` 指定其他目录。
 - **模型配置** — 从智能体数据目录下的 `models.json` 读取可用模型，可在侧边栏的「Models」面板中编辑。`models.json` 适合保存 provider、base URL、API 类型、模型 ID、上下文窗口等非密钥配置。
 - **API key** — 不要写进仓库。推荐在「Models」面板中选择对应 provider 后保存 API key，例如 MiniMax 中国区应配置 `MiniMax (China)` / `minimax-cn`。这些密钥会保存到智能体数据目录下的 `auth.json`；Docker Compose 默认持久化到宿主机 `.pi-web-data/agent/auth.json`。也可以用环境变量提供，例如 `MINIMAX_CN_API_KEY=...`、`DEEPSEEK_API_KEY=...`。模型详情页的「Test」按钮会发送一次真实的轻量请求，用于验证 API key、base URL、模型 ID 和接口兼容性，可能产生少量 token 消耗。
+- **上下文窗口测试** — 可用 `npm run test:context -- --provider deepseek --model deepseek-v4-pro --tokens 128000` 做 needle-in-context 测试。脚本会读取 `~/.pi/agent/models.json` 和 `~/.pi/agent/auth.json`，也支持 `--agent-dir`、`--base-url`、`--api`、`--api-key-env`、`--timeout-ms`。`--tokens` 是生成测试文本的目标填充词数，真实上下文长度以返回的 `usage.prompt_tokens` 为准。它会发送真实长上下文请求并产生 token 消耗，建议从 `8192`、`128000` 逐步增加；通过标准应同时满足 `ok: true`、`businessOk: true`、`usage.prompt_tokens` 非 0，并且 `found` 中 start / middle / end 都为 `true`。
 - **访问保护** — 默认不启用登录，适合可信本机/可信内网使用。设置 `PI_WEB_ACCESS_TOKEN` 后，页面入口和所有 `/api/*` 请求都需要同源 cookie 或 Bearer/header token。
 - **文件浏览** — 侧边栏内置文件浏览器，可在标签页中查看当前工作目录下的文件；Docker Compose 默认只暴露 `/workspace` 单工作区。文件 API 会用真实路径校验 allowed roots，避免通过符号链接读取工作区外文件。
 - **缓存行为** — session list index 和 allowed roots 使用短 TTL 缓存，并在新建、分叉、重命名、删除会话时失效。Docker 单工作区模式会优先使用 `PI_WEB_ALLOWED_ROOTS` / `PI_WEB_DEFAULT_CWD`，避免 Explorer 权限检查频繁扫描历史会话。

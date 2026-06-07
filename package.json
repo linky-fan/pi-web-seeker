@@ -17,6 +17,9 @@
     "!.next/dev",
     "!.next/**/*.js.map",
     "public",
+    "templates/agents",
+    "scripts/agents-md.mjs",
+    "scripts/model-context-test.mjs",
     "scripts/prepare-github-install.js",
     "next.config.ts",
     "package.json"
@@ -26,6 +29,11 @@
     "build": "next build --webpack",
     "start": "next start -p 30141 -H 0.0.0.0",
     "lint": "eslint .",
+    "agents": "node scripts/agents-md.mjs",
+    "agents:init": "node scripts/agents-md.mjs init",
+    "agents:check": "node scripts/agents-md.mjs check",
+    "agents:templates": "node scripts/agents-md.mjs templates",
+    "test:context": "node scripts/model-context-test.mjs",
     "prepare": "node scripts/prepare-github-install.js",
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
   },

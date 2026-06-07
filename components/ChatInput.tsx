@@ -59,6 +59,7 @@ const TOOL_PRESETS = ["off", "default", "full"] as const;
 const TOOL_PRESET_MAP: Record<"off" | "default" | "full", "none" | "default" | "full"> = { off: "none", default: "default", full: "full" };
 
 const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"] as const;
+type ToolPresetLabel = typeof TOOL_PRESETS[number];
 
 const DRAFT_STORAGE_KEY = "pi-web.chat.draft";
 const HISTORY_STORAGE_KEY = "pi-web.chat.history";
@@ -118,7 +119,31 @@ function formatTokenCount(value: number): string {
   return String(value);
 }
 
-function getContextTone(percent: number | null | undefined): { color: string; bg: string; border: string } {
+function getModelContextProfile(model: { provider: string; modelId: string } | null | undefined): "deepseek-v4-pro" | "minimax-m3" | null {
+  const provider = model?.provider.toLowerCase() ?? "";
+  const modelId = model?.modelId.toLowerCase() ?? "";
+  if (provider.includes("deepseek") && modelId.includes("v4-pro")) return "deepseek-v4-pro";
+  if (provider.includes("minimax") && modelId.includes("minimax-m3")) return "minimax-m3";
+  return null;
+}
+
+function getContextTone(contextUsage: ContextUsage | null | undefined, model: { provider: string; modelId: string } | null | undefined): { color: string; bg: string; border: string } {
+  const percent = contextUsage?.percent;
+  const tokens = contextUsage?.tokens;
+  const profile = getModelContextProfile(model);
+
+  if (profile === "minimax-m3" && tokens !== null && tokens !== undefined) {
+    if (tokens >= 256_000) return { color: "#ef4444", bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.34)" };
+    if (tokens >= 128_000) return { color: "rgba(234,179,8,0.98)", bg: "rgba(234,179,8,0.12)", border: "rgba(234,179,8,0.34)" };
+    return { color: "#16a34a", bg: "rgba(22,163,74,0.08)", border: "rgba(22,163,74,0.24)" };
+  }
+
+  if (profile === "deepseek-v4-pro" && tokens !== null && tokens !== undefined) {
+    if (tokens >= 980_000) return { color: "#ef4444", bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.34)" };
+    if (tokens >= 900_000) return { color: "rgba(234,179,8,0.98)", bg: "rgba(234,179,8,0.12)", border: "rgba(234,179,8,0.34)" };
+    return { color: "#16a34a", bg: "rgba(22,163,74,0.08)", border: "rgba(22,163,74,0.24)" };
+  }
+
   if (percent !== null && percent !== undefined && percent >= 95) {
     return { color: "#ef4444", bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.28)" };
   }
@@ -128,16 +153,30 @@ function getContextTone(percent: number | null | undefined): { color: string; bg
   if (percent !== null && percent !== undefined && percent >= 60) {
     return { color: "var(--accent)", bg: "rgba(37,99,235,0.09)", border: "rgba(37,99,235,0.22)" };
   }
+  if (percent !== null && percent !== undefined) {
+    return { color: "#16a34a", bg: "rgba(22,163,74,0.08)", border: "rgba(22,163,74,0.22)" };
+  }
   return { color: "var(--text-muted)", bg: "var(--bg-panel)", border: "var(--border)" };
 }
 
-function getContextUsageTitle(contextUsage: ContextUsage | null | undefined, isCompacting: boolean | undefined, t: (key: string) => string): string {
+function getContextUsageTitle(
+  contextUsage: ContextUsage | null | undefined,
+  isCompacting: boolean | undefined,
+  model: { provider: string; modelId: string } | null | undefined,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
   const action = isCompacting ? t("chat.stopCompactAction") : t("chat.compactAction");
   if (!contextUsage?.contextWindow) return `${action}\n${t("chat.contextUnavailable")}`;
   const percent = contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : t("stats.unknown");
   const tokens = contextUsage.tokens !== null ? `${formatTokenCount(contextUsage.tokens)} (${contextUsage.tokens.toLocaleString()})` : t("stats.unknown");
   const windowSize = `${formatTokenCount(contextUsage.contextWindow)} (${contextUsage.contextWindow.toLocaleString()})`;
-  return `${action}\nContext: ${percent}\nTokens: ${tokens} / ${windowSize}`;
+  const profile = getModelContextProfile(model);
+  const hint = profile === "deepseek-v4-pro"
+    ? t("chat.contextHint.deepseekV4Pro")
+    : profile === "minimax-m3"
+      ? t("chat.contextHint.minimaxM3")
+      : t("chat.contextHint.generic");
+  return `${action}\nContext: ${percent}\nTokens: ${tokens} / ${windowSize}\n${hint}`;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
@@ -979,11 +1018,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <line x1="7" y1="18" x2="12" y2="18" />
                     <line x1="8" y1="21" x2="11" y2="21" />
                   </svg>
-                  <span>{(() => {
+                  <span>{t("chat.thinkingShort")}: {(() => {
                     const lvl = thinkingLevel ?? "auto";
-                    if (lvl === "auto" || !thinkingLevelMap) return lvl;
+                    if (lvl === "auto" || !thinkingLevelMap) return t(`thinkingLabel.${lvl}`);
                     const mapped = thinkingLevelMap[lvl];
-                    return mapped != null ? mapped : lvl;
+                    return mapped != null ? mapped : t(`thinkingLabel.${lvl}`);
                   })()}</span>
                 </button>
                 {thinkingDropdownOpen && (
@@ -1001,7 +1040,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       const isActive = (thinkingLevel ?? "auto") === lvl;
                       const desc = t(`thinking.${lvl}`);
                       const mappedVal = (lvl !== "auto" && thinkingLevelMap) ? thinkingLevelMap[lvl] : undefined;
-                      const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
+                      const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : t(`thinkingLabel.${lvl}`);
                       const showOriginal = mappedVal != null && mappedVal !== lvl;
                       return (
                         <button
@@ -1025,7 +1064,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             : <span style={{ width: 10, flexShrink: 0 }} />}
                           <span style={{ flex: 1 }}>
                             {displayLabel}
-                            {showOriginal && <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginLeft: 5 }}>({lvl})</span>}
+                            {showOriginal && <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginLeft: 5 }}>({t(`thinkingLabel.${lvl}`)})</span>}
                           </span>
                           <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
                         </button>
@@ -1067,7 +1106,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                   </svg>
-                  <span>{Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "default"))?.[0] ?? "default"}</span>
+                  <span>{t("chat.toolsShort")}: {t(`toolsLabel.${(Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "default"))?.[0] ?? "default") as ToolPresetLabel}`)}</span>
                 </button>
                 {toolDropdownOpen && (
                   <div style={{
@@ -1100,7 +1139,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           {isActive
                             ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
                             : <span style={{ width: 10, flexShrink: 0 }} />}
-                          <span style={{ flex: 1 }}>{lvl}</span>
+                          <span style={{ flex: 1 }}>{t(`toolsLabel.${lvl}`)}</span>
                           <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
                         </button>
                       );
@@ -1112,12 +1151,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
             {!isStreaming && onCompact && (() => {
               const contextPercent = contextUsage?.percent ?? null;
-              const contextTone = getContextTone(contextPercent);
+              const contextTone = getContextTone(contextUsage, model);
               const hasContextWindow = !!contextUsage?.contextWindow;
               const contextLabel = hasContextWindow
                 ? (contextPercent !== null ? `${Math.round(contextPercent)}%` : "?")
                 : "--";
               const contextFill = hasContextWindow && contextPercent !== null ? Math.max(4, Math.min(100, contextPercent)) : 0;
+              const compactBg = isCompacting ? "rgba(239,68,68,0.08)" : hasContextWindow ? contextTone.bg : "none";
+              const compactColor = isCompacting ? "#ef4444" : hasContextWindow ? contextTone.color : "var(--text-muted)";
+              const compactBorder = isCompacting ? "rgba(239,68,68,0.28)" : hasContextWindow ? contextTone.border : "transparent";
               return (
               <div style={{ position: "relative" }}>
                 {compactError && (
@@ -1138,24 +1180,26 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "8px 12px",
                     height: 32,
-                    background: isCompacting ? "rgba(239,68,68,0.08)" : "none",
-                    border: "none",
+                    background: compactBg,
+                    border: `1px solid ${compactBorder}`,
                     borderRadius: 9,
-                    color: isCompacting ? "#ef4444" : "var(--text-muted)",
+                    color: compactColor,
                     cursor: (isStreaming && !isCompacting) ? "not-allowed" : "pointer",
                     fontSize: 12, opacity: (isStreaming && !isCompacting) ? 0.5 : 1,
-                    transition: "background 0.12s, color 0.12s",
+                    transition: "background 0.12s, color 0.12s, border-color 0.12s",
                   }}
                   onMouseEnter={(e) => {
                     if (isStreaming && !isCompacting) return;
-                    e.currentTarget.style.background = isCompacting ? "rgba(239,68,68,0.16)" : "var(--bg-hover)";
-                    e.currentTarget.style.color = isCompacting ? "#ef4444" : "var(--text)";
+                    e.currentTarget.style.background = isCompacting ? "rgba(239,68,68,0.16)" : hasContextWindow ? contextTone.bg : "var(--bg-hover)";
+                    e.currentTarget.style.color = compactColor;
+                    e.currentTarget.style.borderColor = compactBorder;
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = isCompacting ? "rgba(239,68,68,0.08)" : "none";
-                    e.currentTarget.style.color = isCompacting ? "#ef4444" : "var(--text-muted)";
+                    e.currentTarget.style.background = compactBg;
+                    e.currentTarget.style.color = compactColor;
+                    e.currentTarget.style.borderColor = compactBorder;
                   }}
-                  title={getContextUsageTitle(contextUsage, isCompacting, t)}
+                  title={getContextUsageTitle(contextUsage, isCompacting, model, t)}
                 >
                   {isCompacting ? (
                     <><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" /></svg>{t("chat.compacting")}</>
