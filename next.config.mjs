@@ -41,6 +41,7 @@ const protectedWindowsProfileJunctions = [
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   serverExternalPackages: ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"],
+  devIndicators: false,
   outputFileTracingRoot: configDir,
   turbopack: {
     root: configDir,
