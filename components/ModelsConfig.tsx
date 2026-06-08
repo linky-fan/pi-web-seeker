@@ -61,6 +61,7 @@ const PROVIDER_ICONS: Record<string, { Icon: IconComponent; hasColor: boolean }>
   "kimi-coding":            { Icon: KimiColorIcon,        hasColor: true },
   "qwen":                   { Icon: QwenColorIcon,        hasColor: true },
   "zai":                    { Icon: ZhipuColorIcon,       hasColor: true },
+  "siliconflow":            { Icon: ZhipuColorIcon,       hasColor: true },
   "cohere":                 { Icon: CohereColorIcon,      hasColor: true },
   "perplexity":             { Icon: PerplexityColorIcon,  hasColor: true },
   "together":               { Icon: TogetherColorIcon,    hasColor: true },
@@ -122,6 +123,14 @@ interface ModelsJson {
   providers?: Record<string, ProviderEntry>;
 }
 
+interface ProviderTemplate {
+  id: string;
+  labelKey: string;
+  descriptionKey: string;
+  providerName: string;
+  provider: ProviderEntry;
+}
+
 type ModelTestState =
   | { phase: "idle" }
   | { phase: "testing" }
@@ -142,6 +151,46 @@ const COST_LABEL_KEYS: Record<keyof NonNullable<ModelEntry["cost"]>, string> = {
   cacheRead: "stats.cacheRead",
   cacheWrite: "stats.cacheWrite",
 };
+
+const PROVIDER_TEMPLATES: ProviderTemplate[] = [
+  {
+    id: "siliconflow",
+    labelKey: "models.template.siliconflow",
+    descriptionKey: "models.template.siliconflowDesc",
+    providerName: "siliconflow",
+    provider: {
+      baseUrl: "https://api.siliconflow.cn/v1",
+      api: "openai-completions",
+      models: [
+        {
+          id: "Pro/zai-org/GLM-4.7",
+          name: "GLM-4.7 Pro",
+          reasoning: true,
+          compat: { supportsDeveloperRole: false, thinkingFormat: "zai" },
+          thinkingLevelMap: { off: null, minimal: null, low: null, medium: null },
+        },
+        {
+          id: "deepseek-ai/DeepSeek-V3.2",
+          name: "DeepSeek V3.2",
+          reasoning: true,
+          compat: { supportsDeveloperRole: false, thinkingFormat: "zai" },
+          thinkingLevelMap: { off: null, minimal: null, low: null, medium: null },
+        },
+        {
+          id: "deepseek-ai/DeepSeek-V4-Flash",
+          name: "DeepSeek V4 Flash",
+          reasoning: true,
+          compat: { supportsDeveloperRole: false, thinkingFormat: "deepseek" },
+          thinkingLevelMap: { off: null, minimal: "high", low: "high", medium: "high", high: "high", xhigh: "max" },
+        },
+        {
+          id: "nex-agi/Nex-N2-Pro",
+          name: "Nex N2 Pro",
+        },
+      ],
+    },
+  },
+];
 
 function modelCountText(t: TranslateFn, count: number): string {
   return count === 1 ? t("models.modelCount.one") : t("models.modelCount.many", { count });
@@ -1114,13 +1163,14 @@ interface AddProviderPickerProps {
   apiKeyProviders: ApiKeyProvider[];
   onSelectOAuth: (id: string) => void;
   onSelectApiKey: (id: string) => void;
+  onAddTemplate: (template: ProviderTemplate) => void;
   onAddCustom: () => void;
   onClose: () => void;
 }
 
 function AddProviderPicker({
   oauthProviders, apiKeyProviders,
-  onSelectOAuth, onSelectApiKey, onAddCustom, onClose,
+  onSelectOAuth, onSelectApiKey, onAddTemplate, onAddCustom, onClose,
 }: AddProviderPickerProps) {
   const [search, setSearch] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1132,9 +1182,15 @@ function AddProviderPicker({
 
   const availableOAuth = oauthProviders.filter((p) => !p.loggedIn && (!q || p.name.toLowerCase().includes(q)));
   const availableApiKey = apiKeyProviders.filter((p) => !p.configured && (!q || p.displayName.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)));
+  const availableTemplates = PROVIDER_TEMPLATES.filter((template) => {
+    if (!q) return true;
+    return template.id.includes(q) ||
+      t(template.labelKey).toLowerCase().includes(q) ||
+      t(template.descriptionKey).toLowerCase().includes(q);
+  });
   const showCustom = !q || "custom".includes(q) || "openai-compatible".includes(q) || "anthropic-compatible".includes(q);
 
-  const totalCount = availableOAuth.length + availableApiKey.length + (showCustom ? 1 : 0);
+  const totalCount = availableTemplates.length + availableOAuth.length + availableApiKey.length + (showCustom ? 1 : 0);
 
   const cardStyle: React.CSSProperties = {
     display: "flex", flexDirection: "row", alignItems: "center", gap: 8,
@@ -1182,6 +1238,21 @@ function AddProviderPicker({
               {showCustom && (
                 <div style={{ gridColumn: "1 / -1", fontSize: 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{t("models.customSection")}</div>
               )}
+              {availableTemplates.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => { onAddTemplate(template); onClose(); }}
+                  style={cardStyle}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t(template.labelKey)}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>{t(template.descriptionKey)}</div>
+                  </div>
+                  <ProviderIcon id={template.id} size={28} />
+                </button>
+              ))}
               {showCustom && (
                 <button
                   onClick={() => { onAddCustom(); onClose(); }}
@@ -1291,6 +1362,20 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
     let n = 1;
     while (config.providers?.[finalName]) finalName = `new-provider-${n++}`;
     setConfig((prev) => ({ ...prev, providers: { ...(prev.providers ?? {}), [finalName]: { api: "openai-completions" } } }));
+    setSelection({ type: "provider", name: finalName });
+  }, [config.providers]);
+
+  const addProviderTemplate = useCallback((template: ProviderTemplate) => {
+    let finalName = template.providerName;
+    let n = 1;
+    while (config.providers?.[finalName]) finalName = `${template.providerName}-${n++}`;
+    setConfig((prev) => ({
+      ...prev,
+      providers: {
+        ...(prev.providers ?? {}),
+        [finalName]: structuredClone(template.provider),
+      },
+    }));
     setSelection({ type: "provider", name: finalName });
   }, [config.providers]);
 
@@ -1607,6 +1692,7 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
         apiKeyProviders={apiKeyProviders}
         onSelectOAuth={(id) => setSelection({ type: "oauth", providerId: id })}
         onSelectApiKey={(id) => setSelection({ type: "apikey", providerId: id })}
+        onAddTemplate={addProviderTemplate}
         onAddCustom={addCustomProvider}
         onClose={() => setPickerOpen(false)}
       />

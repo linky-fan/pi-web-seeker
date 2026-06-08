@@ -273,7 +273,7 @@ export class AgentSessionWrapper {
 
       case "compact": {
         // pi's compact() does not guard against empty messagesToSummarize — use findCutPoint
-        // to pre-check and throw a clean error instead of generating a useless empty summary.
+        // to pre-check and skip instead of generating a useless empty summary.
         const { findCutPoint, DEFAULT_COMPACTION_SETTINGS } = await import("@earendil-works/pi-coding-agent");
         const pathEntries = this.inner.sessionManager.getBranch() as Array<{ type: string }>;
         const settings = { ...DEFAULT_COMPACTION_SETTINGS, ...this.inner.settingsManager.getCompactionSettings() };
@@ -285,7 +285,7 @@ export class AgentSessionWrapper {
         const cutPoint = findCutPoint(pathEntries as never, boundaryStart, pathEntries.length, settings.keepRecentTokens);
         const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
         if (historyEnd <= boundaryStart) {
-          throw new Error("Conversation too short to compact");
+          return { skipped: true, reason: "nothing_to_compact" };
         }
         const result = await this.inner.compact(command.customInstructions as string | undefined);
         return result;

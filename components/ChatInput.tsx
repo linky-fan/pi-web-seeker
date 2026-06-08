@@ -119,12 +119,10 @@ function formatTokenCount(value: number): string {
   return String(value);
 }
 
-function getModelContextProfile(model: { provider: string; modelId: string } | null | undefined): "deepseek-v4-pro" | "minimax-m3" | null {
-  const provider = model?.provider.toLowerCase() ?? "";
+function getModelContextProfile(model: { provider: string; modelId: string } | null | undefined): "deepseek-v4" | "standard-512k" {
   const modelId = model?.modelId.toLowerCase() ?? "";
-  if (provider.includes("deepseek") && modelId.includes("v4-pro")) return "deepseek-v4-pro";
-  if (provider.includes("minimax") && modelId.includes("minimax-m3")) return "minimax-m3";
-  return null;
+  if (modelId.includes("deepseek") && modelId.includes("v4")) return "deepseek-v4";
+  return "standard-512k";
 }
 
 function getContextTone(contextUsage: ContextUsage | null | undefined, model: { provider: string; modelId: string } | null | undefined): { color: string; bg: string; border: string } {
@@ -132,15 +130,15 @@ function getContextTone(contextUsage: ContextUsage | null | undefined, model: { 
   const tokens = contextUsage?.tokens;
   const profile = getModelContextProfile(model);
 
-  if (profile === "minimax-m3" && tokens !== null && tokens !== undefined) {
-    if (tokens >= 256_000) return { color: "#ef4444", bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.34)" };
-    if (tokens >= 128_000) return { color: "rgba(234,179,8,0.98)", bg: "rgba(234,179,8,0.12)", border: "rgba(234,179,8,0.34)" };
+  if (profile === "deepseek-v4" && tokens !== null && tokens !== undefined) {
+    if (tokens >= 980_000) return { color: "#ef4444", bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.34)" };
+    if (tokens >= 900_000) return { color: "rgba(234,179,8,0.98)", bg: "rgba(234,179,8,0.12)", border: "rgba(234,179,8,0.34)" };
     return { color: "#16a34a", bg: "rgba(22,163,74,0.08)", border: "rgba(22,163,74,0.24)" };
   }
 
-  if (profile === "deepseek-v4-pro" && tokens !== null && tokens !== undefined) {
-    if (tokens >= 980_000) return { color: "#ef4444", bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.34)" };
-    if (tokens >= 900_000) return { color: "rgba(234,179,8,0.98)", bg: "rgba(234,179,8,0.12)", border: "rgba(234,179,8,0.34)" };
+  if (tokens !== null && tokens !== undefined) {
+    if (tokens >= 512_000) return { color: "#ef4444", bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.34)" };
+    if (tokens >= 450_000) return { color: "rgba(234,179,8,0.98)", bg: "rgba(234,179,8,0.12)", border: "rgba(234,179,8,0.34)" };
     return { color: "#16a34a", bg: "rgba(22,163,74,0.08)", border: "rgba(22,163,74,0.24)" };
   }
 
@@ -171,11 +169,9 @@ function getContextUsageTitle(
   const tokens = contextUsage.tokens !== null ? `${formatTokenCount(contextUsage.tokens)} (${contextUsage.tokens.toLocaleString()})` : t("stats.unknown");
   const windowSize = `${formatTokenCount(contextUsage.contextWindow)} (${contextUsage.contextWindow.toLocaleString()})`;
   const profile = getModelContextProfile(model);
-  const hint = profile === "deepseek-v4-pro"
-    ? t("chat.contextHint.deepseekV4Pro")
-    : profile === "minimax-m3"
-      ? t("chat.contextHint.minimaxM3")
-      : t("chat.contextHint.generic");
+  const hint = profile === "deepseek-v4"
+    ? t("chat.contextHint.deepseekV4")
+    : t("chat.contextHint.standard512k");
   return `${action}\n${t("stats.context")}: ${percent}\n${t("chat.contextTokens")}: ${tokens} / ${windowSize}\n${hint}`;
 }
 

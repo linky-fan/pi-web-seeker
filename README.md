@@ -382,8 +382,8 @@ flowchart LR
 
 | 模型 | 本地测试结论 | 压缩按钮提示 |
 | --- | --- | --- |
-| DeepSeek V4 Pro | 约 `990k` prompt tokens needle 测试通过 | `900k+` 黄色，`980k+` 红色 |
-| MiniMax M3 | `128k` 通过，`256k` 部分通过，`384k/512k` 超时，`900k` 被拒绝 | `128k+` 黄色，`256k+` 红色 |
+| DeepSeek V4 | 保留 `1M` 上下文提示 | `900k+` 黄色，`980k+` 红色 |
+| 其它模型 | 统一使用 `512k` 上下文提示 | `450k+` 黄色，`512k+` 红色 |
 
 `ok: true` 表示 HTTP 成功、API 返回有效内容、start / middle / end 三个 needle 全部命中，并且有非 0 prompt token usage。否则脚本会输出 `failures` 并以非 0 状态退出。真实上下文长度以返回的 `usagePromptTokens` / `usage.prompt_tokens` 为准。
 

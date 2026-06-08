@@ -17,6 +17,20 @@ import { useLocale } from "@/lib/i18n";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
 
+function normalizeExplorerMentionPath(filePath: string): { path: string; projectRelative: boolean } {
+  const normalized = filePath.replace(/\\/g, "/");
+  const alreadyQualified = normalized.startsWith("/") ||
+    normalized.startsWith("./") ||
+    normalized.startsWith("../") ||
+    /^[a-zA-Z]:\//.test(normalized) ||
+    normalized.startsWith("//");
+
+  return {
+    path: alreadyQualified ? normalized : `./${normalized}`,
+    projectRelative: !normalized.startsWith("/") && !/^[a-zA-Z]:\//.test(normalized) && !normalized.startsWith("//"),
+  };
+}
+
 export function AppShell() {
   const { t } = useLocale();
   const router = useRouter();
@@ -95,8 +109,9 @@ export function AppShell() {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
 
   const handleAtMention = useCallback((relativePath: string) => {
-    chatInputRef.current?.insertText("`" + relativePath + "`");
-  }, []);
+    const mention = normalizeExplorerMentionPath(relativePath);
+    chatInputRef.current?.insertText(t(mention.projectRelative ? "explorer.insertPathPrompt" : "explorer.insertAbsolutePathPrompt", { path: mention.path }));
+  }, [t]);
 
   const [initialSessionId] = useState<string | null>(() => searchParams.get("session"));
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
