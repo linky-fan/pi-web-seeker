@@ -10,7 +10,6 @@ import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
 import { markdownMathOptions, normalizeMarkdownMath } from "@/lib/markdown";
-import { isSubagentCustomType, messageContentToText, parseSubagentNotifications, type SubagentNotification } from "@/lib/subagents";
 import type {
   AgentMessage,
   UserMessage,
@@ -69,6 +68,15 @@ function copyText(text: string): Promise<void> {
   } catch {
     return Promise.reject();
   }
+}
+
+function messageContentToText(content: string | (TextContent | ImageContent)[]): string {
+  return typeof content === "string"
+    ? content
+    : content
+        .filter((b): b is TextContent => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
 }
 
 export function MessageView({ message, isStreaming, toolResults, modelNames, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
@@ -281,6 +289,140 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
   );
 }
 
+interface SubagentNotification {
+  id?: string;
+  agentType?: string;
+  toolCallId?: string;
+  description: string;
+  status: string;
+  resultPreview: string;
+  toolUses?: number;
+  turnCount?: number;
+  maxTurns?: number;
+  totalTokens?: number;
+  contextPercent?: number;
+  compactionCount?: number;
+  durationMs?: number;
+  outputFile?: string;
+  error?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function firstString(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = stringField(record[key]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function firstNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = numberField(record[key]);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function nestedNumber(record: Record<string, unknown>, key: string, nestedKey: string): number | undefined {
+  const nested = record[key];
+  return isRecord(nested) ? numberField(nested[nestedKey]) : undefined;
+}
+
+function childTagNumber(xml: string, tag: string): number | undefined {
+  const value = xmlTagText(xml, tag);
+  return value ? numberField(value) : undefined;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function xmlTagText(xml: string, tag: string): string | undefined {
+  const match = xml.match(new RegExp(`<${escapeRegExp(tag)}>([\\s\\S]*?)<\\/${escapeRegExp(tag)}>`, "i"));
+  return match?.[1]?.trim();
+}
+
+function decodeXml(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function parseSubagentXml(content: string): SubagentNotification[] {
+  const blocks = [...content.matchAll(/<task-notification\b[^>]*>([\s\S]*?)<\/task-notification>/gi)].map((m) => m[1]);
+  return blocks.map((xml) => {
+    const metrics = xmlTagText(xml, "metrics") ?? "";
+    const nums = metrics.match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+    const id = xmlTagText(xml, "id") ?? xmlTagText(xml, "agent-id") ?? xmlTagText(xml, "agent_id");
+    const toolCallId = xmlTagText(xml, "tool-use-id") ?? xmlTagText(xml, "toolCallId") ?? xmlTagText(xml, "tool_call_id");
+    const status = decodeXml(xmlTagText(xml, "status") ?? "completed");
+    const agentType = decodeXml(xmlTagText(xml, "type") ?? xmlTagText(xml, "agent-type") ?? "");
+    const description = decodeXml(xmlTagText(xml, "summary") ?? xmlTagText(xml, "description") ?? "Subagent");
+    const resultPreview = decodeXml(xmlTagText(xml, "result") ?? "No output.");
+    return {
+      id,
+      agentType: agentType || undefined,
+      toolCallId,
+      status,
+      description,
+      resultPreview,
+      totalTokens: childTagNumber(metrics, "tokens") ?? childTagNumber(metrics, "totalTokens") ?? nums[0],
+      toolUses: childTagNumber(metrics, "tool-use-count") ?? childTagNumber(metrics, "toolUses") ?? nums[1],
+      contextPercent: childTagNumber(metrics, "context-percent") ?? childTagNumber(metrics, "contextPercent") ?? nums[2],
+      compactionCount: childTagNumber(metrics, "compaction-count") ?? childTagNumber(metrics, "compactionCount") ?? nums[3],
+      durationMs: childTagNumber(metrics, "duration-ms") ?? childTagNumber(metrics, "durationMs") ?? (nums.length >= 5 ? nums[4] : undefined),
+      outputFile: decodeXml(xmlTagText(xml, "transcript") ?? xmlTagText(xml, "output-file") ?? ""),
+    };
+  });
+}
+
+function notificationFromDetails(details: unknown, content: string): SubagentNotification[] {
+  if (!isRecord(details)) return parseSubagentXml(content);
+  const extraRecords = ["others", "notifications", "agents", "records"]
+    .flatMap((key) => Array.isArray(details[key]) ? details[key] : [])
+    .filter(isRecord);
+  const records = [details, ...extraRecords];
+  const parsed = records.map((d) => ({
+    id: firstString(d, ["id", "agentId", "agent_id"]),
+    agentType: firstString(d, ["type", "agentType", "subagentType", "subagent_type"]),
+    toolCallId: firstString(d, ["toolCallId", "toolCallID", "tool_call_id"]),
+    description: firstString(d, ["description", "summary", "name"]) ?? "Subagent",
+    status: firstString(d, ["status", "state"]) ?? "completed",
+    resultPreview: firstString(d, ["resultPreview", "result", "output"]) ?? "No output.",
+    toolUses: firstNumber(d, ["toolUses", "toolUseCount", "tool_use_count"]),
+    turnCount: firstNumber(d, ["turnCount", "turns"]),
+    maxTurns: firstNumber(d, ["maxTurns", "max_turns"]),
+    totalTokens: firstNumber(d, ["totalTokens", "tokenCount"]) ?? nestedNumber(d, "tokens", "total"),
+    contextPercent: firstNumber(d, ["contextPercent", "context_percent"]),
+    compactionCount: firstNumber(d, ["compactionCount", "compaction_count"]),
+    durationMs: firstNumber(d, ["durationMs", "duration"]),
+    outputFile: firstString(d, ["outputFile", "transcript", "transcriptPath"]),
+    error: firstString(d, ["error", "errorMessage"]),
+  }));
+  return parsed.length > 0 ? parsed : parseSubagentXml(content);
+}
+
 function formatCompactNumber(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
@@ -321,10 +463,10 @@ function CustomMessageView({ message, showTimestamp }: { message: CustomMessage;
 
   const content = messageContentToText(message.content);
   const time = showTimestamp ? formatTime(message.timestamp) : null;
-  const isSubagent = isSubagentCustomType(message.customType, message.content);
+  const isSubagent = message.customType === "subagent-notification" || content.includes("<task-notification>");
 
   if (isSubagent) {
-    const notifications = parseSubagentNotifications(content, message.details);
+    const notifications = notificationFromDetails(message.details, content);
     if (notifications.length > 0) {
       return (
         <div style={{ marginBottom: 16 }}>
@@ -503,7 +645,7 @@ function SubagentNotificationCard({ notification }: { notification: SubagentNoti
             <div style={{ color: "var(--text-dim)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>
               {notification.error ? "Error" : "Result"}
             </div>
-            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 420, overflow: "auto" }}>
+            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 360, overflow: "hidden" }}>
               {preview}
             </div>
           </div>

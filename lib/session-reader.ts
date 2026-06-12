@@ -4,7 +4,6 @@ import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, Assist
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
 import { normalizePathForComparison } from "./path-identity";
-import { normalizeSubagentRecordsForContext } from "./subagents";
 
 export { getAgentDir };
 
@@ -131,6 +130,86 @@ function contextCacheKey(leafId?: string | null): string {
 
 function isContextMessageEntry(entry: SessionEntry): boolean {
   return entry.type === "message" || entry.type === "custom_message" || entry.type === "branch_summary";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function xmlTagText(xml: string, tag: string): string | undefined {
+  const match = xml.match(new RegExp(`<${escapeRegExp(tag)}>([\\s\\S]*?)<\\/${escapeRegExp(tag)}>`, "i"));
+  return match?.[1]?.trim();
+}
+
+function getSubagentRecordId(entry: SessionEntry): string | undefined {
+  if (entry.type !== "custom" || entry.customType !== "subagents:record") return undefined;
+  return isRecord(entry.data) ? stringField(entry.data.id) : undefined;
+}
+
+function getSubagentNotificationId(entry: SessionEntry): string | undefined {
+  if (entry.type !== "custom_message") return undefined;
+  if (entry.customType !== "subagent-notification") return undefined;
+
+  if (isRecord(entry.details)) {
+    const detailId = stringField(entry.details.id) ?? stringField(entry.details.agentId) ?? stringField(entry.details.agent_id);
+    if (detailId) return detailId;
+  }
+
+  const content = typeof entry.content === "string"
+    ? entry.content
+    : entry.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n");
+
+  return xmlTagText(content, "task-id") ?? xmlTagText(content, "agent-id") ?? xmlTagText(content, "id");
+}
+
+function subagentRecordToCustomMessage(entry: SessionEntry): SessionEntry {
+  if (entry.type !== "custom" || entry.customType !== "subagents:record" || !isRecord(entry.data)) return entry;
+
+  const description = stringField(entry.data.description) ?? stringField(entry.data.type) ?? "Subagent";
+  const status = stringField(entry.data.status) ?? "completed";
+  const result = stringField(entry.data.result) ?? "";
+
+  return {
+    type: "custom_message",
+    id: entry.id,
+    parentId: entry.parentId,
+    timestamp: entry.timestamp,
+    customType: "subagent-notification",
+    content: [
+      `Subagent record: ${description}`,
+      "",
+      `<task-notification><status>${status}</status><summary>${description}</summary><result>${result}</result></task-notification>`,
+    ].join("\n"),
+    details: entry.data,
+    display: true,
+  };
+}
+
+function normalizeSubagentRecordsForContext(entries: SessionEntry[]): SessionEntry[] {
+  const notifiedAgentIds = new Set<string>();
+  for (const entry of entries) {
+    const id = getSubagentNotificationId(entry);
+    if (id) notifiedAgentIds.add(id);
+  }
+
+  return entries.map((entry) => {
+    const recordId = getSubagentRecordId(entry);
+    if (recordId && !notifiedAgentIds.has(recordId)) {
+      return subagentRecordToCustomMessage(entry);
+    }
+    return entry;
+  });
 }
 
 export function getCachedSessionContext(snapshot: CachedSessionFile, leafId?: string | null): SessionContext {

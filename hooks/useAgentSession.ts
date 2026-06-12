@@ -3,7 +3,6 @@
 import { useState, useCallback, useRef, useEffect, useReducer } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
-import { getSubagentMessageKey } from "@/lib/subagents";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ToolEntry } from "@/components/ToolPanel";
 
@@ -59,15 +58,6 @@ type LiveAgentState = {
 };
 
 type AgentStateResponse = { running: boolean; state?: LiveAgentState };
-
-function appendCompletedMessage(messages: AgentMessage[], message: AgentMessage): AgentMessage[] {
-  if (message.role !== "custom") return [...messages, message];
-  const key = getSubagentMessageKey(message);
-  if (!key) return [...messages, message];
-  return messages.some((existing) => existing.role === "custom" && getSubagentMessageKey(existing) === key)
-    ? messages
-    : [...messages, message];
-}
 
 export type AgentPhase =
   | { kind: "waiting_model" }
@@ -329,7 +319,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "message_end": {
         const completed = event.message as AgentMessage | undefined;
         if (completed) {
-          setMessages((prev) => appendCompletedMessage(prev, normalizeToolCalls(completed)));
+          setMessages((prev) => [...prev, normalizeToolCalls(completed)]);
         }
         dispatch({ type: "reset" });
         setAgentPhase({ kind: "waiting_model" });
