@@ -196,7 +196,7 @@ docker run --rm -it \
 | 模型与工具 | 对话中切换模型，管理 provider / model / API key / OAuth，测试模型连通性，控制工具预设与 thinking level |
 | 上下文与统计 | 会话压缩、input / output / cache tokens、费用、上下文使用率、system prompt 查看、长上下文 CLI needle 测试 |
 | 文件与工作区 | 项目目录选择、文件搜索、最近文件、Git tracked-only、下载文件、路径插入输入框、代码 / Markdown / HTML / 图片 / 音频预览 |
-| 扩展能力 | Skills 管理、Subagent 通知卡片、AGENTS.md 模板与检查器、运行时 OS/shell/path 系统提示词上下文 |
+| 扩展能力 | Skills 管理、Subagent 通知卡片、coms-net 局域网 Pi 协作、Pi Pi 专家协作模板、AGENTS.md 模板与检查器、运行时 OS/shell/path 系统提示词上下文 |
 | 体验与性能 | 多主题、English / 简体中文、聊天 Minimap、session/index/allowed-roots 缓存、长会话懒渲染 |
 
 ## 项目目录选择
@@ -337,6 +337,51 @@ run_in_background: true
 
 分组完成通知也会按单个 agent 拆成多张卡片显示。
 
+## coms-net 与 Pi Pi
+
+本仓库内置了一个轻量 Pi package：`pi-packages/pi-coms-net`，参考 [disler/pi-vs-claude-code](https://github.com/disler/pi-vs-claude-code) 的 `coms-net` / `pi-pi` 思路，方便多个接入同一 hub 的 Pi agent 在局域网内互相调用。
+
+`coms-net` 和 Subagents 的定位不同：Subagents 偏向同一台机器、同一主会话里的后台代理；`coms-net` 通过独立 HTTP/SSE hub 连接不同机器、不同工作目录或不同 Pi 进程。`pi-pi` 则提供 `query_experts` 工具，用内置专家模板并行研究 Pi extension、settings、agent、skill、prompt、TUI 和 CLI 相关问题。
+
+先启动共享 hub：
+
+```bash
+npm run coms-net:server
+```
+
+默认只监听 `127.0.0.1`，适合本机测试。局域网模式必须显式设置 token：
+
+```bash
+PI_COMS_NET_HOST=0.0.0.0 \
+PI_COMS_NET_PORT=52965 \
+PI_COMS_NET_PUBLIC_URL=http://192.168.1.10:52965 \
+PI_COMS_NET_AUTH_TOKEN=your-long-random-token \
+npm run coms-net:server
+```
+
+再把内置 package 安装到 Pi settings：
+
+```bash
+./node_modules/.bin/pi install "$PWD/pi-packages/pi-coms-net"
+```
+
+从 GitHub / npm 安装的 `pi-web` 也会带上这个 package；如果在全局安装目录中启用，路径指向对应安装目录下的 `pi-packages/pi-coms-net` 即可。
+
+新的 Pi 会话会出现这些工具：
+
+- `coms_net_list` — 查看同一 project 下在线 agent
+- `coms_net_send` — 向指定 agent 发送请求
+- `coms_net_get` / `coms_net_await` — 查询或等待回复
+- `query_experts` — 并行调用 Pi Pi 专家模板做只读研究
+
+连接远端 hub 时，可用环境变量或 Pi flag 指定地址和身份：
+
+```bash
+PI_COMS_NET_SERVER_URL=http://192.168.1.10:52965 \
+PI_COMS_NET_AUTH_TOKEN=your-long-random-token \
+pi --cname planner --purpose "planning and code review"
+```
+
 ## 运行时系统提示词上下文
 
 `runtime-system-prompt-context` 会在每次创建 AgentSession 时动态检测当前运行环境，并把一小段上下文追加到默认 system prompt 中。它不是在构建阶段写死的配置，因此同一份代码下载到 macOS、Linux、Windows 或 Docker 环境后，会按实际执行命令的环境生成提示。
@@ -350,6 +395,8 @@ run_in_background: true
 - 包管理器线索（`package-lock.json`、`bun.lock`、`pnpm-lock.yaml`、`yarn.lock`）
 
 这段提示还会提醒智能体优先使用当前 OS/shell 兼容的命令、遇到跨平台路径分隔符或 shell 语法差异时按当前 shell 约定处理并先检查环境、优先使用项目已有 package scripts，并避免打印环境变量、鉴权文件或本地配置里的敏感信息。
+
+文件查找也会被限制在当前 cwd 的明确路径语义内：如果用户只给出裸文件名，智能体只能检查当前目录本身，不应递归遍历项目树或用户目录；只有用户提供绝对路径，或从当前 cwd 开始的完整相对路径（例如 `components/AppShell.tsx` / `./components/AppShell.tsx`）时，才按该路径直接读取。
 
 如果用户在新会话中选择关闭全部工具，pi-web 仍会保持空 system prompt，不会强行注入运行时上下文。
 

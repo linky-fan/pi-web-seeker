@@ -131,6 +131,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [isCompacting, setIsCompacting] = useState(false);
   const [compactError, setCompactError] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
 
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -280,6 +281,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     switch (event.type) {
       case "agent_start":
+        setTaskError(null);
         setAgentRunning(true);
         setAgentPhase({ kind: "waiting_model" });
         dispatch({ type: "start" });
@@ -313,6 +315,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "message_end": {
         const completed = event.message as AgentMessage | undefined;
         if (completed) {
+          if (completed.role === "assistant" && completed.stopReason === "error") {
+            setTaskError(completed.errorMessage ?? "Agent task failed");
+          }
           setMessages((prev) => appendCompletedMessage(prev, normalizeToolCalls(completed)));
         }
         dispatch({ type: "reset" });
@@ -427,12 +432,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return true;
     } catch (e) {
       console.error("Failed to send message:", e);
-      setMessages((prev) => prev[prev.length - 1] === userMsg ? prev.slice(0, -1) : prev);
-      setAgentRunning(false);
-      setAgentPhase(null);
-      dispatch({ type: "end" });
-      return false;
-    }
+        setMessages((prev) => prev[prev.length - 1] === userMsg ? prev.slice(0, -1) : prev);
+        setAgentRunning(false);
+        setAgentPhase(null);
+        setTaskError(e instanceof Error ? e.message : String(e));
+        dispatch({ type: "end" });
+        return false;
+      }
   }, [isNew, newSessionCwd, newSessionModel, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated]);
 
   const handleAbort = useCallback(async () => {
@@ -500,17 +506,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;
-    if (!sid || isCompacting) return;
-    setIsCompacting(true);
-    setCompactError(null);
-    try {
-      await sendAgentCommand(sid, { type: "compact" });
-      await loadSession(sid, true);
-    } catch (e) {
-      setCompactError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setIsCompacting(false);
-    }
+      if (!sid || isCompacting) return;
+      setIsCompacting(true);
+      setCompactError(null);
+      setTaskError(null);
+      try {
+        await sendAgentCommand(sid, { type: "compact" });
+        await loadSession(sid, true);
+      } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setCompactError(message);
+      setTaskError(message);
+      } finally {
+        setIsCompacting(false);
+      }
   }, [isCompacting, loadSession]);
 
   const handleSteer = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -656,7 +665,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
-    agentPhase,
+    taskError, agentPhase,
     isNew,
     // Refs
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,

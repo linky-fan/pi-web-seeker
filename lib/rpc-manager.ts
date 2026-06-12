@@ -81,6 +81,8 @@ function buildRuntimeSystemPrompt(cwd: string): string {
     "- Prefer commands compatible with the current OS and shell.",
     "- When path separators or shell syntax may differ across platforms, prefer the active shell's convention and inspect before assuming.",
     "- Prefer existing package scripts before inventing direct framework commands.",
+    "- File lookup scope: when a file is requested by a bare name, only check the current working directory itself. Do not run recursive or global searches such as `find`, `rg --files`, or `Get-ChildItem -Recurse` to locate it.",
+    "- Only read/search outside the current directory level when the user provides a complete path, either absolute or explicitly relative from the working directory (for example `./components/AppShell.tsx` or `components/AppShell.tsx`).",
     "- Do not print secrets from environment variables, auth files, or local config.",
   ].join("\n");
 }

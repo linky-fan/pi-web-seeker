@@ -2,6 +2,7 @@
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent, useId } from "react";
 import { useLocale } from "@/lib/i18n";
+import { apiPath } from "@/lib/api-path";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -19,6 +20,19 @@ interface ContextUsage {
   percent: number | null;
   contextWindow: number;
   tokens: number | null;
+}
+
+interface FileMentionEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  modified: string;
+}
+
+interface MentionQuery {
+  start: number;
+  end: number;
+  query: string;
 }
 
 interface Props {
@@ -45,6 +59,7 @@ interface Props {
   onSoundToggle?: () => void;
   promptHistory?: string[];
   draftStorageKey?: string;
+  cwd?: string | null;
 }
 
 export interface ChatInputHandle {
@@ -169,6 +184,17 @@ function getContextUsageTitle(
   return `${action}\n${t("stats.context")}: ${percent}\n${t("chat.contextTokens")}: ${tokens} / ${windowSize}\n${hint}`;
 }
 
+function getMentionQuery(text: string, cursor: number): MentionQuery | null {
+  const beforeCursor = text.slice(0, cursor);
+  const at = beforeCursor.lastIndexOf("@");
+  if (at < 0) return null;
+  const prefixChar = at > 0 ? beforeCursor[at - 1] : "";
+  if (prefixChar && !/\s/.test(prefixChar)) return null;
+  const query = beforeCursor.slice(at + 1);
+  if (/[\s`]/.test(query)) return null;
+  return { start: at, end: cursor, query };
+}
+
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, modelNames, modelList, onModelChange,
   onCompact, onAbortCompaction, isCompacting, compactError, contextUsage,
@@ -177,6 +203,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   soundEnabled, onSoundToggle,
   promptHistory = [],
   draftStorageKey,
+  cwd,
 }: Props, ref) {
   const { t } = useLocale();
   const imageInputId = useId();
@@ -186,8 +213,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [snippetDropdownOpen, setSnippetDropdownOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [mentionQuery, setMentionQuery] = useState<MentionQuery | null>(null);
+  const [mentionEntries, setMentionEntries] = useState<FileMentionEntry[]>([]);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
+  const [mentionLoading, setMentionLoading] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionPanelRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
@@ -197,6 +230,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const historyIndexRef = useRef<number | null>(null);
   const draftBeforeHistoryRef = useRef("");
   const effectiveDraftStorageKey = draftStorageKey ? `${DRAFT_STORAGE_KEY}:${draftStorageKey}` : DRAFT_STORAGE_KEY;
+
+  const updateMentionState = useCallback((text: string, cursor?: number) => {
+    const nextCursor = cursor ?? textareaRef.current?.selectionStart ?? text.length;
+    const next = getMentionQuery(text, nextCursor);
+    setMentionQuery(next);
+    setMentionOpen(Boolean(cwd && next));
+    setMentionSelectedIndex(0);
+  }, [cwd]);
 
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
@@ -288,6 +329,25 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     requestAnimationFrame(resizeTextarea);
   }, [resizeTextarea]);
 
+  const insertMention = useCallback((entry: FileMentionEntry) => {
+    const ta = textareaRef.current;
+    const activeQuery = mentionQuery;
+    if (!ta || !activeQuery) return;
+    const before = ta.value.slice(0, activeQuery.start);
+    const after = ta.value.slice(activeQuery.end);
+    const quoted = "`" + entry.path + (entry.isDir ? "/" : "") + "`";
+    const suffix = after.startsWith(" ") ? "" : " ";
+    const next = before + quoted + suffix + after;
+    setInputValue(next);
+    setMentionOpen(false);
+    setMentionQuery(null);
+    requestAnimationFrame(() => {
+      const pos = before.length + quoted.length + suffix.length;
+      ta.setSelectionRange(pos, pos);
+      ta.focus();
+    });
+  }, [mentionQuery, setInputValue]);
+
   const rememberHistory = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -331,6 +391,46 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return () => clearTimeout(timer);
   }, [effectiveDraftStorageKey, value]);
 
+  useEffect(() => {
+    if (!cwd || !mentionQuery) {
+      setMentionEntries([]);
+      setMentionLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setMentionLoading(true);
+    const timer = window.setTimeout(() => {
+      fetch(apiPath(`file-mentions?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(mentionQuery.query)}`))
+        .then(async (res) => {
+          if (!res.ok) throw new Error(await res.text());
+          return res.json() as Promise<{ entries?: FileMentionEntry[] }>;
+        })
+        .then((data) => {
+          if (cancelled) return;
+          setMentionEntries(data.entries ?? []);
+          setMentionSelectedIndex(0);
+        })
+        .catch(() => {
+          if (!cancelled) setMentionEntries([]);
+        })
+        .finally(() => {
+          if (!cancelled) setMentionLoading(false);
+        });
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [cwd, mentionQuery]);
+
+  useEffect(() => {
+    if (!mentionOpen) return;
+    const selected = mentionPanelRef.current?.querySelector('[role="option"][aria-selected="true"]');
+    selected?.scrollIntoView({ block: "nearest" });
+  }, [mentionOpen, mentionSelectedIndex]);
+
   const handleSend = useCallback(async () => {
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
@@ -366,6 +466,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (mentionOpen) {
+          e.preventDefault();
+          if (mentionEntries.length === 0) return;
+          setMentionSelectedIndex((idx) => {
+            const delta = e.key === "ArrowDown" ? 1 : -1;
+            return (idx + delta + mentionEntries.length) % mentionEntries.length;
+          });
+          return;
+        }
+
         const ta = e.currentTarget;
         const atStart = ta.selectionStart === 0 && ta.selectionEnd === 0;
         const atEnd = ta.selectionStart === ta.value.length && ta.selectionEnd === ta.value.length;
@@ -398,6 +508,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
         return;
       }
+      if (mentionOpen && (e.key === "Enter" || e.key === "Tab") && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && !e.nativeEvent.isComposing) {
+        const selected = mentionEntries[mentionSelectedIndex];
+        if (selected) {
+          e.preventDefault();
+          insertMention(selected);
+          return;
+        }
+      }
+      if (mentionOpen && e.key === "Escape") {
+        e.preventDefault();
+        setMentionOpen(false);
+        return;
+      }
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         if (isStreaming && (onSteer || onFollowUp)) {
@@ -408,13 +531,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [value, isStreaming, onSteer, onFollowUp, sendQueued, handleSend, setInputValue]
+    [value, isStreaming, onSteer, onFollowUp, sendQueued, handleSend, setInputValue, mentionOpen, mentionEntries, mentionSelectedIndex, insertMention]
   );
 
   const handleInput = useCallback(() => {
     resizeTextarea();
     historyIndexRef.current = null;
-  }, [resizeTextarea]);
+    const ta = textareaRef.current;
+    if (ta) updateMentionState(ta.value, ta.selectionStart);
+  }, [resizeTextarea, updateMentionState]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? []);
@@ -510,6 +635,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (snippetDropdownRef.current && !snippetDropdownRef.current.contains(e.target as Node)) {
         setSnippetDropdownOpen(false);
       }
+      if (
+        mentionPanelRef.current &&
+        !mentionPanelRef.current.contains(e.target as Node) &&
+        textareaRef.current &&
+        !textareaRef.current.contains(e.target as Node)
+      ) {
+        setMentionOpen(false);
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -600,6 +733,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {/* Main input */}
         <div
           style={{
+            position: "relative",
             display: "flex",
             gap: 8,
             alignItems: "center",
@@ -613,12 +747,100 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
           } as React.CSSProperties}
         >
+          {mentionOpen && (
+            <div
+              ref={mentionPanelRef}
+              role="listbox"
+              aria-label={t("chat.fileMentionsTitle")}
+              tabIndex={-1}
+              onWheel={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
+              style={{
+                position: "absolute",
+                left: 10,
+                bottom: "calc(100% + 8px)",
+                zIndex: 300,
+                width: "min(420px, calc(100vw - 56px))",
+                maxHeight: "min(360px, calc(100vh - 220px))",
+                overflowY: "auto",
+                overscrollBehavior: "contain",
+                touchAction: "pan-y",
+                WebkitOverflowScrolling: "touch",
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                boxShadow: "0 -8px 24px rgba(15,23,42,0.16)",
+                padding: 4,
+              }}
+            >
+              {mentionLoading && mentionEntries.length === 0 ? (
+                <div style={{ padding: "10px 12px", color: "var(--text-dim)", fontSize: 12 }}>
+                  {t("chat.fileMentionsLoading")}
+                </div>
+              ) : mentionEntries.length === 0 ? (
+                <div style={{ padding: "10px 12px", color: "var(--text-dim)", fontSize: 12 }}>
+                  {t("chat.fileMentionsEmpty")}
+                </div>
+              ) : (
+                mentionEntries.map((entry, idx) => {
+                  const active = idx === mentionSelectedIndex;
+                  return (
+                    <button
+                      key={`${entry.isDir ? "dir" : "file"}:${entry.path}`}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      onMouseEnter={() => setMentionSelectedIndex(idx)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        insertMention(entry);
+                      }}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "18px minmax(0, 1fr)",
+                        alignItems: "center",
+                        gap: 8,
+                        width: "100%",
+                        padding: "7px 9px",
+                        background: active ? "var(--bg-selected)" : "none",
+                        border: "none",
+                        borderRadius: 7,
+                        color: active ? "var(--text)" : "var(--text-muted)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: 12,
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: entry.isDir ? "var(--accent)" : "var(--text-dim)" }}>
+                        {entry.isDir ? (
+                          <>
+                            <path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                            <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h3" />
+                          </>
+                        ) : (
+                          <>
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <path d="M14 2v6h6" />
+                          </>
+                        )}
+                      </svg>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {entry.path}{entry.isDir ? "/" : ""}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
+            onClick={(e) => updateMentionState(e.currentTarget.value, e.currentTarget.selectionStart)}
+            onSelect={(e) => updateMentionState(e.currentTarget.value, e.currentTarget.selectionStart)}
             onPaste={handlePaste}
             placeholder={
               isStreaming && (onSteer || onFollowUp)

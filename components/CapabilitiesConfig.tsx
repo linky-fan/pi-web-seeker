@@ -5,15 +5,16 @@ import { useLocale } from "@/lib/i18n";
 import { SkillsConfig } from "./SkillsConfig";
 import { ToolsConfig } from "./ToolsConfig";
 import { SubagentsConfig } from "./SubagentsConfig";
+import { NetworkConfig } from "./NetworkConfig";
 
-type CapabilityTab = "skills" | "tools" | "subagents";
+type CapabilityTab = "skills" | "tools" | "subagents" | "network";
 
 interface Props {
   cwd: string;
   onClose: () => void;
 }
 
-const TABS: CapabilityTab[] = ["skills", "tools", "subagents"];
+const TABS: CapabilityTab[] = ["skills", "tools", "subagents", "network"];
 
 export function CapabilitiesConfig({ cwd, onClose }: Props) {
   const { t } = useLocale();
@@ -84,6 +85,7 @@ export function CapabilitiesConfig({ cwd, onClose }: Props) {
       {activeTab === "skills" && <SkillsConfig cwd={cwd} onClose={onClose} />}
       {activeTab === "tools" && <ToolsConfig cwd={cwd} onClose={onClose} />}
       {activeTab === "subagents" && <SubagentsConfig cwd={cwd} onClose={onClose} />}
+      {activeTab === "network" && <NetworkConfig cwd={cwd} onClose={onClose} />}
     </>
   );
 }

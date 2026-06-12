@@ -24,6 +24,7 @@ interface Props {
   onSystemPromptChange?: (prompt: string | null) => void;
   onSessionStatsChange?: (stats: { tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }; cost?: number } | null) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
+  onTaskStatusChange?: (status: "done" | "running" | "error", message?: string | null) => void;
 }
 
 const LAZY_RECENT_MESSAGE_COUNT = 24;
@@ -188,6 +189,7 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
   const [busy, setBusy] = useState<"init" | "check" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -195,6 +197,7 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
       const data = await res.json() as AgentsMdStatus & { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to load AGENTS.md status");
       setStatus({ exists: data.exists, filePath: data.filePath });
+      setExpanded(!data.exists);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -205,6 +208,7 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
     setStatus(null);
     setMessage(null);
     setError(null);
+    setExpanded(false);
     void loadStatus();
   }, [loadStatus]);
 
@@ -232,14 +236,17 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
       const errors = data.result?.errors?.length ?? 0;
       if (action === "init") {
         setMessage(t("agentsMd.created"));
+        setExpanded(false);
       } else if (warnings === 0 && errors === 0) {
         setMessage(t("agentsMd.clean"));
+        setExpanded(false);
       } else {
         setMessage(t("agentsMd.summary", {
           tokens: data.result?.approxTokens ?? 0,
           warnings,
           errors,
         }));
+        setExpanded(true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -259,15 +266,20 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
   const summary = report
     ? t("agentsMd.summary", { tokens: report.approxTokens ?? 0, warnings, errors })
     : message;
+  const hasFindings = warnings > 0 || errors > 0;
+  const shouldShow = Boolean(error || hasFindings || (status && !status.exists));
+  const tone = error || errors > 0 ? "#ef4444" : warnings > 0 ? "rgba(234,179,8,0.98)" : status?.exists ? "#16a34a" : "var(--text-dim)";
+
+  if (!shouldShow) return null;
 
   return (
     <div
       style={{
-        margin: "-2px 52px 8px 16px",
+        margin: "0 52px 6px 16px",
         display: "flex",
-        alignItems: "center",
+        flexDirection: "column",
+        alignItems: "flex-end",
         justifyContent: "flex-end",
-        minHeight: 24,
       }}
     >
       <div
@@ -280,22 +292,42 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
           color: error ? "#ef4444" : "var(--text-dim)",
           fontSize: 11,
           lineHeight: 1,
-          opacity: 0.78,
+          opacity: 0.86,
+          padding: "3px 7px",
+          border: "1px solid var(--border)",
+          borderRadius: 999,
+          background: "var(--bg-panel)",
         }}
       >
         <span style={{
           width: 5,
           height: 5,
           borderRadius: 999,
-          background: errors > 0 ? "#ef4444" : warnings > 0 ? "rgba(234,179,8,0.98)" : status?.exists ? "#16a34a" : "var(--text-dim)",
+          background: tone,
           flexShrink: 0,
           opacity: 0.75,
         }} />
-        <span style={{ fontWeight: 600, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{t("agentsMd.title")}</span>
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          style={{
+            height: 20,
+            padding: 0,
+            border: "none",
+            background: "transparent",
+            color: "var(--text-muted)",
+            fontSize: 11,
+            fontWeight: 650,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          AGENTS.md
+        </button>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {error ?? summary ?? statusText}
         </span>
-        {status && !status.exists && (
+        {status && !status.exists && expanded && (
           <button
             type="button"
             onClick={() => void runAction("init")}
@@ -315,7 +347,7 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
             {busy === "init" ? t("agentsMd.creating") : t("agentsMd.create")}
           </button>
         )}
-        {status?.exists && (
+        {status?.exists && expanded && (
           <button
             type="button"
             onClick={() => void runAction("check")}
@@ -336,16 +368,50 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
           </button>
         )}
       </div>
+      {expanded && (error || hasFindings) && (
+        <div
+          style={{
+            marginTop: 6,
+            width: "min(560px, 100%)",
+            padding: "8px 10px",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            background: "var(--bg-panel)",
+            color: "var(--text-muted)",
+            fontSize: 11,
+            lineHeight: 1.45,
+            boxShadow: "0 8px 24px -18px rgba(15,23,42,0.24)",
+          }}
+        >
+          {error && <div style={{ color: "#ef4444" }}>{error}</div>}
+          {hasFindings && (
+            <>
+              <div style={{ marginBottom: 6, color: "var(--text-muted)" }}>{t("agentsMd.manualFixHint")}</div>
+              {report?.errors?.map((item, idx) => (
+                <div key={`error:${idx}`} style={{ color: "#ef4444", marginTop: 4 }}>
+                  {t("agentsMd.errorLabel")}: {item}
+                </div>
+              ))}
+              {report?.warnings?.map((item, idx) => (
+                <div key={`warning:${idx}`} style={{ marginTop: 4 }}>
+                  {t("agentsMd.warningLabel")}: {item}
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange, onTaskStatusChange }: Props) {
   const {
     loading, error, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
+    taskError,
     agentPhase,
     isNew,
     messagesEndRef, scrollContainerRef,
@@ -397,6 +463,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     onContextUsageChange?.(contextUsageRef.current);
   }, [ctxKey, onContextUsageChange]);
   useEffect(() => () => { onContextUsageChange?.(null); }, [onContextUsageChange]);
+
+  const taskStatusMessage = error ?? taskError ?? compactError ?? null;
+  const taskStatus = taskStatusMessage ? "error" : agentRunning ? "running" : "done";
+  useEffect(() => {
+    onTaskStatusChange?.(taskStatus, taskStatusMessage);
+  }, [onTaskStatusChange, taskStatus, taskStatusMessage]);
+  useEffect(() => () => { onTaskStatusChange?.("done", null); }, [onTaskStatusChange]);
 
   const onDrop = useCallback((files: File[]) => {
     chatInputRef?.current?.addImages(files);
@@ -466,6 +539,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     : newSessionCwd
       ? `cwd:${newSessionCwd}`
       : "new";
+  const activeCwd = session?.cwd ?? newSessionCwd ?? null;
+  const agentsMdElement = activeCwd ? <AgentsMdHint cwd={activeCwd} /> : null;
 
   const chatInputElement = (
     <ChatInput
@@ -493,6 +568,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onSoundToggle={onSoundToggle}
       promptHistory={promptHistory}
       draftStorageKey={draftStorageKey}
+      cwd={activeCwd}
     />
   );
 
@@ -564,7 +640,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             >
               <BrandTypewriterHeader />
             </div>
-            {newSessionCwd && <AgentsMdHint cwd={newSessionCwd} />}
+            {agentsMdElement}
             {chatInputElement}
           </div>
         </div>
@@ -657,6 +733,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       </div>
 
       <div className="relative">
+        {agentsMdElement}
         {chatInputElement}
       </div>
       </>

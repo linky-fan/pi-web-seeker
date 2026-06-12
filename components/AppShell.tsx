@@ -13,8 +13,61 @@ import { ThemeCycleButton } from "./ThemeCycleButton";
 import { LocaleToggleButton } from "./LocaleToggleButton";
 import { TopBarTypewriter } from "./BrandTypewriter";
 import { useLocale } from "@/lib/i18n";
+import { APP_NAME } from "@/lib/branding";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
+
+type TaskStatus = "done" | "running" | "error";
+
+const TASK_STATUS_META: Record<TaskStatus, { label: string; color: string; glow: string; shadow: string }> = {
+  done: { label: "Done", color: "#34d399", glow: "#10b981", shadow: "rgba(16,185,129,0.72)" },
+  running: { label: "Running", color: "#7dd3fc", glow: "#38bdf8", shadow: "rgba(56,189,248,0.76)" },
+  error: { label: "Error", color: "#fb7185", glow: "#f43f5e", shadow: "rgba(244,63,94,0.76)" },
+};
+
+function statusFavicon(status: TaskStatus): string {
+  const meta = TASK_STATUS_META[status];
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">`,
+    `<defs>`,
+    `<radialGradient id="halo" cx="50%" cy="45%" r="60%">`,
+    `<stop offset="0%" stop-color="${meta.glow}" stop-opacity="0.58"/>`,
+    `<stop offset="58%" stop-color="${meta.glow}" stop-opacity="0.16"/>`,
+    `<stop offset="100%" stop-color="${meta.glow}" stop-opacity="0"/>`,
+    `</radialGradient>`,
+    `<filter id="softGlow" x="-45%" y="-45%" width="190%" height="190%">`,
+    `<feDropShadow dx="0" dy="0" stdDeviation="1.7" flood-color="${meta.shadow}"/>`,
+    `</filter>`,
+    `</defs>`,
+    `<rect x="1" y="1" width="30" height="30" rx="8" fill="#08111f"/>`,
+    `<rect x="1.75" y="1.75" width="28.5" height="28.5" rx="7.25" fill="none" stroke="${meta.glow}" stroke-opacity="0.34" stroke-width="1.1"/>`,
+    `<circle cx="16" cy="16" r="15" fill="url(#halo)"/>`,
+    `<text x="16" y="22.3" text-anchor="middle" font-size="22" font-family="Georgia, 'Times New Roman', serif" font-weight="700" fill="${meta.color}" filter="url(#softGlow)">π</text>`,
+    status === "running"
+      ? `<circle cx="25" cy="7.4" r="3.2" fill="${meta.glow}" filter="url(#softGlow)"/><circle cx="25" cy="7.4" r="1.3" fill="#ecfeff"/>`
+      : "",
+    status === "error"
+      ? `<circle cx="25" cy="7.4" r="3.2" fill="${meta.glow}" filter="url(#softGlow)"/><path d="M25 5.6v2.2" stroke="#fff1f2" stroke-width="1.2" stroke-linecap="round"/><circle cx="25" cy="9.3" r="0.55" fill="#fff1f2"/>`
+      : "",
+    `</svg>`,
+  ].join("");
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+function updateBrowserTaskStatus(status: TaskStatus): void {
+  if (typeof document === "undefined") return;
+  const meta = TASK_STATUS_META[status];
+  document.title = `${APP_NAME} - ${meta.label}`;
+  let link = document.querySelector<HTMLLinkElement>('link[data-pi-task-status-icon="true"]');
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "icon";
+    link.type = "image/svg+xml";
+    link.dataset.piTaskStatusIcon = "true";
+    document.head.appendChild(link);
+  }
+  link.href = statusFavicon(status);
+}
 
 function normalizeExplorerMentionPath(filePath: string): { path: string; projectRelative: boolean } {
   const normalized = filePath.replace(/\\/g, "/");
@@ -44,6 +97,7 @@ export function AppShell() {
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [capabilitiesConfigOpen, setCapabilitiesConfigOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [taskStatus, setTaskStatus] = useState<TaskStatus>("done");
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
 
@@ -80,6 +134,14 @@ export function AppShell() {
   const handleContextUsageChange = useCallback((usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => {
     setContextUsage(usage);
   }, []);
+
+  const handleTaskStatusChange = useCallback((status: TaskStatus) => {
+    setTaskStatus(status);
+  }, []);
+
+  useEffect(() => {
+    updateBrowserTaskStatus(taskStatus);
+  }, [taskStatus]);
 
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | null>(null);
@@ -563,6 +625,7 @@ export function AppShell() {
               onSystemPromptChange={handleSystemPromptChange}
               onSessionStatsChange={handleSessionStatsChange}
               onContextUsageChange={handleContextUsageChange}
+              onTaskStatusChange={handleTaskStatusChange}
             />
           ) : showPlaceholder ? (
             activeCwd ? (

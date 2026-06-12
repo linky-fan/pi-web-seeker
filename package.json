@@ -19,9 +19,11 @@
     "public",
     "templates/agents",
     "scripts/agents-md.mjs",
+    "scripts/coms-net-server.mjs",
     "scripts/model-context-test.mjs",
     "scripts/next-build.mjs",
     "scripts/prepare-github-install.js",
+    "pi-packages",
     "next.config.mjs",
     "package.json"
   ],
@@ -34,6 +36,7 @@
     "agents:init": "node scripts/agents-md.mjs init",
     "agents:check": "node scripts/agents-md.mjs check",
     "agents:templates": "node scripts/agents-md.mjs templates",
+    "coms-net:server": "node scripts/coms-net-server.mjs",
     "test:context": "node scripts/model-context-test.mjs",
     "prepare": "node scripts/prepare-github-install.js",
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"

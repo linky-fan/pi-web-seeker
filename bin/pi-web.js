@@ -62,7 +62,7 @@ if (hostname) nextArgs.push("-H", hostname);
 const child = spawn(process.execPath, [nextBin, ...nextArgs], {
   cwd: pkgDir,
   stdio: ["inherit", "pipe", "inherit"],
-  env: { ...process.env },
+  env: { ...process.env, PI_WEB_APP_ROOT: pkgDir },
 });
 
 let browserOpened = false;

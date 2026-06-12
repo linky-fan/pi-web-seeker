@@ -1,0 +1,19 @@
+{
+  "name": "pi-web-coms-net",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pi Web built-in package for coms-net LAN agent collaboration and Pi Pi experts.",
+  "pi": {
+    "extensions": [
+      "extensions/coms-net.ts",
+      "extensions/pi-pi.ts"
+    ],
+    "prompts": [],
+    "skills": []
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}
