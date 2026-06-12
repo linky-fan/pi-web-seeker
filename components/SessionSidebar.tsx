@@ -5,6 +5,7 @@ import { APP_NAME } from "@/lib/branding";
 import { useLocale } from "@/lib/i18n";
 import type { SessionInfo } from "@/lib/types";
 import { getPathRelativeToRoot } from "@/lib/path-identity";
+import { apiPath } from "@/lib/api-path";
 import { FileExplorer } from "./FileExplorer";
 
 interface Props {
@@ -284,7 +285,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const loadSessions = useCallback(async (showLoading = false) => {
     try {
       if (showLoading) setLoading(true);
-      const res = await fetch("/api/sessions");
+      const res = await fetch(apiPath("sessions"));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as { sessions: SessionInfo[] };
       setAllSessions(data.sessions);
@@ -313,7 +314,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [explorerRefreshKey]);
 
   useEffect(() => {
-    fetch("/api/home").then((r) => r.json()).then((d: { home?: string; defaultCwd?: string | null; singleWorkspace?: boolean; platform?: string; nativeDirectoryPicker?: boolean }) => {
+    fetch(apiPath("home")).then((r) => r.json()).then((d: { home?: string; defaultCwd?: string | null; singleWorkspace?: boolean; platform?: string; nativeDirectoryPicker?: boolean }) => {
       if (d.home) setHomeDir(d.home);
       if (d.defaultCwd) setDefaultCwd(d.defaultCwd);
       setSingleWorkspace(!!d.singleWorkspace);
@@ -364,7 +365,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   const selectWorkspaceDirectory = useCallback(async (cwd: string) => {
     setPathError(null);
-    const res = await fetch("/api/workspaces", {
+    const res = await fetch(apiPath("workspaces"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cwd }),
@@ -383,7 +384,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setPathError(null);
     try {
       const query = dirPath ? `?path=${encodeURIComponent(dirPath)}` : "";
-      const res = await fetch(`/api/workspaces${query}`);
+      const res = await fetch(apiPath(`workspaces${query}`));
       const data = await res.json() as WorkspaceDirectoryResponse;
       if (!res.ok || !data.path) {
         throw new Error(data.error || `HTTP ${res.status}`);
@@ -419,7 +420,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setNativePickerLoading(true);
     setPathError(null);
     try {
-      const res = await fetch("/api/workspaces/pick", { method: "POST" });
+      const res = await fetch(apiPath("workspaces/pick"), { method: "POST" });
       const data = await res.json() as WorkspaceDirectoryResponse & { cancelled?: boolean };
       if (data.cancelled) return;
       if (!res.ok || !data.cwd) {
@@ -437,7 +438,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   const handleDefaultCwd = useCallback(async () => {
     try {
-      const res = await fetch("/api/default-cwd", { method: "POST" });
+      const res = await fetch(apiPath("default-cwd"), { method: "POST" });
       const data = await res.json() as { cwd?: string; error?: string };
       if (data.cwd) {
         setSelectedCwd(data.cwd);
@@ -1241,7 +1242,7 @@ function SessionItem({
     setRenaming(false);
     if (name === (session.name ?? "")) return;
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+      await fetch(apiPath(`sessions/${encodeURIComponent(session.id)}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -1262,7 +1263,7 @@ function SessionItem({
     setConfirmDelete(false);
     setDeleting(true);
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      await fetch(apiPath(`sessions/${encodeURIComponent(session.id)}`), { method: "DELETE" });
       onDeleted?.(session.id);
     } catch {
       setDeleting(false);

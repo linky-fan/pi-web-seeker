@@ -12,6 +12,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useLocale } from "@/lib/i18n";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { markdownMathOptions, normalizeMarkdownMath } from "@/lib/markdown";
+import { apiPath } from "@/lib/api-path";
 
 interface Props {
   filePath: string;
@@ -323,7 +324,7 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
     }
 
     const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(apiPath(`files/${encoded}?type=watch`));
     esRef.current = es;
 
     es.addEventListener("connected", () => setWatching(true));
@@ -344,7 +345,7 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
   }, [filePath]);
 
   const encoded = encodeFilePathForApi(filePath);
-  const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`;
+  const src = apiPath(`files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`);
 
   const formatSizeStr = size != null ? formatSize(size) : null;
 
@@ -457,7 +458,7 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
     }
 
     const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(apiPath(`files/${encoded}?type=watch`));
     esRef.current = es;
 
     es.addEventListener("connected", () => setWatching(true));
@@ -480,7 +481,7 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
   }, [filePath]);
 
   const encoded = encodeFilePathForApi(filePath);
-  const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`;
+  const src = apiPath(`files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -577,7 +578,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
 
   const fetchContent = useCallback((filePath: string, isRefresh = false) => {
     const encoded = encodeFilePathForApi(filePath);
-    return fetch(`/api/files/${encoded}?type=read`)
+    return fetch(apiPath(`files/${encoded}?type=read`))
       .then((r) => r.json())
       .then((d: FileData & { error?: string }) => {
         if (d.error) {
@@ -624,7 +625,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
 
     // Set up SSE watch
     const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(apiPath(`files/${encoded}?type=watch`));
     esRef.current = es;
 
     es.addEventListener("connected", () => {

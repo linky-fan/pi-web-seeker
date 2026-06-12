@@ -1,6 +1,8 @@
-// Client-side helper for POST /api/agent/[id].
+import { apiPath } from "@/lib/api-path";
+
+// Client-side helper for POST api/agent/[id].
 //
-// Every /api/agent/[id] route returns one of:
+// Every api/agent/[id] route returns one of:
 //   { success: true, data: <result> }
 //   { error: string }              (non-2xx)
 //
@@ -11,7 +13,7 @@ export async function sendAgentCommand<T = unknown>(
   sessionId: string,
   command: Record<string, unknown>,
 ): Promise<T> {
-  const res = await fetch(`/api/agent/${encodeURIComponent(sessionId)}`, {
+  const res = await fetch(apiPath(`agent/${encodeURIComponent(sessionId)}`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(command),

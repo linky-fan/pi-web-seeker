@@ -10,6 +10,7 @@ import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { BrandTypewriterHeader } from "./BrandTypewriter";
 import { useLocale } from "@/lib/i18n";
+import { apiPath } from "@/lib/api-path";
 
 interface Props {
   session: SessionInfo | null;
@@ -190,7 +191,7 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
 
   const loadStatus = useCallback(async () => {
     try {
-      const res = await fetch(`/api/agents-md?cwd=${encodeURIComponent(cwd)}`);
+      const res = await fetch(apiPath(`agents-md?cwd=${encodeURIComponent(cwd)}`));
       const data = await res.json() as AgentsMdStatus & { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to load AGENTS.md status");
       setStatus({ exists: data.exists, filePath: data.filePath });
@@ -212,7 +213,7 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
     setMessage(null);
     setError(null);
     try {
-      const res = await fetch("/api/agents-md", {
+      const res = await fetch(apiPath("agents-md"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cwd, action, template: "standard" }),
@@ -342,7 +343,7 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
 export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange }: Props) {
   const {
     loading, error, messages, entryIds, streamState,
-    agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
+    agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
     agentPhase,
@@ -351,7 +352,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     lastUserMsgRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
-    handleToolPresetChange, handleThinkingLevelChange, handleAgentEventRef,
+    handleThinkingLevelChange, handleAgentEventRef,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange,
@@ -483,8 +484,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       isCompacting={isCompacting}
       compactError={compactError}
       contextUsage={contextUsage}
-      toolPreset={toolPreset}
-      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}

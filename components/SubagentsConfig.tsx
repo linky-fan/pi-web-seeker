@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n";
+import { apiPath } from "@/lib/api-path";
 
 interface SubagentsStatus {
   packageName: string;
@@ -49,7 +50,7 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
   const loadStatus = useCallback(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/subagents?cwd=${encodeURIComponent(cwd)}`)
+    fetch(apiPath(`subagents?cwd=${encodeURIComponent(cwd)}`))
       .then((res) => res.json())
       .then((data: SubagentsStatus) => {
         if (!cancelled) setStatus(data);

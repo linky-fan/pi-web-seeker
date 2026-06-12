@@ -60,7 +60,7 @@ Session browsing is read-only and reads `.jsonl` files directly through `lib/ses
 - `components/MessageView.tsx` - user, assistant, tool call, and tool result rendering.
 - `components/BranchNavigator.tsx` - in-session branch switcher.
 - `components/ChatMinimap.tsx` - scroll minimap.
-- `components/ToolPanel.tsx` - tool presets and preset inference.
+- `components/ToolsConfig.tsx` - per-tool toggles persisted to pi settings.
 - `components/ModelsConfig.tsx` - model configuration modal.
 - `components/SkillsConfig.tsx` - skill discovery/install/enablement modal.
 - `components/FileExplorer.tsx` - sidebar file tree.

@@ -7,8 +7,7 @@ import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
-import { SkillsConfig } from "./SkillsConfig";
-import { SubagentsConfig } from "./SubagentsConfig";
+import { CapabilitiesConfig } from "./CapabilitiesConfig";
 import { BranchNavigator } from "./BranchNavigator";
 import { ThemeCycleButton } from "./ThemeCycleButton";
 import { LocaleToggleButton } from "./LocaleToggleButton";
@@ -43,8 +42,7 @@ export function AppShell() {
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [modelsConfigOpen, setModelsConfigOpen] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
-  const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
-  const [subagentsConfigOpen, setSubagentsConfigOpen] = useState(false);
+  const [capabilitiesConfigOpen, setCapabilitiesConfigOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -282,32 +280,16 @@ export function AppShell() {
             ),
           },
           {
-            id: "skills",
-            label: t("nav.skills"),
-            shortLabel: t("nav.skills"),
-            onClick: () => setSkillsConfigOpen(true),
+            id: "capabilities",
+            label: t("nav.capabilities"),
+            shortLabel: t("nav.capabilitiesShort"),
+            onClick: () => setCapabilitiesConfigOpen(true),
             disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
             icon: (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2L2 7l10 5 10-5-10-5z" />
                 <path d="M2 17l10 5 10-5" />
                 <path d="M2 12l10 5 10-5" />
-              </svg>
-            ),
-          },
-          {
-            id: "subagents",
-            label: t("nav.subagents"),
-            shortLabel: t("nav.agents"),
-            onClick: () => setSubagentsConfigOpen(true),
-            disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="5" r="2" />
-                <circle cx="6" cy="17" r="2" />
-                <circle cx="18" cy="17" r="2" />
-                <path d="M12 7v4" />
-                <path d="M6 15l6-4 6 4" />
               </svg>
             ),
           },
@@ -660,11 +642,11 @@ export function AppShell() {
       </svg>
     </button>
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
-    {skillsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
-      <SkillsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSkillsConfigOpen(false)} />
-    )}
-    {subagentsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
-      <SubagentsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSubagentsConfigOpen(false)} />
+    {capabilitiesConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
+      <CapabilitiesConfig
+        cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!}
+        onClose={() => setCapabilitiesConfigOpen(false)}
+      />
     )}
     </>
   );

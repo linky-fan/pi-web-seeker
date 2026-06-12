@@ -5,6 +5,7 @@ import { getFileIcon, FolderIcon } from "./FileIcons";
 import { encodeFilePathForApi, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { useLocale } from "@/lib/i18n";
 import { isPathInOrEqualToRoot } from "@/lib/path-identity";
+import { apiPath } from "@/lib/api-path";
 
 interface FileEntry {
   name: string;
@@ -78,7 +79,7 @@ function writeRecentFiles(files: RecentFile[]): void {
 }
 
 function getFileDownloadUrl(filePath: string): string {
-  return `/api/files/${encodeFilePathForApi(filePath)}?type=download`;
+  return apiPath(`files/${encodeFilePathForApi(filePath)}?type=download`);
 }
 
 async function fetchEntries(dirPath: string, options: FetchOptions = {}): Promise<{ nodes: FileNode[]; gitTrackedAvailable?: boolean }> {
@@ -94,7 +95,7 @@ async function fetchEntries(dirPath: string, options: FetchOptions = {}): Promis
     if (cached) return { nodes: cached };
   }
 
-  const res = await fetch(`/api/files/${encoded}?${params.toString()}`);
+  const res = await fetch(apiPath(`files/${encoded}?${params.toString()}`));
   if (!res.ok) return { nodes: [] };
   const data = await res.json() as { entries?: FileEntry[]; gitTrackedAvailable?: boolean };
   const nodes = (data.entries ?? []).map((e) => ({

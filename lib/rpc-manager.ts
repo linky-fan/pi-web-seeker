@@ -3,6 +3,14 @@ import { join } from "path";
 import { createAgentSession, DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
+import {
+  BUILTIN_CODING_TOOL_NAMES,
+  BUILTIN_CODING_TOOL_SET,
+  filterKnownToolNames,
+  getLoadedExtensionToolNames,
+  readActiveTools,
+  uniqueToolNames,
+} from "./tool-settings";
 
 // ============================================================================
 // Types
@@ -75,26 +83,6 @@ function buildRuntimeSystemPrompt(cwd: string): string {
     "- Prefer existing package scripts before inventing direct framework commands.",
     "- Do not print secrets from environment variables, auth files, or local config.",
   ].join("\n");
-}
-
-const BUILTIN_CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
-const BUILTIN_CODING_TOOL_SET = new Set(BUILTIN_CODING_TOOL_NAMES);
-
-function uniqueToolNames(names: string[]): string[] {
-  return Array.from(new Set(names));
-}
-
-function getLoadedExtensionToolNames(resourceLoader: DefaultResourceLoader): string[] {
-  const extensions = resourceLoader.getExtensions();
-  const names = new Set<string>();
-
-  for (const extension of extensions.extensions) {
-    for (const name of extension.tools.keys()) {
-      if (!BUILTIN_CODING_TOOL_SET.has(name)) names.add(name);
-    }
-  }
-
-  return Array.from(names).sort();
 }
 
 function includeExtensionTools(requestedToolNames: string[], extensionToolNames: string[]): string[] {
@@ -341,11 +329,19 @@ export class AgentSessionWrapper {
 
       case "set_tools": {
         const requestedToolNames = command.toolNames as string[];
+        const exact = command.exact as boolean | undefined;
+        const allToolNames = this.inner.getAllTools().map((tool) => tool.name);
+        const knownRequestedToolNames = filterKnownToolNames(requestedToolNames, allToolNames);
+        if (exact) {
+          this.inner.setActiveToolsByName(knownRequestedToolNames);
+          if (knownRequestedToolNames.length === 0 && this.inner.agent.state) this.inner.agent.state.systemPrompt = "";
+          return null;
+        }
         const extensionToolNames = this.inner
           .getAllTools()
           .map((tool) => tool.name)
           .filter((name) => !BUILTIN_CODING_TOOL_SET.has(name));
-        this.inner.setActiveToolsByName(includeExtensionTools(requestedToolNames, extensionToolNames));
+        this.inner.setActiveToolsByName(includeExtensionTools(knownRequestedToolNames, extensionToolNames));
         return null;
       }
 
@@ -438,17 +434,22 @@ export async function startRpcSession(
     });
     await resourceLoader.reload();
 
-    // Determine which tools to pass based on requested toolNames.
+    const savedActiveTools = toolNames === undefined ? readActiveTools(agentDir) : null;
+
+    // Determine which tools to register separately from which tools are active.
     // Since v0.68.0, createAgentSession expects string[] tool names instead of Tool[] instances.
-    // For non-off presets, keep extension tools loaded so enabled packages such as pi-subagents
-    // are not hidden by the UI's built-in coding-tool presets.
+    // Keep extension tools registered so enabled packages such as pi-subagents are visible
+    // even when the saved activeTools list disables some or all extension tools.
     const extensionToolNames = getLoadedExtensionToolNames(resourceLoader);
+    const registeredToolNames = uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES, ...extensionToolNames]);
     let toolsOption: string[] | undefined;
     if (toolNames !== undefined) {
-      // Register tools even for the "Off" preset, then clear the active set below.
+      // Register tools even when the requested active set is empty, then clear it below.
       // Passing tools: [] makes pi create a session with no tool registry, so later
       // switching back to Low/High cannot restore tools without recreating the session.
-      toolsOption = uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES, ...extensionToolNames]);
+      toolsOption = registeredToolNames;
+    } else if (savedActiveTools !== null) {
+      toolsOption = registeredToolNames;
     }
 
     const { session: inner } = await createAgentSession({
@@ -459,16 +460,20 @@ export async function startRpcSession(
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
 
-    // If a preset was requested, apply it now. Empty array means active tools off,
-    // but available tools stay registered so the preset can be changed later.
+    // Empty activeTools means all tools off, but available tools stay registered.
+    let appliedActiveToolNames: string[] | undefined;
     if (toolNames !== undefined) {
-      inner.setActiveToolsByName(includeExtensionTools(toolNames, extensionToolNames));
+      appliedActiveToolNames = includeExtensionTools(filterKnownToolNames(toolNames, registeredToolNames), extensionToolNames);
+      inner.setActiveToolsByName(appliedActiveToolNames);
+    } else if (savedActiveTools !== null) {
+      appliedActiveToolNames = filterKnownToolNames(savedActiveTools, registeredToolNames);
+      inner.setActiveToolsByName(appliedActiveToolNames);
     }
 
     // When all tools are disabled, clear the system prompt entirely.
     // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
     // the only way to truly clear it is to call agent.setSystemPrompt directly.
-    if (toolNames?.length === 0) {
+    if (appliedActiveToolNames?.length === 0) {
       inner.agent.state.systemPrompt = "";
     }
 
