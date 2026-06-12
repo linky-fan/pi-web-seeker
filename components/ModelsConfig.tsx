@@ -10,6 +10,8 @@ import GroqIcon from "@lobehub/icons/es/Groq/components/Mono";
 import MistralColorIcon from "@lobehub/icons/es/Mistral/components/Color";
 import MoonshotIcon from "@lobehub/icons/es/Moonshot/components/Mono";
 import MinimaxColorIcon from "@lobehub/icons/es/Minimax/components/Color";
+import AntGroupColorIcon from "@lobehub/icons/es/AntGroup/components/Color";
+import NvidiaColorIcon from "@lobehub/icons/es/Nvidia/components/Color";
 import FireworksColorIcon from "@lobehub/icons/es/Fireworks/components/Color";
 import HuggingFaceColorIcon from "@lobehub/icons/es/HuggingFace/components/Color";
 import CerebrasColorIcon from "@lobehub/icons/es/Cerebras/components/Color";
@@ -48,6 +50,8 @@ const PROVIDER_ICONS: Record<string, { Icon: IconComponent; hasColor: boolean }>
   "moonshot":               { Icon: MoonshotIcon,         hasColor: false },
   "minimax":                { Icon: MinimaxColorIcon,     hasColor: true },
   "minimax-cn":             { Icon: MinimaxColorIcon,     hasColor: true },
+  "ant-ling":               { Icon: AntGroupColorIcon,    hasColor: true },
+  "nvidia":                 { Icon: NvidiaColorIcon,      hasColor: true },
   "fireworks":              { Icon: FireworksColorIcon,   hasColor: true },
   "huggingface":            { Icon: HuggingFaceColorIcon, hasColor: true },
   "cerebras":               { Icon: CerebrasColorIcon,    hasColor: true },

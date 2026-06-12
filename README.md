@@ -355,7 +355,7 @@ run_in_background: true
 
 ## 模型与长上下文
 
-API key 不要写进仓库。推荐在「Models」面板中选择对应 provider 后保存；MiniMax 中国区应配置 `MiniMax (China)` / `minimax-cn`。密钥会保存到智能体数据目录下的 `auth.json`，Docker Compose 默认持久化到 `.pi-web-data/agent/auth.json`。
+API key 不要写进仓库。推荐在「Models」面板中选择上游内置 provider 后保存；MiniMax / MiniMax 中国区、Ant Ling、NVIDIA NIM 都走 pi 内置 provider（例如 `minimax`、`minimax-cn`、`ant-ling`、`nvidia`），不要再手工添加同名自定义 provider。密钥会保存到智能体数据目录下的 `auth.json`，Docker Compose 默认持久化到 `.pi-web-data/agent/auth.json`。
 
 模型详情页的「Test」按钮会发送一次真实轻量请求，用于验证 API key、base URL、模型 ID 和接口兼容性。长上下文能力可以用 CLI 做 needle-in-context 测试：
 
