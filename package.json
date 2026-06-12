@@ -17,25 +17,34 @@
     "!.next/dev",
     "!.next/**/*.js.map",
     "public",
+    "templates/agents",
+    "scripts/agents-md.mjs",
+    "scripts/model-context-test.mjs",
+    "scripts/next-build.mjs",
     "scripts/prepare-github-install.js",
-    "next.config.ts",
+    "next.config.mjs",
     "package.json"
   ],
   "scripts": {
     "dev": "next dev -p 30141 -H 0.0.0.0",
-    "build": "next build --webpack",
+    "build": "node scripts/next-build.mjs",
     "start": "next start -p 30141 -H 0.0.0.0",
     "lint": "eslint .",
+    "agents": "node scripts/agents-md.mjs",
+    "agents:init": "node scripts/agents-md.mjs init",
+    "agents:check": "node scripts/agents-md.mjs check",
+    "agents:templates": "node scripts/agents-md.mjs templates",
+    "test:context": "node scripts/model-context-test.mjs",
     "prepare": "node scripts/prepare-github-install.js",
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.75.5",
-    "@earendil-works/pi-coding-agent": "^0.75.5",
-    "@lobehub/icons": "^5.6.0",
+    "@earendil-works/pi-ai": "^0.78.0",
+    "@earendil-works/pi-coding-agent": "^0.78.0",
+    "@lobehub/icons": "^5.10.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "katex": "^0.16.45",
-    "next": "16.2.1",
+    "next": "^16.2.7",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
@@ -50,9 +59,13 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.1",
-    "postcss": "^8",
+    "eslint-config-next": "16.2.7",
+    "postcss": "^8.5.15",
     "tailwindcss": "^4.2.2",
     "typescript": "^5"
+  },
+  "overrides": {
+    "js-cookie": "3.0.8",
+    "mermaid": "11.15.0"
   }
 }

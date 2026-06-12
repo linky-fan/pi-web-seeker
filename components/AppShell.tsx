@@ -7,15 +7,31 @@ import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
-import { SkillsConfig } from "./SkillsConfig";
-import { SubagentsConfig } from "./SubagentsConfig";
+import { CapabilitiesConfig } from "./CapabilitiesConfig";
 import { BranchNavigator } from "./BranchNavigator";
 import { ThemeCycleButton } from "./ThemeCycleButton";
+import { LocaleToggleButton } from "./LocaleToggleButton";
 import { TopBarTypewriter } from "./BrandTypewriter";
+import { useLocale } from "@/lib/i18n";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
 
+function normalizeExplorerMentionPath(filePath: string): { path: string; projectRelative: boolean } {
+  const normalized = filePath.replace(/\\/g, "/");
+  const alreadyQualified = normalized.startsWith("/") ||
+    normalized.startsWith("./") ||
+    normalized.startsWith("../") ||
+    /^[a-zA-Z]:\//.test(normalized) ||
+    normalized.startsWith("//");
+
+  return {
+    path: alreadyQualified ? normalized : `./${normalized}`,
+    projectRelative: !normalized.startsWith("/") && !/^[a-zA-Z]:\//.test(normalized) && !normalized.startsWith("//"),
+  };
+}
+
 export function AppShell() {
+  const { t } = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
@@ -26,8 +42,7 @@ export function AppShell() {
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [modelsConfigOpen, setModelsConfigOpen] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
-  const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
-  const [subagentsConfigOpen, setSubagentsConfigOpen] = useState(false);
+  const [capabilitiesConfigOpen, setCapabilitiesConfigOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -92,8 +107,9 @@ export function AppShell() {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
 
   const handleAtMention = useCallback((relativePath: string) => {
-    chatInputRef.current?.insertText("`" + relativePath + "`");
-  }, []);
+    const mention = normalizeExplorerMentionPath(relativePath);
+    chatInputRef.current?.insertText(t(mention.projectRelative ? "explorer.insertPathPrompt" : "explorer.insertAbsolutePathPrompt", { path: mention.path }));
+  }, [t]);
 
   const [initialSessionId] = useState<string | null>(() => searchParams.get("session"));
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
@@ -248,8 +264,9 @@ export function AppShell() {
         <ThemeCycleButton variant="footer" />
         {([
           {
-            label: "Models",
-            shortLabel: "Models",
+            id: "models",
+            label: t("nav.models"),
+            shortLabel: t("nav.models"),
             onClick: () => setModelsConfigOpen(true),
             disabled: false,
             icon: (
@@ -263,9 +280,10 @@ export function AppShell() {
             ),
           },
           {
-            label: "Skills",
-            shortLabel: "Skills",
-            onClick: () => setSkillsConfigOpen(true),
+            id: "capabilities",
+            label: t("nav.capabilities"),
+            shortLabel: t("nav.capabilitiesShort"),
+            onClick: () => setCapabilitiesConfigOpen(true),
             disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
             icon: (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -275,24 +293,9 @@ export function AppShell() {
               </svg>
             ),
           },
-          {
-            label: "Subagents",
-            shortLabel: "Agents",
-            onClick: () => setSubagentsConfigOpen(true),
-            disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="5" r="2" />
-                <circle cx="6" cy="17" r="2" />
-                <circle cx="18" cy="17" r="2" />
-                <path d="M12 7v4" />
-                <path d="M6 15l6-4 6 4" />
-              </svg>
-            ),
-          },
-        ] as { label: string; shortLabel: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ label, shortLabel, onClick, disabled, icon }) => (
+        ] as { id: string; label: string; shortLabel: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ id, label, shortLabel, onClick, disabled, icon }) => (
           <button
-            key={label}
+            key={id}
             onClick={onClick}
             disabled={disabled}
             title={label}
@@ -354,7 +357,7 @@ export function AppShell() {
         <div ref={topBarRef} style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 36, background: "var(--bg-panel)" }}>
           <button
             onClick={() => setSidebarOpen((v) => !v)}
-            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            title={sidebarOpen ? t("sidebar.hide") : t("sidebar.show")}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               width: 36, height: 36, padding: 0,
@@ -375,6 +378,7 @@ export function AppShell() {
             )}
           </button>
           <ThemeCycleButton />
+          <LocaleToggleButton />
           {showChat && (
             <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
               <BranchNavigator
@@ -411,14 +415,14 @@ export function AppShell() {
                   <line x1="8" y1="13" x2="16" y2="13" />
                   <line x1="8" y1="17" x2="13" y2="17" />
                 </svg>
-                <span>System</span>
+                <span>{t("system.label")}</span>
               </button>
             </div>
           )}
           {showChat && <TopBarTypewriter />}
           {/* Session stats — right-aligned in top bar */}
           {showChat && (sessionStats || contextUsage) && (() => {
-            const t = sessionStats?.tokens;
+            const tokens = sessionStats?.tokens;
             const c = sessionStats?.cost ?? 0;
             const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
             const costStr = c > 0 ? (c >= 0.01 ? `$${c.toFixed(2)}` : `<$0.01`) : null;
@@ -433,16 +437,16 @@ export function AppShell() {
             }
 
             const tooltipParts: string[] = [];
-            if (t) {
-              tooltipParts.push(`in: ${t.input.toLocaleString()}`);
-              tooltipParts.push(`out: ${t.output.toLocaleString()}`);
-              tooltipParts.push(`cache read: ${t.cacheRead.toLocaleString()}`);
-              tooltipParts.push(`cache write: ${t.cacheWrite.toLocaleString()}`);
-              if (c > 0) tooltipParts.push(`cost: $${c.toFixed(4)}`);
+            if (tokens) {
+              tooltipParts.push(`${t("stats.input")}: ${tokens.input.toLocaleString()}`);
+              tooltipParts.push(`${t("stats.output")}: ${tokens.output.toLocaleString()}`);
+              tooltipParts.push(`${t("stats.cacheRead")}: ${tokens.cacheRead.toLocaleString()}`);
+              tooltipParts.push(`${t("stats.cacheWrite")}: ${tokens.cacheWrite.toLocaleString()}`);
+              if (c > 0) tooltipParts.push(`${t("stats.cost")}: $${c.toFixed(4)}`);
             }
             if (contextUsage?.contextWindow) {
               const pct = contextUsage.percent;
-              tooltipParts.push(`context: ${pct !== null ? pct.toFixed(1) + "%" : "unknown"} of ${contextUsage.contextWindow.toLocaleString()} tokens`);
+              tooltipParts.push(`${t("stats.context")}: ${pct !== null ? pct.toFixed(1) + "%" : t("stats.unknown")} of ${contextUsage.contextWindow.toLocaleString()} tokens`);
             }
             const tooltip = tooltipParts.join("  |  ");
 
@@ -460,28 +464,28 @@ export function AppShell() {
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
-                {t && t.input > 0 && (
+                {tokens && tokens.input > 0 && (
                   <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="8.5" x2="5" y2="1.5" /><polyline points="2 4 5 1.5 8 4" />
                     </svg>
-                    {fmt(t.input)}
+                    {fmt(tokens.input)}
                   </span>
                 )}
-                {t && t.output > 0 && (
+                {tokens && tokens.output > 0 && (
                   <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
                     </svg>
-                    {fmt(t.output)}
+                    {fmt(tokens.output)}
                   </span>
                 )}
-                {t && t.cacheRead > 0 && (
+                {tokens && tokens.cacheRead > 0 && (
                   <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M8.5 5a3.5 3.5 0 1 1-1-2.45" /><polyline points="6.5 1.5 8.5 2.5 7.5 4.5" />
                     </svg>
-                    {fmt(t.cacheRead)}
+                    {fmt(tokens.cacheRead)}
                   </span>
                 )}
                 {costStr && (
@@ -529,11 +533,11 @@ export function AppShell() {
                     </div>
                   ) : systemPrompt === "" ? (
                     <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                      System prompt is empty (tools are disabled)
+                      {t("system.emptyTools")}
                     </div>
                   ) : (
                     <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                      Send a message to load the system prompt
+                      {t("system.loadHint")}
                     </div>
                   )}
                 </div>
@@ -563,7 +567,7 @@ export function AppShell() {
           ) : showPlaceholder ? (
             activeCwd ? (
               <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
-                Select a session from the sidebar
+                {t("placeholder.selectSession")}
               </div>
             ) : (
               <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "flex-start", gap: 8, userSelect: "none", pointerEvents: "none" }}>
@@ -571,10 +575,10 @@ export function AppShell() {
                   <line x1="20" y1="12" x2="4" y2="12" /><polyline points="10 6 4 12 10 18" />
                 </svg>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>Get Started</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>{t("placeholder.getStarted")}</div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
-                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>Select a project directory from the sidebar<br />
-                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>Add models via the <strong style={{ color: "var(--text)" }}>Models</strong> button at the bottom
+                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{t("placeholder.stepSelectProject")}<br />
+                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{t("placeholder.stepAddModels")}
                   </div>
                 </div>
               </div>
@@ -612,7 +616,7 @@ export function AppShell() {
             <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} />
           ) : (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-              No file open
+              {t("file.noOpen")}
             </div>
           )}
         </div>
@@ -638,11 +642,11 @@ export function AppShell() {
       </svg>
     </button>
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
-    {skillsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
-      <SkillsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSkillsConfigOpen(false)} />
-    )}
-    {subagentsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
-      <SubagentsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSubagentsConfigOpen(false)} />
+    {capabilitiesConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
+      <CapabilitiesConfig
+        cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!}
+        onClose={() => setCapabilitiesConfigOpen(false)}
+      />
     )}
     </>
   );

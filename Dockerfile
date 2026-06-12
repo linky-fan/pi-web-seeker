@@ -39,7 +39,7 @@ COPY --from=builder --chown=1000:1000 /app/package.json /app/package-lock.json .
 COPY --from=deps --chown=1000:1000 /app/node_modules ./node_modules
 COPY --from=builder --chown=1000:1000 /app/.next ./.next
 COPY --from=builder --chown=1000:1000 /app/public ./public
-COPY --from=builder --chown=1000:1000 /app/next.config.ts ./next.config.ts
+COPY --from=builder --chown=1000:1000 /app/next.config.mjs ./next.config.mjs
 COPY --chown=1000:1000 docker-entrypoint.sh /usr/local/bin/pi-web-docker-entrypoint
 RUN chmod +x /usr/local/bin/pi-web-docker-entrypoint \
   && test -x node_modules/.bin/next

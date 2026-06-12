@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { startRpcSession } from "@/lib/rpc-manager";
+import { assertPathAllowed } from "@/lib/allowed-roots";
+
+export const dynamic = "force-dynamic";
 
 // POST /api/agent/new  body: { cwd: string; type: string; message: string; ... }
 // Spawns a brand-new pi session and immediately sends the first command.
@@ -15,6 +18,11 @@ export async function POST(req: Request) {
     }
     if (!existsSync(cwd)) {
       return NextResponse.json({ error: `Directory does not exist: ${cwd}` }, { status: 400 });
+    }
+    try {
+      await assertPathAllowed(cwd);
+    } catch {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids

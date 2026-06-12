@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runNpx } from "@/lib/npx";
+import { assertPathAllowed } from "@/lib/allowed-roots";
 
 export const dynamic = "force-dynamic";
 
@@ -12,13 +13,22 @@ export async function POST(req: Request) {
     if (!pkg?.trim()) return NextResponse.json({ error: "package required" }, { status: 400 });
 
     const isGlobal = scope !== "project";
+    if (!isGlobal) {
+      if (!cwd) return NextResponse.json({ error: "cwd required for project install" }, { status: 400 });
+      try {
+        await assertPathAllowed(cwd);
+      } catch {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+    }
+
     const args = ["skills", "add", pkg.trim(), "-y", "--agent", "pi"];
     if (isGlobal) args.push("-g");
 
     console.log(`[skills/install] running: npx ${args.join(" ")}`);
     const { stdout, stderr } = await runNpx(args, {
       timeout: 60000,
-      cwd: !isGlobal && cwd ? cwd : undefined,
+      cwd: !isGlobal ? cwd : undefined,
       env: { ...process.env, FORCE_COLOR: "0" },
     });
 

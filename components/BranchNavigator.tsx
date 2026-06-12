@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import type { SessionEntry, SessionTreeNode } from "@/lib/types";
+import { useLocale } from "@/lib/i18n";
 
 interface Props {
   sessionId?: string | null;
@@ -185,6 +186,7 @@ interface TreeNodeProps {
 }
 
 function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelect, onPreview, onTagTarget, branchLabels, previewTargetId }: TreeNodeProps) {
+  const { t } = useLocale();
   const { node: rep, skipped } = compress(node);
   const isActive = activePathIds.has(rep.entry.id);
   const isOnPath = activePathIds.has(node.entry.id) || activePathIds.has(rep.entry.id);
@@ -322,7 +324,7 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
             onPreview(rep.entry.id);
             onTagTarget(rep.entry.id);
           }}
-          title="Label branch"
+          title={t("branches.labelBranch")}
           style={{
             width: 20,
             height: 20,
@@ -412,6 +414,7 @@ function DiffPreview({
   onLabelChange: (label: string) => void;
   labelInputRef: React.RefObject<HTMLInputElement | null>;
 }) {
+  const { t } = useLocale();
   const target = targetPath[targetPath.length - 1] ?? null;
   const diff = summarizeDiff(activePath, targetPath);
   const isCurrent = target && activePath[activePath.length - 1]?.entry.id === target.entry.id;
@@ -419,7 +422,7 @@ function DiffPreview({
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 10, color, fontWeight: 700, marginBottom: 4 }}>{title}</div>
       {nodes.length === 0 ? (
-        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>None</div>
+        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("branches.none")}</div>
       ) : (
         nodes.slice(0, 4).map((node) => (
           <div key={node.entry.id} style={{ display: "flex", alignItems: "center", gap: 5, height: 20, minWidth: 0 }}>
@@ -431,7 +434,7 @@ function DiffPreview({
         ))
       )}
       {nodes.length > 4 && (
-        <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>+{nodes.length - 4} more</div>
+        <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>{t("branches.more", { count: nodes.length - 4 })}</div>
       )}
     </div>
   );
@@ -439,7 +442,7 @@ function DiffPreview({
   if (!target) {
     return (
       <div style={{ padding: 12, color: "var(--text-dim)", fontSize: 12 }}>
-        Hover a branch to preview the path difference.
+        {t("branches.previewHint")}
       </div>
     );
   }
@@ -448,13 +451,13 @@ function DiffPreview({
     <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
       <div>
         <div style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4, letterSpacing: 0 }}>
-          Preview
+          {t("branches.preview")}
         </div>
         <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {getNodeLabel(target, branchLabels)}
         </div>
         <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
-          {isCurrent ? "Current branch" : `${countMessages(diff.leaving)} messages out · ${countMessages(diff.entering)} messages in`}
+          {isCurrent ? t("branches.current") : t("branches.diff", { out: countMessages(diff.leaving), in: countMessages(diff.entering) })}
         </div>
       </div>
 
@@ -463,7 +466,7 @@ function DiffPreview({
           ref={labelInputRef}
           value={labelValue}
           onChange={(e) => onLabelChange(e.target.value)}
-          placeholder="Add branch label"
+          placeholder={t("branches.addLabel")}
           style={{
             flex: 1,
             minWidth: 0,
@@ -480,7 +483,7 @@ function DiffPreview({
         {labelValue && (
           <button
             onClick={() => onLabelChange("")}
-            title="Clear label"
+            title={t("branches.clearLabel")}
             style={{
               width: 26,
               height: 26,
@@ -497,8 +500,8 @@ function DiffPreview({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, minWidth: 0 }}>
-        {showList("Leaving", diff.leaving, "#f97316")}
-        {showList("Entering", diff.entering, "var(--accent)")}
+        {showList(t("branches.leaving"), diff.leaving, "#f97316")}
+        {showList(t("branches.entering"), diff.entering, "var(--accent)")}
       </div>
     </div>
   );
@@ -529,6 +532,7 @@ function BranchPanel({
   labelInputRef: React.RefObject<HTMLInputElement | null>;
   onLabelChange: (id: string, label: string) => void;
 }) {
+  const { t } = useLocale();
   const childNodes = firstNode ? navigableChildren(firstNode) : [];
   const previewPath = findPath(firstNode ? [firstNode] : [], previewTargetId);
   const previewNode = previewPath[previewPath.length - 1] ?? null;
@@ -540,7 +544,7 @@ function BranchPanel({
       {visibleActivePath.length > 0 && (
         <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid var(--border)", background: "var(--bg)" }}>
           <div style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", fontWeight: 700, marginBottom: 6, letterSpacing: 0 }}>
-            Current path
+            {t("branches.currentPath")}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
             {visibleActivePath.slice(-6).map((node, index, arr) => (
@@ -581,7 +585,7 @@ function BranchPanel({
         </div>
       ) : (
         <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-          {noBranchReason ?? "This session has no branches"}
+          {noBranchReason ?? t("branches.noBranches")}
         </div>
       )}
     </div>
@@ -589,6 +593,7 @@ function BranchPanel({
 }
 
 export function BranchNavigator({ sessionId, tree, activeLeafId, onLeafChange, inline, containerRef, open: openProp, onToggle, hasSession }: Props) {
+  const { t } = useLocale();
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp !== undefined ? openProp : openInternal;
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -649,9 +654,9 @@ export function BranchNavigator({ sessionId, tree, activeLeafId, onLeafChange, i
   }, [sessionId]);
 
   const noBranchReason = !hasSession
-    ? "No active session"
+    ? t("branches.noSession")
     : !hasBranch(tree)
-      ? "This session has no branches"
+      ? t("branches.noBranches")
       : null;
 
   // Find first meaningful node (skip pure linear prefix)
@@ -717,7 +722,7 @@ export function BranchNavigator({ sessionId, tree, activeLeafId, onLeafChange, i
           onMouseLeave={(e) => { e.currentTarget.style.color = open ? "var(--text)" : "var(--text-muted)"; }}
         >
           {branchIcon}
-          <span>Branches</span>
+          <span>{t("branches.label")}</span>
         </button>
         {open && dropdownPos && (
           <div style={{
@@ -756,7 +761,7 @@ export function BranchNavigator({ sessionId, tree, activeLeafId, onLeafChange, i
         }}
       >
         {branchIcon}
-        <span style={{ color: "var(--text-muted)" }}>Branches</span>
+        <span style={{ color: "var(--text-muted)" }}>{t("branches.label")}</span>
         {chevron}
       </button>
 

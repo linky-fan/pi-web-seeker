@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode, TextContent } from "@/lib/types";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
@@ -9,6 +9,8 @@ import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { BrandTypewriterHeader } from "./BrandTypewriter";
+import { useLocale } from "@/lib/i18n";
+import { apiPath } from "@/lib/api-path";
 
 interface Props {
   session: SessionInfo | null;
@@ -23,6 +25,10 @@ interface Props {
   onSessionStatsChange?: (stats: { tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }; cost?: number } | null) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
 }
+
+const LAZY_RECENT_MESSAGE_COUNT = 24;
+const LAZY_MESSAGE_THRESHOLD = 60;
+const LAZY_ROOT_MARGIN_PX = 1600;
 
 function phaseLabel(phase: AgentPhase): string {
   if (phase?.kind === "running_tools") {
@@ -47,10 +53,297 @@ function userMessageText(message: AgentMessage): string | null {
   return text || null;
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function estimateTextHeight(text: string, base = 52): number {
+  const explicitLines = text.split("\n").length;
+  const wrappedLines = Math.ceil(text.length / 90);
+  return base + Math.max(explicitLines, wrappedLines) * 20;
+}
+
+function estimateMessageHeight(message: AgentMessage): number {
+  if (message.role === "user") {
+    const content = message.content;
+    if (typeof content === "string") return clampNumber(estimateTextHeight(content, 44), 54, 360);
+    const text = content
+      .filter((block): block is TextContent => block.type === "text")
+      .map((block) => block.text)
+      .join("\n");
+    const imageCount = content.filter((block) => block.type === "image").length;
+    return clampNumber(estimateTextHeight(text, 44) + imageCount * 132, 76, 520);
+  }
+
+  if (message.role === "assistant") {
+    const blocks = message.content ?? [];
+    let textLength = 0;
+    let textLines = 0;
+    let extraBlocks = 0;
+    for (const block of blocks) {
+      if (block.type === "text") {
+        const text = block.text ?? "";
+        textLength += text.length;
+        textLines += text.split("\n").length;
+      } else {
+        extraBlocks += 1;
+      }
+    }
+    const lines = Math.max(textLines, Math.ceil(textLength / 90));
+    return clampNumber(54 + lines * 22 + extraBlocks * 76, 70, 640);
+  }
+
+  if (message.role === "custom") {
+    const content = typeof message.content === "string" ? message.content : "";
+    return clampNumber(estimateTextHeight(content, 54), 70, 420);
+  }
+
+  return 1;
+}
+
+function LazyMessageSlot({
+  children,
+  eager,
+  estimatedHeight,
+  registerRef,
+  scrollRoot,
+}: {
+  children: ReactNode;
+  eager: boolean;
+  estimatedHeight: number;
+  registerRef?: (el: HTMLDivElement | null) => void;
+  scrollRoot: RefObject<HTMLDivElement | null>;
+}) {
+  const [shouldRender, setShouldRender] = useState(eager);
+  const slotRef = useRef<HTMLDivElement | null>(null);
+
+  const setSlotRef = useCallback((el: HTMLDivElement | null) => {
+    slotRef.current = el;
+    registerRef?.(el);
+  }, [registerRef]);
+
+  useEffect(() => {
+    if (eager) {
+      setShouldRender(true);
+      return;
+    }
+    if (shouldRender) return;
+
+    const el = slotRef.current;
+    const root = scrollRoot.current;
+    if (!el || !root || typeof IntersectionObserver === "undefined") {
+      setShouldRender(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
+        setShouldRender(true);
+        observer.disconnect();
+      }
+    }, {
+      root,
+      rootMargin: `${LAZY_ROOT_MARGIN_PX}px 0px`,
+      threshold: 0,
+    });
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [eager, scrollRoot, shouldRender]);
+
+  const style = shouldRender
+    ? ({
+        contentVisibility: "auto",
+        containIntrinsicSize: `${estimatedHeight}px`,
+      } as CSSProperties)
+    : ({
+        minHeight: estimatedHeight,
+        contentVisibility: "auto",
+        containIntrinsicSize: `${estimatedHeight}px`,
+        contain: "layout style paint",
+      } as CSSProperties);
+
+  return (
+    <div ref={setSlotRef} style={style}>
+      {shouldRender ? children : null}
+    </div>
+  );
+}
+
+interface AgentsMdReport {
+  approxTokens?: number;
+  warnings?: string[];
+  errors?: string[];
+}
+
+interface AgentsMdStatus {
+  exists: boolean;
+  filePath?: string;
+  result?: AgentsMdReport | null;
+}
+
+function AgentsMdHint({ cwd }: { cwd: string }) {
+  const { t } = useLocale();
+  const [status, setStatus] = useState<AgentsMdStatus | null>(null);
+  const [busy, setBusy] = useState<"init" | "check" | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await fetch(apiPath(`agents-md?cwd=${encodeURIComponent(cwd)}`));
+      const data = await res.json() as AgentsMdStatus & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to load AGENTS.md status");
+      setStatus({ exists: data.exists, filePath: data.filePath });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [cwd]);
+
+  useEffect(() => {
+    setStatus(null);
+    setMessage(null);
+    setError(null);
+    void loadStatus();
+  }, [loadStatus]);
+
+  const runAction = useCallback(async (action: "init" | "check") => {
+    setBusy(action);
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await fetch(apiPath("agents-md"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, action, template: "standard" }),
+      });
+      const data = await res.json() as {
+        ok?: boolean;
+        exists?: boolean;
+        filePath?: string;
+        result?: AgentsMdReport | null;
+        error?: string;
+        stderr?: string;
+      };
+      if (!res.ok || data.ok === false) throw new Error(data.stderr || data.error || "AGENTS.md action failed");
+      setStatus({ exists: Boolean(data.exists), filePath: data.filePath, result: data.result ?? null });
+      const warnings = data.result?.warnings?.length ?? 0;
+      const errors = data.result?.errors?.length ?? 0;
+      if (action === "init") {
+        setMessage(t("agentsMd.created"));
+      } else if (warnings === 0 && errors === 0) {
+        setMessage(t("agentsMd.clean"));
+      } else {
+        setMessage(t("agentsMd.summary", {
+          tokens: data.result?.approxTokens ?? 0,
+          warnings,
+          errors,
+        }));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }, [cwd, t]);
+
+  const report = status?.result;
+  const warnings = report?.warnings?.length ?? 0;
+  const errors = report?.errors?.length ?? 0;
+  const statusText = !status
+    ? t("subagents.checking")
+    : status.exists
+      ? t("agentsMd.ready")
+      : t("agentsMd.missing");
+  const summary = report
+    ? t("agentsMd.summary", { tokens: report.approxTokens ?? 0, warnings, errors })
+    : message;
+
+  return (
+    <div
+      style={{
+        margin: "-2px 52px 8px 16px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        minHeight: 24,
+      }}
+    >
+      <div
+        title={error ?? summary ?? statusText}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          maxWidth: "100%",
+          color: error ? "#ef4444" : "var(--text-dim)",
+          fontSize: 11,
+          lineHeight: 1,
+          opacity: 0.78,
+        }}
+      >
+        <span style={{
+          width: 5,
+          height: 5,
+          borderRadius: 999,
+          background: errors > 0 ? "#ef4444" : warnings > 0 ? "rgba(234,179,8,0.98)" : status?.exists ? "#16a34a" : "var(--text-dim)",
+          flexShrink: 0,
+          opacity: 0.75,
+        }} />
+        <span style={{ fontWeight: 600, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{t("agentsMd.title")}</span>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {error ?? summary ?? statusText}
+        </span>
+        {status && !status.exists && (
+          <button
+            type="button"
+            onClick={() => void runAction("init")}
+            disabled={busy !== null}
+            style={{
+              height: 20,
+              padding: 0,
+              border: "none",
+              background: "transparent",
+              color: "var(--accent)",
+              fontSize: 11,
+              fontWeight: 650,
+              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            {busy === "init" ? t("agentsMd.creating") : t("agentsMd.create")}
+          </button>
+        )}
+        {status?.exists && (
+          <button
+            type="button"
+            onClick={() => void runAction("check")}
+            disabled={busy !== null}
+            style={{
+              height: 20,
+              padding: 0,
+              border: "none",
+              background: "transparent",
+              color: "var(--accent)",
+              fontSize: 11,
+              fontWeight: 650,
+              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            {busy === "check" ? t("agentsMd.checking") : t("agentsMd.check")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange }: Props) {
   const {
     loading, error, messages, entryIds, streamState,
-    agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
+    agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
     agentPhase,
@@ -59,7 +352,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     lastUserMsgRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
-    handleToolPresetChange, handleThinkingLevelChange, handleAgentEventRef,
+    handleThinkingLevelChange, handleAgentEventRef,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange,
@@ -111,7 +404,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
 
-  const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+  const visibleMessages = useMemo(() => messages.filter((m) => m.role === "user" || m.role === "assistant"), [messages]);
   const messageRefs = useMessageRefs(visibleMessages.length);
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
@@ -137,6 +430,37 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     return history;
   }, [messages]);
 
+  const messageRenderData = useMemo(() => {
+    const toolResultsMap = new Map<string, import("@/lib/types").ToolResultMessage>();
+    const showTimestamp = new Array<boolean>(messages.length).fill(false);
+    let lastUserIdx = -1;
+    let seenAssistantSinceUser = false;
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === "toolResult") {
+        toolResultsMap.set((msg as import("@/lib/types").ToolResultMessage).toolCallId, msg as import("@/lib/types").ToolResultMessage);
+      }
+      if (lastUserIdx < 0 && msg.role === "user") lastUserIdx = i;
+      if (msg.role === "user") {
+        seenAssistantSinceUser = false;
+      } else if (msg.role === "assistant") {
+        showTimestamp[i] = !seenAssistantSinceUser;
+        seenAssistantSinceUser = true;
+      }
+    }
+
+    if (streamState.isStreaming && messages.length > 0) {
+      showTimestamp[messages.length - 1] = false;
+    }
+
+    return { toolResultsMap, lastUserIdx, showTimestamp };
+  }, [messages, streamState.isStreaming]);
+
+  const handleEditMessageContent = useCallback((content: string) => {
+    chatInputRef?.current?.insertIfEmpty(content);
+  }, [chatInputRef]);
+
   const draftStorageKey = session?.id
     ? `session:${session.id}`
     : newSessionCwd
@@ -160,8 +484,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       isCompacting={isCompacting}
       compactError={compactError}
       contextUsage={contextUsage}
-      toolPreset={toolPreset}
-      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}
@@ -242,6 +564,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             >
               <BrandTypewriterHeader />
             </div>
+            {newSessionCwd && <AgentsMdHint cwd={newSessionCwd} />}
             {chatInputElement}
           </div>
         </div>
@@ -252,61 +575,58 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           <div className="mx-auto max-w-[820px] px-4">
 
             {(() => {
-              const toolResultsMap = new Map<string, import("@/lib/types").ToolResultMessage>();
-              for (const msg of messages) {
-                if (msg.role === "toolResult") {
-                  toolResultsMap.set((msg as import("@/lib/types").ToolResultMessage).toolCallId, msg as import("@/lib/types").ToolResultMessage);
-                }
-              }
-              let lastUserIdx = -1;
-              for (let i = messages.length - 1; i >= 0; i--) {
-                if (messages[i].role === "user") { lastUserIdx = i; break; }
-              }
               let refIdx = 0;
+              const shouldUseLazyMessages = messages.length >= LAZY_MESSAGE_THRESHOLD;
               return messages.map((msg, idx) => {
+                const messageKey = entryIds[idx] ?? `${msg.role}-${idx}`;
                 const prevAssistantEntryId =
                   msg.role === "user" && idx > 0 && messages[idx - 1].role === "assistant"
                     ? entryIds[idx - 1]
                     : undefined;
                 const isVisible = msg.role === "user" || msg.role === "assistant";
                 const currentRefIdx = isVisible ? refIdx++ : -1;
-                let showTimestamp = false;
-                if (msg.role === "assistant") {
-                  showTimestamp = true;
-                  for (let j = idx + 1; j < messages.length; j++) {
-                    const r = messages[j].role;
-                    if (r === "user") break;
-                    if (r === "assistant") { showTimestamp = false; break; }
-                  }
-                  // Hide on the currently-streaming tail (the streaming bubble owns the live timestamp)
-                  if (showTimestamp && streamState.isStreaming && idx === messages.length - 1) {
-                    showTimestamp = false;
-                  }
-                }
+                const shouldRenderEagerly =
+                  !shouldUseLazyMessages ||
+                  idx >= messages.length - LAZY_RECENT_MESSAGE_COUNT ||
+                  idx === messageRenderData.lastUserIdx ||
+                  forkingEntryId === entryIds[idx];
                 const view = (
                   <MessageView
-                    key={idx}
+                    key={messageKey}
                     message={msg}
-                    toolResults={toolResultsMap}
+                    toolResults={messageRenderData.toolResultsMap}
                     modelNames={modelNames}
                     entryId={entryIds[idx]}
                     onFork={agentRunning || isNew || (idx === 0 && msg.role === "user") ? undefined : handleFork}
                     forking={forkingEntryId === entryIds[idx]}
                     onNavigate={agentRunning ? undefined : handleNavigate}
                     prevAssistantEntryId={agentRunning ? undefined : prevAssistantEntryId}
-                    onEditContent={(content) => chatInputRef?.current?.insertIfEmpty(content)}
-                    showTimestamp={showTimestamp}
+                    onEditContent={handleEditMessageContent}
+                    showTimestamp={messageRenderData.showTimestamp[idx]}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as import("@/lib/types").AgentMessage & { timestamp?: number }).timestamp : undefined}
                   />
                 );
-                if (!isVisible) return view;
+                if (msg.role === "toolResult") return view;
+
+                const registerRef = isVisible
+                  ? (el: HTMLDivElement | null) => {
+                      messageRefs.current[currentRefIdx] = el;
+                      if (idx === messageRenderData.lastUserIdx) {
+                        (lastUserMsgRef as { current: HTMLDivElement | null }).current = el;
+                      }
+                    }
+                  : undefined;
+
                 return (
-                  <div key={idx} ref={(el) => {
-                    messageRefs.current[currentRefIdx] = el;
-                    if (idx === lastUserIdx) { (lastUserMsgRef as { current: HTMLDivElement | null }).current = el; }
-                  }}>
+                  <LazyMessageSlot
+                    key={messageKey}
+                    eager={shouldRenderEagerly}
+                    estimatedHeight={estimateMessageHeight(msg)}
+                    registerRef={registerRef}
+                    scrollRoot={scrollContainerRef}
+                  >
                     {view}
-                  </div>
+                  </LazyMessageSlot>
                 );
               });
             })()}

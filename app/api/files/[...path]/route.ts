@@ -3,7 +3,9 @@ import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { Readable } from "stream";
-import { listAllSessions } from "@/lib/session-reader";
+import { getAllowedRoots, isPathAllowed, isWindowsAbsolutePath } from "@/lib/allowed-roots";
+
+export const dynamic = "force-dynamic";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -86,7 +88,6 @@ function getLanguage(filePath: string): string {
 // enough that newly-created cwds appear promptly; stored on globalThis so it
 // survives Next.js hot-reload.
 declare global {
-  var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
   var __piDirectoryListCache: Map<string, CachedDirectoryList> | undefined;
   var __piGitTrackedCache: Map<string, CachedGitTrackedIndex> | undefined;
 }
@@ -113,9 +114,6 @@ interface GitTrackedIndex {
 interface CachedGitTrackedIndex extends GitTrackedIndex {
   expiresAt: number;
 }
-
-const ALLOWED_ROOTS_TTL_MS = 5_000;
-const WINDOWS_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 
 function normalizeSlashes(filePath: string): string {
   return filePath.replace(/\\/g, "/");
@@ -297,70 +295,16 @@ function searchFileNames(
   return matches.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-function isWindowsAbsolutePath(filePath: string): boolean {
-  return WINDOWS_ABSOLUTE_RE.test(filePath) || filePath.startsWith("\\\\") || filePath.startsWith("//");
-}
-
 function filePathFromSegments(segments: string[]): string {
   if (segments[0] === "__unc__") {
     return "//" + segments.slice(1).join("/");
   }
 
   const joined = segments.join("/");
+  if (/^[a-zA-Z]:$/.test(joined)) return `${joined}/`;
   const slashJoined = normalizeSlashes(joined);
   if (isWindowsAbsolutePath(slashJoined)) return slashJoined;
   return "/" + joined.replace(/^\/+/, "");
-}
-
-async function getAllowedRoots(): Promise<Set<string>> {
-  const now = Date.now();
-  const cached = globalThis.__piAllowedRootsCache;
-  if (cached && cached.expiresAt > now) return cached.roots;
-
-  const sessions = await listAllSessions();
-  const roots = new Set<string>();
-  const envRoots = process.env.PI_WEB_ALLOWED_ROOTS;
-  if (envRoots) {
-    for (const root of envRoots.split(":")) {
-      const trimmed = root.trim();
-      if (trimmed) roots.add(trimmed);
-    }
-  }
-  for (const s of sessions) {
-    if (s.cwd) roots.add(s.cwd);
-  }
-  // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint
-  const home = (await import("os")).homedir();
-  const { readdirSync } = await import("fs");
-  try {
-    for (const name of readdirSync(home)) {
-      if (/^pi-cwd-\d{8}$/.test(name)) {
-        roots.add(path.join(home, name));
-      }
-    }
-  } catch {
-    // ignore if home is unreadable
-  }
-
-  globalThis.__piAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
-  return roots;
-}
-
-function isPathAllowed(target: string, allowedRoots: Set<string>): boolean {
-  for (const root of allowedRoots) {
-    const useWindowsRules = isWindowsAbsolutePath(target) || isWindowsAbsolutePath(root);
-    const resolver = useWindowsRules ? path.win32 : path;
-    const sep = useWindowsRules ? "\\" : path.sep;
-    const normalized = resolver.resolve(target);
-    const normalizedRoot = resolver.resolve(root);
-    const comparable = useWindowsRules ? normalized.toLowerCase() : normalized;
-    const comparableRoot = useWindowsRules ? normalizedRoot.toLowerCase() : normalizedRoot;
-    const rootWithSep = comparableRoot.endsWith(sep) ? comparableRoot : comparableRoot + sep;
-    if (comparable === comparableRoot || comparable.startsWith(rootWithSep)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function createFileBodyStream(filePath: string, range?: { start: number; end: number }): ReadableStream<Uint8Array> {

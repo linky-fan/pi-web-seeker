@@ -32,6 +32,15 @@ const TYPEWRITER_PHRASES = [
   "checkpoint saved.",
   "inventory full of ideas.",
   "new branch unlocked.",
+  "wake up, Neo.",
+  "follow the white rabbit.",
+  "there is no spoon.",
+  "free your mind.",
+  "the matrix has you.",
+  "red pill route selected.",
+  "operator, trace the signal.",
+  "zion uplink established.",
+  "dodge this regression.",
 ];
 
 function Typewriter() {

@@ -6,7 +6,16 @@ import { DefaultResourceLoader, getAgentDir } from "@earendil-works/pi-coding-ag
 export const dynamic = "force-dynamic";
 
 const PACKAGE_NAME = "@tintinweb/pi-subagents";
-const INSTALL_COMMAND = "pi install npm:@tintinweb/pi-subagents";
+const INSTALL_COMMAND = "npx --no-install pi install npm:@tintinweb/pi-subagents";
+const DOCKER_COMPOSE_SERVICE = "pi-web-seeker";
+
+function installCommands() {
+  return [
+    { label: "Local checkout", command: INSTALL_COMMAND },
+    { label: "Direct bin", command: "node_modules/.bin/pi install npm:@tintinweb/pi-subagents" },
+    { label: "Docker Compose", command: `docker compose exec ${DOCKER_COMPOSE_SERVICE} node_modules/.bin/pi install npm:@tintinweb/pi-subagents` },
+  ];
+}
 
 function readConfiguredPackages(agentDir: string, cwd: string): string[] {
   const files = [
@@ -64,14 +73,20 @@ export async function GET(req: Request) {
     return NextResponse.json({
       packageName: PACKAGE_NAME,
       installCommand: INSTALL_COMMAND,
+      installCommands: installCommands(),
       configured,
       installed: configured || subagentExtensions.length > 0,
       loaded: subagentExtensions.length > 0,
       configuredPackages,
       extensions: subagentExtensions,
       errors: subagentErrors,
+      runtime: {
+        cwd,
+        agentDir,
+        docker: existsSync("/.dockerenv") || process.env.PI_WEB_SINGLE_WORKSPACE === "1",
+      },
     });
   } catch (e) {
-    return NextResponse.json({ error: String(e), installCommand: INSTALL_COMMAND }, { status: 500 });
+    return NextResponse.json({ error: String(e), installCommand: INSTALL_COMMAND, installCommands: installCommands() }, { status: 500 });
   }
 }

@@ -1,8 +1,16 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { createAgentSession, DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
-import { cacheSessionPath } from "./session-reader";
+import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
+import {
+  BUILTIN_CODING_TOOL_NAMES,
+  BUILTIN_CODING_TOOL_SET,
+  filterKnownToolNames,
+  getLoadedExtensionToolNames,
+  readActiveTools,
+  uniqueToolNames,
+} from "./tool-settings";
 
 // ============================================================================
 // Types
@@ -14,6 +22,11 @@ export interface AgentEvent {
 }
 
 type EventListener = (event: AgentEvent) => void;
+
+interface PendingGuide {
+  message: string;
+  images?: Array<{ type: "image"; data: string; mimeType: string }>;
+}
 
 function getRuntimeOsLabel(): string {
   switch (process.platform) {
@@ -45,42 +58,31 @@ function getPackageManagerSignals(cwd: string): string {
   return signals.length > 0 ? signals.join(", ") : "none detected";
 }
 
+function getPathStyleGuidance(): string {
+  if (process.platform !== "win32") return "POSIX (/)";
+
+  return [
+    "Windows: many APIs and modern tools accept both / and \\",
+    "prefer \\ for cmd.exe and PowerShell-native commands",
+    "prefer / for POSIX-like shells such as Git Bash, MSYS, or WSL",
+  ].join("; ");
+}
+
 function buildRuntimeSystemPrompt(cwd: string): string {
-  const pathStyle = process.platform === "win32" ? "Windows" : "POSIX";
   return [
     "Runtime context:",
     `- OS: ${getRuntimeOsLabel()} (${process.platform})`,
     `- Shell: ${getShellLabel()}`,
     `- Working directory: ${cwd.replace(/\\/g, "/")}`,
-    `- Path style: ${pathStyle}`,
+    `- Path style: ${getPathStyleGuidance()}`,
     `- Package manager signals: ${getPackageManagerSignals(cwd)}`,
     "",
     "Execution guidance:",
     "- Prefer commands compatible with the current OS and shell.",
-    "- When path or shell syntax may differ across platforms, inspect before assuming.",
+    "- When path separators or shell syntax may differ across platforms, prefer the active shell's convention and inspect before assuming.",
     "- Prefer existing package scripts before inventing direct framework commands.",
     "- Do not print secrets from environment variables, auth files, or local config.",
   ].join("\n");
-}
-
-const BUILTIN_CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
-const BUILTIN_CODING_TOOL_SET = new Set(BUILTIN_CODING_TOOL_NAMES);
-
-function uniqueToolNames(names: string[]): string[] {
-  return Array.from(new Set(names));
-}
-
-function getLoadedExtensionToolNames(resourceLoader: DefaultResourceLoader): string[] {
-  const extensions = resourceLoader.getExtensions();
-  const names = new Set<string>();
-
-  for (const extension of extensions.extensions) {
-    for (const name of extension.tools.keys()) {
-      if (!BUILTIN_CODING_TOOL_SET.has(name)) names.add(name);
-    }
-  }
-
-  return Array.from(names).sort();
 }
 
 function includeExtensionTools(requestedToolNames: string[], extensionToolNames: string[]): string[] {
@@ -97,6 +99,7 @@ export class AgentSessionWrapper {
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
+  private pendingGuide: PendingGuide | null = null;
   private _alive = true;
 
   constructor(public readonly inner: AgentSessionLike) {}
@@ -117,8 +120,29 @@ export class AgentSessionWrapper {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.resetIdleTimer();
       for (const l of this.listeners) l(event);
+      if (event.type === "agent_end") {
+        this.flushPendingGuideSoon();
+      }
     });
     this.resetIdleTimer();
+  }
+
+  private promptNow(guide: PendingGuide): void {
+    this.inner.prompt(
+      guide.message,
+      guide.images?.length ? { images: guide.images } : undefined
+    ).catch(() => {});
+  }
+
+  private flushPendingGuideSoon(): void {
+    const guide = this.pendingGuide;
+    if (!guide) return;
+    this.pendingGuide = null;
+    // Keep guidance as a normal visible user prompt after the aborted turn settles.
+    setTimeout(() => {
+      if (!this._alive) return;
+      this.promptNow(guide);
+    }, 0);
   }
 
   private resetIdleTimer(): void {
@@ -213,6 +237,7 @@ export class AgentSessionWrapper {
 
         const newSessionId = SessionManager.open(newSessionFile, sessionDir).getSessionId();
         cacheSessionPath(newSessionId, newSessionFile);
+        invalidateSessionListCache();
         this.destroy();
         return { cancelled: false, newSessionId };
       }
@@ -236,7 +261,7 @@ export class AgentSessionWrapper {
 
       case "compact": {
         // pi's compact() does not guard against empty messagesToSummarize — use findCutPoint
-        // to pre-check and throw a clean error instead of generating a useless empty summary.
+        // to pre-check and skip instead of generating a useless empty summary.
         const { findCutPoint, DEFAULT_COMPACTION_SETTINGS } = await import("@earendil-works/pi-coding-agent");
         const pathEntries = this.inner.sessionManager.getBranch() as Array<{ type: string }>;
         const settings = { ...DEFAULT_COMPACTION_SETTINGS, ...this.inner.settingsManager.getCompactionSettings() };
@@ -248,7 +273,7 @@ export class AgentSessionWrapper {
         const cutPoint = findCutPoint(pathEntries as never, boundaryStart, pathEntries.length, settings.keepRecentTokens);
         const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
         if (historyEnd <= boundaryStart) {
-          throw new Error("Conversation too short to compact");
+          return { skipped: true, reason: "nothing_to_compact" };
         }
         const result = await this.inner.compact(command.customInstructions as string | undefined);
         return result;
@@ -261,6 +286,27 @@ export class AgentSessionWrapper {
 
       case "steer": {
         const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
+        if (command.interrupt === true) {
+          const guide = {
+            message: command.message as string,
+            ...(steerImages?.length ? { images: steerImages } : {}),
+          };
+          if (this.inner.isStreaming) {
+            this.pendingGuide = guide;
+            try {
+              await this.inner.abort();
+            } catch (error) {
+              if (this.pendingGuide === guide) this.pendingGuide = null;
+              throw error;
+            }
+            if (!this.inner.isStreaming && this.pendingGuide === guide) {
+              this.flushPendingGuideSoon();
+            }
+          } else {
+            this.promptNow(guide);
+          }
+          return null;
+        }
         await this.inner.steer(command.message as string, steerImages?.length ? steerImages : undefined);
         return null;
       }
@@ -283,11 +329,19 @@ export class AgentSessionWrapper {
 
       case "set_tools": {
         const requestedToolNames = command.toolNames as string[];
+        const exact = command.exact as boolean | undefined;
+        const allToolNames = this.inner.getAllTools().map((tool) => tool.name);
+        const knownRequestedToolNames = filterKnownToolNames(requestedToolNames, allToolNames);
+        if (exact) {
+          this.inner.setActiveToolsByName(knownRequestedToolNames);
+          if (knownRequestedToolNames.length === 0 && this.inner.agent.state) this.inner.agent.state.systemPrompt = "";
+          return null;
+        }
         const extensionToolNames = this.inner
           .getAllTools()
           .map((tool) => tool.name)
           .filter((name) => !BUILTIN_CODING_TOOL_SET.has(name));
-        this.inner.setActiveToolsByName(includeExtensionTools(requestedToolNames, extensionToolNames));
+        this.inner.setActiveToolsByName(includeExtensionTools(knownRequestedToolNames, extensionToolNames));
         return null;
       }
 
@@ -309,6 +363,7 @@ export class AgentSessionWrapper {
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
+    this.pendingGuide = null;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
     this.onDestroyCallback?.();
@@ -379,16 +434,22 @@ export async function startRpcSession(
     });
     await resourceLoader.reload();
 
-    // Determine which tools to pass based on requested toolNames.
+    const savedActiveTools = toolNames === undefined ? readActiveTools(agentDir) : null;
+
+    // Determine which tools to register separately from which tools are active.
     // Since v0.68.0, createAgentSession expects string[] tool names instead of Tool[] instances.
-    // For non-off presets, keep extension tools loaded so enabled packages such as pi-subagents
-    // are not hidden by the UI's built-in coding-tool presets.
+    // Keep extension tools registered so enabled packages such as pi-subagents are visible
+    // even when the saved activeTools list disables some or all extension tools.
     const extensionToolNames = getLoadedExtensionToolNames(resourceLoader);
+    const registeredToolNames = uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES, ...extensionToolNames]);
     let toolsOption: string[] | undefined;
     if (toolNames !== undefined) {
-      toolsOption = toolNames.length === 0
-        ? []
-        : uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES, ...extensionToolNames]);
+      // Register tools even when the requested active set is empty, then clear it below.
+      // Passing tools: [] makes pi create a session with no tool registry, so later
+      // switching back to Low/High cannot restore tools without recreating the session.
+      toolsOption = registeredToolNames;
+    } else if (savedActiveTools !== null) {
+      toolsOption = registeredToolNames;
     }
 
     const { session: inner } = await createAgentSession({
@@ -399,15 +460,20 @@ export async function startRpcSession(
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
 
-    // If specific tool names were requested (non-empty), narrow active tools now
-    if (toolNames && toolNames.length > 0) {
-      inner.setActiveToolsByName(includeExtensionTools(toolNames, extensionToolNames));
+    // Empty activeTools means all tools off, but available tools stay registered.
+    let appliedActiveToolNames: string[] | undefined;
+    if (toolNames !== undefined) {
+      appliedActiveToolNames = includeExtensionTools(filterKnownToolNames(toolNames, registeredToolNames), extensionToolNames);
+      inner.setActiveToolsByName(appliedActiveToolNames);
+    } else if (savedActiveTools !== null) {
+      appliedActiveToolNames = filterKnownToolNames(savedActiveTools, registeredToolNames);
+      inner.setActiveToolsByName(appliedActiveToolNames);
     }
 
     // When all tools are disabled, clear the system prompt entirely.
     // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
     // the only way to truly clear it is to call agent.setSystemPrompt directly.
-    if (toolNames?.length === 0) {
+    if (appliedActiveToolNames?.length === 0) {
       inner.agent.state.systemPrompt = "";
     }
 
@@ -416,7 +482,10 @@ export async function startRpcSession(
 
     const realSessionId = inner.sessionId as string;
     const realSessionFile = inner.sessionFile as string | undefined;
-    if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
+    if (realSessionFile) {
+      cacheSessionPath(realSessionId, realSessionFile);
+      invalidateSessionListCache();
+    }
 
     wrapper.onDestroy(() => registry.delete(realSessionId));
     registry.set(realSessionId, wrapper);

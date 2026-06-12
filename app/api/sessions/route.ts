@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { listAllSessions } from "@/lib/session-reader";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const sessions = await listAllSessions();

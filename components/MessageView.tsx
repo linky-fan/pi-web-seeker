@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { memo, useState, useRef, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -9,7 +9,9 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
+import { useLocale } from "@/lib/i18n";
 import { markdownMathOptions, normalizeMarkdownMath } from "@/lib/markdown";
+import { isSubagentCustomType, messageContentToText, parseSubagentNotifications, type SubagentNotification } from "@/lib/subagents";
 import type {
   AgentMessage,
   UserMessage,
@@ -70,16 +72,24 @@ function copyText(text: string): Promise<void> {
   }
 }
 
-function messageContentToText(content: string | (TextContent | ImageContent)[]): string {
-  return typeof content === "string"
-    ? content
-    : content
-        .filter((b): b is TextContent => b.type === "text")
-        .map((b) => b.text)
-        .join("\n");
+function estimateToolInputLength(input: unknown): number {
+  if (input === null || input === undefined) return 0;
+  if (typeof input === "string") return input.length;
+  try {
+    return JSON.stringify(input).length;
+  } catch {
+    return 0;
+  }
 }
 
-export function MessageView({ message, isStreaming, toolResults, modelNames, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
+function estimateBlockChars(block: AssistantContentBlock): number {
+  if (block.type === "text") return (block as TextContent).text?.length ?? 0;
+  if (block.type === "thinking") return (block as ThinkingContent).thinking?.length ?? 0;
+  if (block.type === "toolCall") return estimateToolInputLength((block as ToolCallContent).input);
+  return 0;
+}
+
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
   }
@@ -94,7 +104,7 @@ export function MessageView({ message, isStreaming, toolResults, modelNames, ent
     return <CustomMessageView message={message as CustomMessage} showTimestamp={showTimestamp} />;
   }
   return null;
-}
+});
 
 function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent }: {
   message: UserMessage;
@@ -289,140 +299,6 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
   );
 }
 
-interface SubagentNotification {
-  id?: string;
-  agentType?: string;
-  toolCallId?: string;
-  description: string;
-  status: string;
-  resultPreview: string;
-  toolUses?: number;
-  turnCount?: number;
-  maxTurns?: number;
-  totalTokens?: number;
-  contextPercent?: number;
-  compactionCount?: number;
-  durationMs?: number;
-  outputFile?: string;
-  error?: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function stringField(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function numberField(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const n = Number(value);
-    if (Number.isFinite(n)) return n;
-  }
-  return undefined;
-}
-
-function firstString(record: Record<string, unknown>, keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = stringField(record[key]);
-    if (value) return value;
-  }
-  return undefined;
-}
-
-function firstNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
-  for (const key of keys) {
-    const value = numberField(record[key]);
-    if (value !== undefined) return value;
-  }
-  return undefined;
-}
-
-function nestedNumber(record: Record<string, unknown>, key: string, nestedKey: string): number | undefined {
-  const nested = record[key];
-  return isRecord(nested) ? numberField(nested[nestedKey]) : undefined;
-}
-
-function childTagNumber(xml: string, tag: string): number | undefined {
-  const value = xmlTagText(xml, tag);
-  return value ? numberField(value) : undefined;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function xmlTagText(xml: string, tag: string): string | undefined {
-  const match = xml.match(new RegExp(`<${escapeRegExp(tag)}>([\\s\\S]*?)<\\/${escapeRegExp(tag)}>`, "i"));
-  return match?.[1]?.trim();
-}
-
-function decodeXml(value: string): string {
-  return value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
-}
-
-function parseSubagentXml(content: string): SubagentNotification[] {
-  const blocks = [...content.matchAll(/<task-notification\b[^>]*>([\s\S]*?)<\/task-notification>/gi)].map((m) => m[1]);
-  return blocks.map((xml) => {
-    const metrics = xmlTagText(xml, "metrics") ?? "";
-    const nums = metrics.match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
-    const id = xmlTagText(xml, "id") ?? xmlTagText(xml, "agent-id") ?? xmlTagText(xml, "agent_id");
-    const toolCallId = xmlTagText(xml, "tool-use-id") ?? xmlTagText(xml, "toolCallId") ?? xmlTagText(xml, "tool_call_id");
-    const status = decodeXml(xmlTagText(xml, "status") ?? "completed");
-    const agentType = decodeXml(xmlTagText(xml, "type") ?? xmlTagText(xml, "agent-type") ?? "");
-    const description = decodeXml(xmlTagText(xml, "summary") ?? xmlTagText(xml, "description") ?? "Subagent");
-    const resultPreview = decodeXml(xmlTagText(xml, "result") ?? "No output.");
-    return {
-      id,
-      agentType: agentType || undefined,
-      toolCallId,
-      status,
-      description,
-      resultPreview,
-      totalTokens: childTagNumber(metrics, "tokens") ?? childTagNumber(metrics, "totalTokens") ?? nums[0],
-      toolUses: childTagNumber(metrics, "tool-use-count") ?? childTagNumber(metrics, "toolUses") ?? nums[1],
-      contextPercent: childTagNumber(metrics, "context-percent") ?? childTagNumber(metrics, "contextPercent") ?? nums[2],
-      compactionCount: childTagNumber(metrics, "compaction-count") ?? childTagNumber(metrics, "compactionCount") ?? nums[3],
-      durationMs: childTagNumber(metrics, "duration-ms") ?? childTagNumber(metrics, "durationMs") ?? (nums.length >= 5 ? nums[4] : undefined),
-      outputFile: decodeXml(xmlTagText(xml, "transcript") ?? xmlTagText(xml, "output-file") ?? ""),
-    };
-  });
-}
-
-function notificationFromDetails(details: unknown, content: string): SubagentNotification[] {
-  if (!isRecord(details)) return parseSubagentXml(content);
-  const extraRecords = ["others", "notifications", "agents", "records"]
-    .flatMap((key) => Array.isArray(details[key]) ? details[key] : [])
-    .filter(isRecord);
-  const records = [details, ...extraRecords];
-  const parsed = records.map((d) => ({
-    id: firstString(d, ["id", "agentId", "agent_id"]),
-    agentType: firstString(d, ["type", "agentType", "subagentType", "subagent_type"]),
-    toolCallId: firstString(d, ["toolCallId", "toolCallID", "tool_call_id"]),
-    description: firstString(d, ["description", "summary", "name"]) ?? "Subagent",
-    status: firstString(d, ["status", "state"]) ?? "completed",
-    resultPreview: firstString(d, ["resultPreview", "result", "output"]) ?? "No output.",
-    toolUses: firstNumber(d, ["toolUses", "toolUseCount", "tool_use_count"]),
-    turnCount: firstNumber(d, ["turnCount", "turns"]),
-    maxTurns: firstNumber(d, ["maxTurns", "max_turns"]),
-    totalTokens: firstNumber(d, ["totalTokens", "tokenCount"]) ?? nestedNumber(d, "tokens", "total"),
-    contextPercent: firstNumber(d, ["contextPercent", "context_percent"]),
-    compactionCount: firstNumber(d, ["compactionCount", "compaction_count"]),
-    durationMs: firstNumber(d, ["durationMs", "duration"]),
-    outputFile: firstString(d, ["outputFile", "transcript", "transcriptPath"]),
-    error: firstString(d, ["error", "errorMessage"]),
-  }));
-  return parsed.length > 0 ? parsed : parseSubagentXml(content);
-}
-
 function formatCompactNumber(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
@@ -463,10 +339,10 @@ function CustomMessageView({ message, showTimestamp }: { message: CustomMessage;
 
   const content = messageContentToText(message.content);
   const time = showTimestamp ? formatTime(message.timestamp) : null;
-  const isSubagent = message.customType === "subagent-notification" || content.includes("<task-notification>");
+  const isSubagent = isSubagentCustomType(message.customType, message.content);
 
   if (isSubagent) {
-    const notifications = notificationFromDetails(message.details, content);
+    const notifications = parseSubagentNotifications(content, message.details);
     if (notifications.length > 0) {
       return (
         <div style={{ marginBottom: 16 }}>
@@ -645,7 +521,7 @@ function SubagentNotificationCard({ notification }: { notification: SubagentNoti
             <div style={{ color: "var(--text-dim)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>
               {notification.error ? "Error" : "Result"}
             </div>
-            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 360, overflow: "hidden" }}>
+            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 420, overflow: "auto" }}>
               {preview}
             </div>
           </div>
@@ -681,13 +557,20 @@ function AssistantMessageView({
   prevTimestamp?: number;
 }) {
   const time = showTimestamp ? formatTime(message.timestamp) : null;
-  const blocks = message.content ?? [];
+  const blocks = useMemo(() => message.content ?? [], [message.content]);
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const streamStartRef = useRef<number | null>(null);
   const [tps, setTps] = useState<number | null>(null);
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
+  const estimatedChars = useMemo(() => {
+    let chars = 0;
+    for (const block of blocks) chars += estimateBlockChars(block);
+    return chars;
+  }, [blocks]);
+  const estimatedCharsRef = useRef(estimatedChars);
+  estimatedCharsRef.current = estimatedChars;
 
   // Streaming-based timing for thinking blocks
   const blockStartTimesRef = useRef<Map<number, number>>(new Map());
@@ -716,10 +599,10 @@ function AssistantMessageView({
     return map;
   }, [toolResults, message.timestamp]);
 
-  const textContent = blocks
+  const textContent = useMemo(() => blocks
     .filter((b): b is TextContent => b.type === "text")
     .map((b) => b.text)
-    .join("\n");
+    .join("\n"), [blocks]);
 
   const copyContent = () => {
     copyText(textContent).then(() => {
@@ -767,18 +650,13 @@ function AssistantMessageView({
         return changed ? next : prev;
       });
 
-      let chars = 0;
-      for (const b of bs) {
-        if (b.type === "text") chars += (b as TextContent).text?.length ?? 0;
-        else if (b.type === "thinking") chars += (b as ThinkingContent).thinking?.length ?? 0;
-        else if (b.type === "toolCall") chars += JSON.stringify((b as ToolCallContent).input ?? {}).length;
-      }
+      const chars = estimatedCharsRef.current;
       if (chars === 0) return;
       if (streamStartRef.current === null) streamStartRef.current = now;
       const elapsed = (now - streamStartRef.current) / 1000;
       if (elapsed > 0.5) setTps(chars / 4 / elapsed);
     };
-    const id = setInterval(tick, 300);
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [isStreaming]);
 
@@ -803,13 +681,7 @@ function AssistantMessageView({
           <span>{modelNames?.[`${message.provider}:${message.model}`] ?? modelNames?.[message.model] ?? message.model}</span>
         )}
         {isStreaming && (() => {
-          let chars = 0;
-          for (const b of blocks) {
-            if (b.type === "text") chars += (b as TextContent).text?.length ?? 0;
-            else if (b.type === "thinking") chars += (b as ThinkingContent).thinking?.length ?? 0;
-            else if (b.type === "toolCall") chars += JSON.stringify((b as ToolCallContent).input ?? {}).length;
-          }
-          const est = Math.round(chars / 4);
+          const est = Math.round(estimatedChars / 4);
           return (
             <>
 
@@ -949,6 +821,7 @@ function TextBlock({ block }: { block: TextContent }) {
 }
 
 function ThinkingBlock({ block, duration }: { block: ThinkingContent; duration?: number }) {
+  const { t } = useLocale();
   const [expanded, setExpanded] = useState(false);
   return (
     <div
@@ -975,7 +848,7 @@ function ThinkingBlock({ block, duration }: { block: ThinkingContent; duration?:
           textAlign: "left",
         }}
       >
-        <span>Thinking</span>
+        <span>{t("message.thinking")}</span>
         {duration !== undefined && (
           <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
         )}

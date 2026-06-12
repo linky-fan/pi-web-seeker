@@ -2,157 +2,61 @@
 
 Repository: https://github.com/linky-fan/pi-web-seeker
 
-## Quick Start
+## Commands
 
-```bash
-npm run dev   # port 30141
-```
-
-Typecheck: `node_modules/.bin/tsc --noEmit`  
-Lint: `npm run lint`  
-**Never run `next build` during dev** — pollutes `.next/` and breaks `npm run dev`.
-If stale generated Next.js types mention a deleted route, remove `.next/types` or `.next/dev/types` and rerun typecheck; do not run `next build` just to refresh them.
-
----
+- Dev: `npm run dev` on port 30141.
+- Typecheck: `node_modules/.bin/tsc --noEmit`.
+- Lint: `npm run lint`.
+- AGENTS check: `node scripts/agents-md.mjs check --path AGENTS.md`.
+- Do not run `next build` during ordinary dev; it pollutes `.next/` and can break `npm run dev`.
+- If stale generated Next.js types mention a deleted route, remove `.next/types` or `.next/dev/types` and rerun typecheck.
 
 ## Architecture
 
-```
-Browser                Next.js Server              AgentSession (in-process)
-  │                        │                               │
-  ├─ GET /api/sessions ────▶ reads ~/.pi/agent/sessions/   │
-  ├─ GET /api/sessions/[id] reads .jsonl file directly     │
-  │                        │                               │
-  ├─ send message ─────────▶ POST /api/agent/[id]          │
-  │                        │   startRpcSession() ─────────▶│ createAgentSession()
-  │                        │   session.send(cmd) ─────────▶│ session.prompt()
-  │                        │                               │
-  ├─ SSE connect ──────────▶ GET /api/agent/[id]/events    │
-  │                        │   session.onEvent() ◀─────────│ session.subscribe()
-  │◀── data: {...} ─────────│                               │
-```
+Pi Web Seeker is a Next.js UI over Pi session files and in-process `AgentSession` instances.
 
-**Session browsing** (read-only): reads `.jsonl` files directly via `lib/session-reader.ts` — no AgentSession created.  
-**Sending a message**: `startRpcSession()` in `lib/rpc-manager.ts` creates an AgentSession in-process.
+- Session browsing is read-only and parses `.jsonl` files via `lib/session-reader.ts`; it does not create an `AgentSession`.
+- Sending a message goes through `lib/rpc-manager.ts`, where `startRpcSession()` creates or reuses an in-process `AgentSessionWrapper`.
+- API routes live under `app/api/`; UI lives mostly in `components/`; shared helpers live in `lib/`.
+- Full file map and request flow: `docs/agent-notes/architecture.md`.
+- Session file schema and examples: `docs/agent-notes/session-format.md`.
 
----
+## Critical Rules
 
-## File Map
+- Never revert user changes unless explicitly requested.
+- Keep API keys, auth files, local session data, and private paths out of commits and screenshots.
+- Use `apply_patch` for manual edits; avoid touching generated `.next/` output.
+- Preserve extension tools when changing tool presets; packages such as `pi-subagents` must not be hidden by built-in tool filtering.
+- For Docker/default workspace changes, keep host-mounted user data separate from app code and preserve LAN access behavior.
+- For Markdown math, remember `remark-math` can misread prices such as `$5` to `$10`; keep `singleDollarTextMath` disabled where configured.
 
-```
-app/api/
-  sessions/route.ts               GET  list all sessions
-  sessions/[id]/route.ts          GET/PATCH/DELETE session
-  sessions/[id]/context/route.ts  GET ?leafId= — context for a specific leaf
-  sessions/new/route.ts           returns 410 (no longer used)
-  default-cwd/route.ts            GET default cwd helper
-  home/route.ts                   GET home directory
-  agent/new/route.ts              POST { cwd, message, toolNames?, provider?, modelId? }
-  agent/[id]/route.ts             GET state | POST any command
-  agent/[id]/events/route.ts      GET SSE stream
-  auth/*                          OAuth/API-key provider login and logout
-  files/[...path]/route.ts        GET file tree, file contents, images/audio, SSE watch
-  models/route.ts                 GET { models, modelList, defaultModel }
-  models-config/route.ts          GET/PUT — read/write ~/.pi/agent/models.json
-  models-config/test/route.ts     POST one-shot model connection test
-  skills/*                        list/install/search Codex skills
+## Common Flows
 
-lib/
-  rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
-  session-reader.ts   parse .jsonl; getModelNameMap/getModelList/getDefaultModel
-  types.ts            shared TypeScript types
-  normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
-  markdown.ts         normalize single-line $$...$$ blocks before rendering
-  file-paths.ts       shared path encoding/display helpers
-  path-identity.ts    cross-platform cwd/session path identity helpers
-  system-prompt-off.ts  minimal system prompt when all tools are disabled
+- UI changes: edit the relevant component, run typecheck/lint, then smoke-test the affected route in the browser.
+- API/session changes: inspect `lib/session-reader.ts`, `lib/rpc-manager.ts`, and the matching `app/api/*` route together.
+- File explorer changes: check allowed roots, Docker workspace env vars, symlink safety, and large-file behavior.
+- Model config changes: verify both `models.json` editing and the user-triggered connection test path.
+- Subagent UI changes: check older `subagents:record` history and streamed `subagent-notification` messages.
 
-components/
-  AppShell.tsx        layout + URL state + tab management
-  SessionSidebar.tsx  session tree + FileExplorer
-  ChatWindow.tsx      messages + streaming + SSE + fork/navigate logic
-  ChatInput.tsx       input bar + model/thinking/tools/compact controls
-  MessageView.tsx     renders one message (user/assistant/toolCall/toolResult)
-  BranchNavigator.tsx in-session branch switcher
-  ChatMinimap.tsx     scroll minimap alongside the message list
-  ToolPanel.tsx       exports PRESET_NONE/DEFAULT/FULL + getPresetFromTools
-  ModelsConfig.tsx    modal for editing/testing models.json (opened from sidebar bottom)
-  SkillsConfig.tsx    modal for project skill discovery/install/enablement
-  FileExplorer.tsx    file tree inside sidebar
-  FileViewer.tsx      file content in a tab
-  TabBar.tsx          tab bar (Chat + open file tabs)
-```
+## Traps
 
----
+- `globalThis.__piSessions` and `globalThis.__piStartLocks` intentionally survive Next.js hot reload; plain module-level maps do not.
+- `AgentSession.fork()` mutates the wrapper's inner state in-place. After fork, destroy the wrapper so the original session reloads cleanly.
+- Forked sessions and in-session branches are different: fork creates a child `.jsonl`; branch navigation uses `navigate_tree` inside the same file.
+- `parentSession` is display metadata only. It does not affect chat content and session files may be fully rewritten by pi migrations.
+- Pi stores tool calls differently from UI types; keep `normalizeToolCalls()` in both file-load and streaming paths.
+- On refresh during streaming, `ChatWindow` should reconnect SSE from `GET /api/agent/[id]` when `isStreaming` is true.
+- Accept both newer `compaction_start` / `compaction_end` and older `auto_compaction_start` / `auto_compaction_end` events.
+- Orphaned sessions have invalid headers; keep them visible as incomplete and non-clickable.
 
-## Key Design Decisions & Traps
+## Verification
 
-### AgentSession lifecycle (`lib/rpc-manager.ts`)
-- One `AgentSessionWrapper` per session id, keyed in `globalThis.__piSessions`
-- `globalThis` survives Next.js hot-reload; plain module-level Map does not
-- Idle timeout: 10 minutes. Concurrent `startRpcSession()` calls share a single start Promise (`globalThis.__piStartLocks`)
+- Small code/UI change: `node_modules/.bin/tsc --noEmit`, `npm run lint`, and a browser smoke test.
+- Docs or AGENTS change: `node scripts/agents-md.mjs check --path AGENTS.md` and `git diff --check`.
+- Model/provider change: run the Models panel test or `npm run test:context -- --provider <id> --model <id> --tokens 8192` when a real request is intended.
+- Docker/deploy change: verify compose startup, workspace permissions, persisted data paths, and LAN browser access.
 
-### Fork must destroy the wrapper immediately
-`AgentSession.fork()` **mutates the wrapper's inner state in-place** — after fork, `inner.sessionId` is the *new* session's id. If the wrapper stays alive in the registry under the old id, the next request gets the already-forked state and subsequent forks produce a corrupt `parentSession` chain.
+## More Details
 
-**Fix**: `send("fork")` captures `newSessionId`, then calls `this.destroy()` before returning. The next request for the original session reloads a clean AgentSession from the original file.
-
-### Two kinds of branching — don't confuse them
-- **Fork** (Fork button on user message): creates a new independent `.jsonl` file. Shown as a child in the sidebar tree via `parentSession` header field.
-- **In-session branch** (Continue button / BranchNavigator): calls `navigate_tree` within the same file. Multiple entries share the same `parentId`. Switching between them calls `/api/sessions/[id]/context?leafId=`.
-
-### Session files can be fully rewritten
-`parentSession` in the header is **display metadata only** — has zero effect on chat content. Safe to `writeFileSync` the entire file (pi does this itself during migrations). Used when cascade-reparenting children on delete.
-
-### ToolCall field normalization
-Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolCallContent` uses `{toolCallId, toolName, input}`. `normalizeToolCalls()` in `lib/normalize.ts` handles this — called in both `session-reader.ts` (file load) and `ChatWindow.handleAgentEvent()` (streaming).
-
-### New session tool preset
-Tool names are passed at session creation (`POST /api/agent/new` → `toolNames[]`). For existing sessions, the active preset is inferred on mount via `get_tools` → `getPresetFromTools()`. When tools are fully disabled (`toolNames = []`), `rpc-manager.ts` injects a minimal system prompt via `system-prompt-off.ts` + `DefaultResourceLoader`.
-
-### Model defaults for new sessions
-`GET /api/models` returns `defaultModel` read from `~/.pi/agent/settings.json`. `ChatWindow` pre-selects this on mount for new sessions.
-
-### Model connection tests
-`POST /api/models-config/test` builds a temporary `models.json` containing one provider/model, resolves auth through `ModelRegistry`, and calls `completeSimple()` with "Reply with OK only." The Models modal shows latency/status/response text. This is a real model request, so keep it user-triggered and expect tiny token usage.
-
-### Markdown math rendering
-Assistant messages and Markdown file previews use `remark-math` + `rehype-katex`, with `katex/dist/katex.min.css` imported globally from `app/layout.tsx`. `lib/markdown.ts` normalizes standalone single-line `$$...$$` blocks into multiline display math before `ReactMarkdown` renders them.
-
-### SSE reconnect on page refresh mid-stream
-On `ChatWindow` mount, `GET /api/agent/[id]` is called. If `state.isStreaming === true`, SSE is reconnected automatically. `thinkingLevel` and `isCompacting` are also synced from this response.
-
-### Compaction SSE events
-Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `auto_compaction_start` / `auto_compaction_end`. `handleAgentEvent` accepts both sets to keep `isCompacting` in sync. Manual compact is a blocking POST — the button stays disabled until the response returns.
-
-### Orphaned sessions
-Sessions whose first line can't be parsed as a valid header are marked `orphaned: true` in the API response — displayed with an "incomplete" badge in the sidebar and not clickable.
-
----
-
-## Pi Session File Format
-
-Location: `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`
-
-```jsonl
-{"type":"session","version":3,"id":"<uuid>","timestamp":"...","cwd":"/path","parentSession":"/abs/path/to/parent.jsonl"}
-{"type":"model_change","id":"<8hex>","parentId":null,"provider":"zenmux","modelId":"claude-sonnet-4-6","timestamp":"..."}
-{"type":"message","id":"<8hex>","parentId":"<8hex>","message":{"role":"user","content":"..."}}
-{"type":"message","id":"<8hex>","parentId":"<8hex>","message":{"role":"assistant","content":[...],...}}
-{"type":"message","id":"<8hex>","parentId":"<8hex>","message":{"role":"toolResult","toolCallId":"...","content":[...]}}
-{"type":"compaction","id":"<8hex>","parentId":"<8hex>","summary":"...","firstKeptEntryId":"<8hex>","tokensBefore":N}
-{"type":"session_info","id":"...","parentId":"...","name":"user-defined name"}
-```
-
-`entryIds[]` in `SessionContext` is a parallel array to `messages[]` — maps each displayed message back to its `.jsonl` entry id, used for fork and navigate_tree calls.
-
----
-
-## CSS Variables (`app/globals.css`)
-
-```
---bg --bg-panel --bg-hover --bg-selected --border
---text --text-muted --text-dim
---accent --user-bg --tool-bg
---font-mono
-```
+- Architecture and file map: `docs/agent-notes/architecture.md`.
+- Pi session file format: `docs/agent-notes/session-format.md`.

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { THEME_OPTIONS, type ThemeId } from "@/lib/themes";
 import { useTheme } from "@/hooks/useTheme";
+import { useLocale } from "@/lib/i18n";
 
 interface Props {
   variant?: "topbar" | "footer";
@@ -10,6 +11,7 @@ interface Props {
 
 export function ThemeCycleButton({ variant = "topbar" }: Props) {
   const { theme, themeOption, setTheme } = useTheme();
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
   const isTopbar = variant === "topbar";
@@ -44,8 +46,8 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
         e.stopPropagation();
         setOpen((current) => !current);
       }}
-      title={`Theme: ${themeOption.label}`}
-      aria-label={`Theme: ${themeOption.label}`}
+      title={`${t("theme.label")}: ${themeOption.label}`}
+      aria-label={`${t("theme.label")}: ${themeOption.label}`}
       aria-expanded={open}
       style={{
         display: "flex",
@@ -98,7 +100,7 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
           }}
         />
       )}
-      {isFooter && <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Theme</span>}
+      {isFooter && <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("theme.short")}</span>}
     </button>
     {open && (
       <div

@@ -19,11 +19,41 @@ function readModelsJson(): Record<string, unknown> {
   }
 }
 
+function sanitizeModelsJson(data: Record<string, unknown>): Record<string, unknown> {
+  const providers = data.providers;
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) return data;
+
+  const sanitizedProviders: Record<string, unknown> = {};
+  for (const [providerName, providerValue] of Object.entries(providers)) {
+    if (!providerValue || typeof providerValue !== "object" || Array.isArray(providerValue)) {
+      sanitizedProviders[providerName] = providerValue;
+      continue;
+    }
+
+    const provider = providerValue as Record<string, unknown>;
+    const models = provider.models;
+    sanitizedProviders[providerName] = {
+      ...provider,
+      models: Array.isArray(models)
+        ? models.filter((model) => (
+          model &&
+          typeof model === "object" &&
+          !Array.isArray(model) &&
+          typeof (model as Record<string, unknown>).id === "string" &&
+          ((model as Record<string, unknown>).id as string).trim().length > 0
+        ))
+        : models,
+    };
+  }
+
+  return { ...data, providers: sanitizedProviders };
+}
+
 function writeModelsJson(data: Record<string, unknown>): void {
   const path = getModelsPath();
   const dir = dirname(path);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(path, JSON.stringify(data, null, 2), "utf8");
+  writeFileSync(path, JSON.stringify(sanitizeModelsJson(data), null, 2), "utf8");
 }
 
 export async function GET() {

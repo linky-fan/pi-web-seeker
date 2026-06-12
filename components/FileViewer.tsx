@@ -9,8 +9,10 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { useTheme } from "@/hooks/useTheme";
+import { useLocale } from "@/lib/i18n";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { markdownMathOptions, normalizeMarkdownMath } from "@/lib/markdown";
+import { apiPath } from "@/lib/api-path";
 
 interface Props {
   filePath: string;
@@ -322,7 +324,7 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
     }
 
     const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(apiPath(`files/${encoded}?type=watch`));
     esRef.current = es;
 
     es.addEventListener("connected", () => setWatching(true));
@@ -343,7 +345,7 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
   }, [filePath]);
 
   const encoded = encodeFilePathForApi(filePath);
-  const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`;
+  const src = apiPath(`files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`);
 
   const formatSizeStr = size != null ? formatSize(size) : null;
 
@@ -456,7 +458,7 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
     }
 
     const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(apiPath(`files/${encoded}?type=watch`));
     esRef.current = es;
 
     es.addEventListener("connected", () => setWatching(true));
@@ -479,7 +481,7 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
   }, [filePath]);
 
   const encoded = encodeFilePathForApi(filePath);
-  const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`;
+  const src = apiPath(`files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -562,6 +564,7 @@ export function FileViewer({ filePath, cwd }: Props) {
 
 function TextFileViewer({ filePath, cwd }: Props) {
   const { isDark } = useTheme();
+  const { t } = useLocale();
   const [data, setData] = useState<FileData | null>(null);
   const [prevContent, setPrevContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -575,7 +578,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
 
   const fetchContent = useCallback((filePath: string, isRefresh = false) => {
     const encoded = encodeFilePathForApi(filePath);
-    return fetch(`/api/files/${encoded}?type=read`)
+    return fetch(apiPath(`files/${encoded}?type=read`))
       .then((r) => r.json())
       .then((d: FileData & { error?: string }) => {
         if (d.error) {
@@ -622,7 +625,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
 
     // Set up SSE watch
     const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(apiPath(`files/${encoded}?type=watch`));
     esRef.current = es;
 
     es.addEventListener("connected", () => {
@@ -844,13 +847,13 @@ function TextFileViewer({ filePath, cwd }: Props) {
               fontSize: 12,
             }}
           >
-            {isLargeTextFile && <span>Large file: syntax highlighting disabled for faster preview.</span>}
-            {hasDiff && isLargeDiff && <span>Diff is disabled for large file updates.</span>}
+            {isLargeTextFile && <span>{t("viewer.largeFile")}</span>}
+            {hasDiff && isLargeDiff && <span>{t("viewer.largeDiff")}</span>}
             {shouldTruncateRaw && viewMode === "source" && !previewMode && (
-              <span>Showing first {TEXT_TRUNCATE_LINES.toLocaleString()} of {lines.length.toLocaleString()} lines.</span>
+              <span>{t("viewer.truncated", { shown: TEXT_TRUNCATE_LINES.toLocaleString(), total: lines.length.toLocaleString() })}</span>
             )}
             {isMarkdown && previewMode && isMarkdownPreviewTooLarge && (
-              <span>Markdown preview is disabled for files over {formatSize(MARKDOWN_PREVIEW_MAX_BYTES)}. Switch to Raw to inspect it.</span>
+              <span>{t("viewer.markdownTooLarge", { size: formatSize(MARKDOWN_PREVIEW_MAX_BYTES) })}</span>
             )}
           </div>
         )}

@@ -8,10 +8,14 @@ import {
   invalidateSessionFileCache,
   getCachedSessionContext,
   getCachedSessionFile,
-  listAllSessions,
+  getSessionParentId,
+  invalidateSessionListCache,
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { areSameFilePath, isWindowsStylePath } from "@/lib/path-identity";
+import { compressSessionTree } from "@/lib/session-tree";
+
+export const dynamic = "force-dynamic";
 
 function getPathModule(filePath: string): typeof path.win32 | typeof path.posix {
   return isWindowsStylePath(filePath) ? path.win32 : path.posix;
@@ -29,12 +33,12 @@ export async function GET(
     }
 
     const snapshot = getCachedSessionFile(filePath);
-    const { tree, leafId, header } = snapshot;
+    const { leafId, header } = snapshot;
+    const tree = compressSessionTree(snapshot.tree);
     const context = getCachedSessionContext(snapshot, leafId);
 
     const modified = new Date(snapshot.mtimeMs).toISOString();
-    const allSessions = await listAllSessions();
-    const parentSessionId = allSessions.find((s) => s.id === id)?.parentSessionId;
+    const parentSessionId = await getSessionParentId(id);
     const info = header ? {
       path: filePath,
       id: header.id,
@@ -97,6 +101,7 @@ export async function PATCH(
     const sm = SessionManager.open(filePath);
     sm.appendSessionInfo(name.trim());
     invalidateSessionFileCache(filePath);
+    invalidateSessionListCache();
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -153,6 +158,7 @@ export async function DELETE(
     unlinkSync(filePath);
     invalidateSessionPathCache(id);
     invalidateSessionFileCache(filePath);
+    invalidateSessionListCache();
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

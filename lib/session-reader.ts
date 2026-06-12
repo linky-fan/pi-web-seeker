@@ -4,6 +4,7 @@ import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, Assist
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
 import { normalizePathForComparison } from "./path-identity";
+import { normalizeSubagentRecordsForContext } from "./subagents";
 
 export { getAgentDir };
 
@@ -11,15 +12,33 @@ export function getSessionsDir(): string {
   return `${getAgentDir()}/sessions`;
 }
 
-export async function listAllSessions(): Promise<SessionInfo[]> {
+interface CachedSessionListIndex {
+  sessions: SessionInfo[];
+  idToPath: Map<string, string>;
+  pathToId: Map<string, string>;
+  parentById: Map<string, string>;
+  cwdRoots: Set<string>;
+  expiresAt: number;
+}
+
+const SESSION_LIST_CACHE_TTL_MS = 5_000;
+
+async function buildSessionListIndex(): Promise<CachedSessionListIndex> {
   const piSessions: PiSessionInfo[] = await SessionManager.listAll();
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(normalizePathForComparison(s.path), s.id);
 
   const cache = getPathCache();
-  return piSessions.map((s) => {
+  const idToPath = new Map<string, string>();
+  const parentById = new Map<string, string>();
+  const cwdRoots = new Set<string>();
+  const sessions = piSessions.map((s) => {
     // Populate path cache so resolveSessionPath works without a full scan
     cache.set(s.id, s.path);
+    idToPath.set(s.id, s.path);
+    if (s.cwd) cwdRoots.add(s.cwd);
+    const parentSessionId = s.parentSessionPath ? pathToId.get(normalizePathForComparison(s.parentSessionPath)) : undefined;
+    if (parentSessionId) parentById.set(s.id, parentSessionId);
     return {
       path: s.path,
       id: s.id,
@@ -29,9 +48,41 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
       modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
       messageCount: s.messageCount,
       firstMessage: s.firstMessage || "(no messages)",
-      parentSessionId: s.parentSessionPath ? pathToId.get(normalizePathForComparison(s.parentSessionPath)) : undefined,
+      parentSessionId,
     };
   });
+  return { sessions, idToPath, pathToId, parentById, cwdRoots, expiresAt: Date.now() + SESSION_LIST_CACHE_TTL_MS };
+}
+
+export async function getSessionListIndex(options: { force?: boolean } = {}): Promise<CachedSessionListIndex> {
+  const now = Date.now();
+  const cached = globalThis.__piSessionListCache;
+  if (!options.force && cached && cached.expiresAt > now) return cached;
+  if (!options.force && globalThis.__piSessionListCachePromise) return globalThis.__piSessionListCachePromise;
+
+  const promise = buildSessionListIndex();
+  globalThis.__piSessionListCachePromise = promise;
+  try {
+    const index = await promise;
+    globalThis.__piSessionListCache = index;
+    return index;
+  } finally {
+    if (globalThis.__piSessionListCachePromise === promise) {
+      globalThis.__piSessionListCachePromise = undefined;
+    }
+  }
+}
+
+export async function listAllSessions(options: { force?: boolean } = {}): Promise<SessionInfo[]> {
+  return (await getSessionListIndex(options)).sessions;
+}
+
+export async function getSessionParentId(sessionId: string): Promise<string | undefined> {
+  return (await getSessionListIndex()).parentById.get(sessionId);
+}
+
+export async function getSessionCwdRoots(): Promise<Set<string>> {
+  return new Set((await getSessionListIndex()).cwdRoots);
 }
 
 // ============================================================================
@@ -41,6 +92,8 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
 declare global {
   var __piSessionPathCache: Map<string, string> | undefined;
   var __piSessionFileCache: Map<string, CachedSessionFile> | undefined;
+  var __piSessionListCache: CachedSessionListIndex | undefined;
+  var __piSessionListCachePromise: Promise<CachedSessionListIndex> | undefined;
 }
 
 function getPathCache(): Map<string, string> {
@@ -53,8 +106,8 @@ export async function resolveSessionPath(sessionId: string): Promise<string | nu
   if (cached) return cached;
 
   // Cache miss: scan all sessions to populate cache, then retry
-  await listAllSessions();
-  return getPathCache().get(sessionId) ?? null;
+  const index = await getSessionListIndex();
+  return index.idToPath.get(sessionId) ?? getPathCache().get(sessionId) ?? null;
 }
 
 export function cacheSessionPath(sessionId: string, filePath: string): void {
@@ -63,6 +116,12 @@ export function cacheSessionPath(sessionId: string, filePath: string): void {
 
 export function invalidateSessionPathCache(sessionId: string): void {
   getPathCache().delete(sessionId);
+  invalidateSessionListCache();
+}
+
+export function invalidateSessionListCache(): void {
+  globalThis.__piSessionListCache = undefined;
+  globalThis.__piSessionListCachePromise = undefined;
 }
 
 export interface CachedSessionFile {
@@ -130,86 +189,6 @@ function contextCacheKey(leafId?: string | null): string {
 
 function isContextMessageEntry(entry: SessionEntry): boolean {
   return entry.type === "message" || entry.type === "custom_message" || entry.type === "branch_summary";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function stringField(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function xmlTagText(xml: string, tag: string): string | undefined {
-  const match = xml.match(new RegExp(`<${escapeRegExp(tag)}>([\\s\\S]*?)<\\/${escapeRegExp(tag)}>`, "i"));
-  return match?.[1]?.trim();
-}
-
-function getSubagentRecordId(entry: SessionEntry): string | undefined {
-  if (entry.type !== "custom" || entry.customType !== "subagents:record") return undefined;
-  return isRecord(entry.data) ? stringField(entry.data.id) : undefined;
-}
-
-function getSubagentNotificationId(entry: SessionEntry): string | undefined {
-  if (entry.type !== "custom_message") return undefined;
-  if (entry.customType !== "subagent-notification") return undefined;
-
-  if (isRecord(entry.details)) {
-    const detailId = stringField(entry.details.id) ?? stringField(entry.details.agentId) ?? stringField(entry.details.agent_id);
-    if (detailId) return detailId;
-  }
-
-  const content = typeof entry.content === "string"
-    ? entry.content
-    : entry.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("\n");
-
-  return xmlTagText(content, "task-id") ?? xmlTagText(content, "agent-id") ?? xmlTagText(content, "id");
-}
-
-function subagentRecordToCustomMessage(entry: SessionEntry): SessionEntry {
-  if (entry.type !== "custom" || entry.customType !== "subagents:record" || !isRecord(entry.data)) return entry;
-
-  const description = stringField(entry.data.description) ?? stringField(entry.data.type) ?? "Subagent";
-  const status = stringField(entry.data.status) ?? "completed";
-  const result = stringField(entry.data.result) ?? "";
-
-  return {
-    type: "custom_message",
-    id: entry.id,
-    parentId: entry.parentId,
-    timestamp: entry.timestamp,
-    customType: "subagent-notification",
-    content: [
-      `Subagent record: ${description}`,
-      "",
-      `<task-notification><status>${status}</status><summary>${description}</summary><result>${result}</result></task-notification>`,
-    ].join("\n"),
-    details: entry.data,
-    display: true,
-  };
-}
-
-function normalizeSubagentRecordsForContext(entries: SessionEntry[]): SessionEntry[] {
-  const notifiedAgentIds = new Set<string>();
-  for (const entry of entries) {
-    const id = getSubagentNotificationId(entry);
-    if (id) notifiedAgentIds.add(id);
-  }
-
-  return entries.map((entry) => {
-    const recordId = getSubagentRecordId(entry);
-    if (recordId && !notifiedAgentIds.has(recordId)) {
-      return subagentRecordToCustomMessage(entry);
-    }
-    return entry;
-  });
 }
 
 export function getCachedSessionContext(snapshot: CachedSessionFile, leafId?: string | null): SessionContext {

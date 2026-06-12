@@ -3,6 +3,9 @@
 import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { getFileIcon, FolderIcon } from "./FileIcons";
 import { encodeFilePathForApi, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
+import { useLocale } from "@/lib/i18n";
+import { isPathInOrEqualToRoot } from "@/lib/path-identity";
+import { apiPath } from "@/lib/api-path";
 
 interface FileEntry {
   name: string;
@@ -76,7 +79,7 @@ function writeRecentFiles(files: RecentFile[]): void {
 }
 
 function getFileDownloadUrl(filePath: string): string {
-  return `/api/files/${encodeFilePathForApi(filePath)}?type=download`;
+  return apiPath(`files/${encodeFilePathForApi(filePath)}?type=download`);
 }
 
 async function fetchEntries(dirPath: string, options: FetchOptions = {}): Promise<{ nodes: FileNode[]; gitTrackedAvailable?: boolean }> {
@@ -92,7 +95,7 @@ async function fetchEntries(dirPath: string, options: FetchOptions = {}): Promis
     if (cached) return { nodes: cached };
   }
 
-  const res = await fetch(`/api/files/${encoded}?${params.toString()}`);
+  const res = await fetch(apiPath(`files/${encoded}?${params.toString()}`));
   if (!res.ok) return { nodes: [] };
   const data = await res.json() as { entries?: FileEntry[]; gitTrackedAvailable?: boolean };
   const nodes = (data.entries ?? []).map((e) => ({
@@ -134,6 +137,7 @@ function TreeNode({
   refreshKey?: number;
   trackedOnly: boolean;
 }) {
+  const { t } = useLocale();
   const open = expandedPaths.has(node.fullPath);
   const [children, setChildren] = useState<FileNode[]>(node.children ?? []);
   const [loaded, setLoaded] = useState(node.loaded ?? false);
@@ -240,7 +244,7 @@ function TreeNode({
           ))}
           {children.length === 0 && loaded && (
             <div style={{ paddingLeft: 8 + (depth + 1) * 14, fontSize: 11, color: "var(--text-dim)", height: 22, display: "flex", alignItems: "center" }}>
-              empty
+              {t("explorer.empty")}
             </div>
           )}
         </div>
@@ -250,6 +254,7 @@ function TreeNode({
 }
 
 export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props) {
+  const { t } = useLocale();
   const [roots, setRoots] = useState<FileNode[]>([]);
   const [searchResults, setSearchResults] = useState<FileNode[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -274,7 +279,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
 
   const visibleRecentFiles = useMemo(() => (
     trackedOnly ? [] : recentFiles
-      .filter((file) => file.filePath === cwd || file.filePath.startsWith(cwd.replace(/\/$/, "") + "/"))
+      .filter((file) => isPathInOrEqualToRoot(file.filePath, cwd))
       .slice(0, 5)
   ), [cwd, recentFiles, trackedOnly]);
 
@@ -368,7 +373,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
   if (loading) {
     return (
       <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>
-        Loading files...
+        {t("explorer.loading")}
       </div>
     );
   }
@@ -392,7 +397,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search files"
+            placeholder={t("explorer.search")}
             style={{
               width: "100%",
               height: 26,
@@ -409,7 +414,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
         </div>
         <button
           onClick={toggleTrackedOnly}
-          title={trackedOnly ? "Show all files" : "Only show git-tracked files"}
+          title={trackedOnly ? t("explorer.showAll") : t("explorer.trackedOnly")}
           style={{
             width: 30,
             height: 26,
@@ -430,7 +435,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
 
       {trackedOnly && gitTrackedAvailable === false && (
         <div style={{ padding: "4px 6px 6px", fontSize: 11, color: "var(--text-dim)" }}>
-          Not a git repository
+          {t("explorer.notGit")}
         </div>
       )}
 
@@ -438,7 +443,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
         <div>
           {searching && (
             <div style={{ padding: "8px 8px", fontSize: 11, color: "var(--text-dim)" }}>
-              Searching...
+              {t("explorer.searching")}
             </div>
           )}
           {!searching && searchResults.map((node) => (
@@ -452,7 +457,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
           ))}
           {!searching && searchResults.length === 0 && (
             <div style={{ padding: "8px 8px", fontSize: 11, color: "var(--text-dim)" }}>
-              No matches
+              {t("explorer.noMatches")}
             </div>
           )}
         </div>
@@ -461,7 +466,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
       {visibleRecentFiles.length > 0 && (
         <div style={{ padding: "2px 0 6px" }}>
           <div style={{ padding: "3px 6px", fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", fontWeight: 700, letterSpacing: 0 }}>
-            Recent
+            {t("explorer.recent")}
           </div>
           {visibleRecentFiles.map((file) => (
             <RecentFileRow
@@ -490,7 +495,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
       ))}
       {roots.length === 0 && (
         <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>
-          No files found
+          {t("explorer.noFiles")}
         </div>
       )}
         </>
@@ -512,6 +517,7 @@ function FileRowActions({
   visible: boolean;
   onAtMention?: (relativePath: string) => void;
 }) {
+  const { t } = useLocale();
   const [focused, setFocused] = useState(false);
   const active = visible || focused;
   const buttonBase = {
@@ -543,7 +549,7 @@ function FileRowActions({
         href={getFileDownloadUrl(filePath)}
         download={fileName}
         onClick={(e) => e.stopPropagation()}
-        title="Download file"
+        title={t("explorer.download")}
         style={{
           ...buttonBase,
           color: "var(--accent)",
@@ -564,7 +570,7 @@ function FileRowActions({
             e.stopPropagation();
             onAtMention(getRelativeFilePath(filePath, cwd));
           }}
-          title="Insert path into chat"
+          title={t("explorer.insertPath")}
           style={{
             ...buttonBase,
             opacity: active ? 1 : 0,

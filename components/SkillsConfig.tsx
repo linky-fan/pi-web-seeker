@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { SkillSearchResult } from "@/app/api/skills/search/route";
+import { getPathRelativeToRoot } from "@/lib/path-identity";
+import { apiPath } from "@/lib/api-path";
 
 interface Skill {
   name: string;
@@ -94,8 +96,8 @@ function SkillDetail({
   const enabled = !skill.disableModelInvocation;
 
   function displayPath(p: string): string {
-    if (label === "project" && p.startsWith(cwd)) {
-      const rel = p.slice(cwd.length).replace(/^[/\\]/, "");
+    const rel = label === "project" ? getPathRelativeToRoot(p, cwd) : null;
+    if (rel !== null) {
       return `./${rel}`;
     }
     return shortenPath(p);
@@ -206,7 +208,7 @@ function AddSkillPanel({
     setSearchError(null);
     setResults([]);
     try {
-      const res = await fetch("/api/skills/search", {
+      const res = await fetch(apiPath("skills/search"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: q.trim() }),
@@ -233,7 +235,7 @@ function AddSkillPanel({
       setInstalling(pkg);
       setInstallError(null);
       try {
-        const res = await fetch("/api/skills/install", {
+        const res = await fetch(apiPath("skills/install"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ package: pkg, scope, cwd }),
@@ -524,7 +526,7 @@ export function SkillsConfig({
   const loadSkills = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetch(`/api/skills?cwd=${encodeURIComponent(cwd)}`)
+    fetch(apiPath(`skills?cwd=${encodeURIComponent(cwd)}`))
       .then((r) => r.json())
       .then((d: { skills?: Skill[]; error?: string }) => {
         if (d.error) {
@@ -548,7 +550,7 @@ export function SkillsConfig({
     setToggling((s) => new Set(s).add(skill.filePath));
     setSaveError(null);
     try {
-      const res = await fetch("/api/skills", {
+      const res = await fetch(apiPath("skills"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
