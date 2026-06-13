@@ -7,6 +7,7 @@ import { getAllowedRoots, isPathAllowed } from "@/lib/allowed-roots";
 import { registerWorkspaceRoot } from "@/lib/workspace-roots";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
 
@@ -37,13 +38,26 @@ async function pickDirectoryWithFinder(): Promise<string | null> {
 
 async function pickDirectoryWithExplorer(): Promise<string | null> {
   const script = [
+    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
     "Add-Type -AssemblyName System.Windows.Forms",
+    "[System.Windows.Forms.Application]::EnableVisualStyles()",
+    "$owner = New-Object System.Windows.Forms.Form",
+    "$owner.TopMost = $true",
+    "$owner.ShowInTaskbar = $false",
+    "$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen",
+    "$owner.Width = 1",
+    "$owner.Height = 1",
+    "$null = $owner.Handle",
     "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
     '$dialog.Description = "Choose a project directory for Pi Web Seeker"',
     "$dialog.ShowNewFolderButton = $true",
-    "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {",
-    "  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
-    "  Write-Output $dialog.SelectedPath",
+    "try {",
+    "  if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {",
+    "    Write-Output $dialog.SelectedPath",
+    "  }",
+    "} finally {",
+    "  $dialog.Dispose()",
+    "  $owner.Dispose()",
     "}",
   ].join("; ");
   const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-STA", "-Command", script], {
