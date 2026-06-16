@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import type { AgentMessage, SessionInfo, SessionTreeNode, TextContent } from "@/lib/types";
-import { MessageView } from "./MessageView";
+import type { AgentMessage, AssistantMessage, CustomMessage, SessionInfo, SessionTreeNode, TextContent, ToolCallContent } from "@/lib/types";
+import { MessageView, type ComsNetResponseHint } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
@@ -52,6 +52,115 @@ function userMessageText(message: AgentMessage): string | null {
     .join("\n")
     .trim();
   return text || null;
+}
+
+interface ComsNetInboundHint {
+  peer: string;
+  prompt: string;
+  msgId?: string;
+}
+
+interface ComsNetResponseSentHint {
+  peer: string;
+  response?: string;
+  msgId: string;
+  index: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function normalizeComsNetText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function comsNetInboundKey(hint: ComsNetInboundHint): string {
+  return `${hint.peer}\n${normalizeComsNetText(hint.prompt)}`;
+}
+
+function extractComsNetInbound(message: AgentMessage): ComsNetInboundHint | null {
+  if (message.role === "custom") {
+    const custom = message as CustomMessage;
+    if (custom.customType !== "coms-net-inbound") return null;
+    const details = isRecord(custom.details) ? custom.details : {};
+    const sender = isRecord(details.sender) ? details.sender : {};
+    const content = typeof custom.content === "string"
+      ? custom.content
+      : custom.content.filter((part): part is TextContent => part.type === "text").map((part) => part.text).join("\n");
+    const prompt = stringValue(details.prompt)
+      ?? content.replace(/^coms-net request from [\s\S]*?:\s*/, "").trim();
+    return {
+      peer: stringValue(sender.name) ?? "peer",
+      prompt,
+      msgId: stringValue(details.msg_id),
+    };
+  }
+
+  if (message.role !== "user") return null;
+  const content = userMessageText(message);
+  if (!content) return null;
+  const match = content.match(/^A coms-net peer named "([^"]+)" asked for help\.\n\nRequest:\n([\s\S]*?)\n\nAnswer the peer directly\./);
+  if (!match) return null;
+  return {
+    peer: match[1],
+    prompt: match[2].trim(),
+  };
+}
+
+function extractComsNetResponseSent(message: AgentMessage, index: number): ComsNetResponseSentHint | null {
+  if (message.role !== "custom") return null;
+  const custom = message as CustomMessage;
+  if (custom.customType !== "coms-net-response-sent") return null;
+  const details = isRecord(custom.details) ? custom.details : {};
+  const msgId = stringValue(details.msg_id);
+  if (!msgId) return null;
+  const target = isRecord(details.target) ? details.target : {};
+  return {
+    peer: stringValue(target.name) ?? stringValue(details.target) ?? "peer",
+    response: stringValue(details.response),
+    msgId,
+    index,
+  };
+}
+
+function comsNetCustomMsgId(message: AgentMessage, customType: string): string | undefined {
+  if (message.role !== "custom") return undefined;
+  const custom = message as CustomMessage;
+  if (custom.customType !== customType) return undefined;
+  const details = isRecord(custom.details) ? custom.details : {};
+  return stringValue(details.msg_id);
+}
+
+function comsNetAnyCustomMsgId(message: AgentMessage): string | undefined {
+  if (message.role !== "custom") return undefined;
+  const custom = message as CustomMessage;
+  if (!custom.customType.startsWith("coms-net-")) return undefined;
+  const details = isRecord(custom.details) ? custom.details : {};
+  return stringValue(details.msg_id);
+}
+
+function isComsNetResponseSent(message: AgentMessage): boolean {
+  return message.role === "custom" && (message as CustomMessage).customType === "coms-net-response-sent";
+}
+
+function assistantResponseText(message: AgentMessage): string {
+  if (message.role !== "assistant") return "";
+  return (message as AssistantMessage).content
+    .filter((part): part is TextContent => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+}
+
+function assistantOnlyCallsComsNetTool(message: AgentMessage): boolean {
+  if (message.role !== "assistant") return false;
+  const blocks = (message as AssistantMessage).content;
+  return blocks.some((part): part is ToolCallContent => part.type === "toolCall" && part.toolName.startsWith("coms_net_"));
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -477,9 +586,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
 
-  const visibleMessages = useMemo(() => messages.filter((m) => m.role === "user" || m.role === "assistant"), [messages]);
-  const messageRefs = useMessageRefs(visibleMessages.length);
-
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
 
   const availableThinkingLevels = displayModelValue
@@ -506,10 +612,108 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const messageRenderData = useMemo(() => {
     const toolResultsMap = new Map<string, import("@/lib/types").ToolResultMessage>();
     const showTimestamp = new Array<boolean>(messages.length).fill(false);
+    const hiddenMessageIndexes = new Set<number>();
+    const comsNetResponses = new Map<number, ComsNetResponseHint>();
+    const customInboundKeys = new Set<string>();
+    const inboundIndexByMsgId = new Map<string, number>();
+    const responseSentByMsgId = new Map<string, ComsNetResponseSentHint>();
+    const responseReceivedMsgIds = new Set<string>();
     let lastUserIdx = -1;
     let seenAssistantSinceUser = false;
+    let pendingInbound: (ComsNetInboundHint & { index: number; key: string }) | null = null;
+    let inferredResponseIdx: number | null = null;
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.role === "custom") {
+        const inbound = extractComsNetInbound(msg);
+        if (inbound) {
+          customInboundKeys.add(comsNetInboundKey(inbound));
+          if (inbound.msgId) inboundIndexByMsgId.set(inbound.msgId, i);
+        }
+        const responseSent = extractComsNetResponseSent(msg, i);
+        if (responseSent) responseSentByMsgId.set(responseSent.msgId, responseSent);
+        const responseReceivedMsgId = comsNetCustomMsgId(msg, "coms-net-response-received");
+        if (responseReceivedMsgId) responseReceivedMsgIds.add(responseReceivedMsgId);
+      }
+    }
+    const loopbackMsgIds = new Set([...responseSentByMsgId.keys()].filter((msgId) => responseReceivedMsgIds.has(msgId)));
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      const anyComsNetMsgId = comsNetAnyCustomMsgId(msg);
+      if (anyComsNetMsgId && loopbackMsgIds.has(anyComsNetMsgId)) {
+        hiddenMessageIndexes.add(i);
+      }
+      if (msg.role === "user") {
+        const inbound = extractComsNetInbound(msg);
+        if (inbound && customInboundKeys.has(comsNetInboundKey(inbound))) {
+          hiddenMessageIndexes.add(i);
+        }
+      }
+      const responseReceivedMsgId = comsNetCustomMsgId(msg, "coms-net-response-received");
+      if (responseReceivedMsgId && responseSentByMsgId.has(responseReceivedMsgId)) {
+        hiddenMessageIndexes.add(i);
+      }
+    }
+
+    for (const [msgId, responseSent] of responseSentByMsgId) {
+      const inboundIndex = inboundIndexByMsgId.get(msgId);
+      if (inboundIndex === undefined) continue;
+      for (let i = inboundIndex + 1; i < responseSent.index; i++) {
+        if (messages[i].role === "assistant" && assistantResponseText(messages[i])) {
+          hiddenMessageIndexes.add(i);
+        }
+      }
+    }
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (hiddenMessageIndexes.has(i)) continue;
+      const inbound = extractComsNetInbound(msg);
+      if (inbound) {
+        const key = comsNetInboundKey(inbound);
+        if (inbound.msgId && responseSentByMsgId.has(inbound.msgId)) {
+          pendingInbound = null;
+          inferredResponseIdx = null;
+          continue;
+        }
+        pendingInbound = { ...inbound, index: i, key };
+        inferredResponseIdx = null;
+        continue;
+      }
+
+      if (isComsNetResponseSent(msg)) {
+        if (inferredResponseIdx !== null) comsNetResponses.delete(inferredResponseIdx);
+        pendingInbound = null;
+        inferredResponseIdx = null;
+        continue;
+      }
+
+      if (msg.role === "user") {
+        pendingInbound = null;
+        inferredResponseIdx = null;
+        continue;
+      }
+
+      if (pendingInbound && msg.role === "assistant" && assistantResponseText(msg)) {
+        comsNetResponses.set(i, {
+          peer: pendingInbound.peer,
+          msgId: pendingInbound.msgId,
+        });
+        inferredResponseIdx = i;
+        pendingInbound = null;
+        continue;
+      }
+
+      if (pendingInbound && msg.role === "assistant" && !assistantOnlyCallsComsNetTool(msg)) {
+        pendingInbound = null;
+        inferredResponseIdx = null;
+      }
+    }
 
     for (let i = messages.length - 1; i >= 0; i--) {
+      if (hiddenMessageIndexes.has(i)) continue;
       const msg = messages[i];
       if (msg.role === "toolResult") {
         toolResultsMap.set((msg as import("@/lib/types").ToolResultMessage).toolCallId, msg as import("@/lib/types").ToolResultMessage);
@@ -527,8 +731,14 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       showTimestamp[messages.length - 1] = false;
     }
 
-    return { toolResultsMap, lastUserIdx, showTimestamp };
+    return { toolResultsMap, lastUserIdx, showTimestamp, hiddenMessageIndexes, comsNetResponses };
   }, [messages, streamState.isStreaming]);
+
+  const visibleMessages = useMemo(
+    () => messages.filter((m, idx) => !messageRenderData.hiddenMessageIndexes.has(idx) && (m.role === "user" || m.role === "assistant")),
+    [messages, messageRenderData.hiddenMessageIndexes],
+  );
+  const messageRefs = useMessageRefs(visibleMessages.length);
 
   const handleEditMessageContent = useCallback((content: string) => {
     chatInputRef?.current?.insertIfEmpty(content);
@@ -654,6 +864,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               let refIdx = 0;
               const shouldUseLazyMessages = messages.length >= LAZY_MESSAGE_THRESHOLD;
               return messages.map((msg, idx) => {
+                if (messageRenderData.hiddenMessageIndexes.has(idx)) return null;
                 const messageKey = entryIds[idx] ?? `${msg.role}-${idx}`;
                 const prevAssistantEntryId =
                   msg.role === "user" && idx > 0 && messages[idx - 1].role === "assistant"
@@ -672,6 +883,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     message={msg}
                     toolResults={messageRenderData.toolResultsMap}
                     modelNames={modelNames}
+                    comsNetResponse={messageRenderData.comsNetResponses.get(idx)}
                     entryId={entryIds[idx]}
                     onFork={agentRunning || isNew || (idx === 0 && msg.role === "user") ? undefined : handleFork}
                     forking={forkingEntryId === entryIds[idx]}

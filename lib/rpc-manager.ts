@@ -368,6 +368,7 @@ export class AgentSessionWrapper {
     this.pendingGuide = null;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
+    this.inner.dispose?.();
     this.onDestroyCallback?.();
   }
 }
@@ -478,6 +479,8 @@ export async function startRpcSession(
     if (appliedActiveToolNames?.length === 0) {
       inner.agent.state.systemPrompt = "";
     }
+
+    await inner.bindExtensions?.({ mode: "rpc" });
 
     const wrapper = new AgentSessionWrapper(inner);
     wrapper.start();

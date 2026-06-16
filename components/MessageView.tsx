@@ -30,6 +30,7 @@ interface Props {
   isStreaming?: boolean;
   toolResults?: Map<string, ToolResultMessage>;
   modelNames?: Record<string, string>;
+  comsNetResponse?: ComsNetResponseHint;
   entryId?: string;
   onFork?: (entryId: string) => void;
   forking?: boolean;
@@ -38,6 +39,11 @@ interface Props {
   onEditContent?: (content: string) => void;
   showTimestamp?: boolean;
   prevTimestamp?: number;
+}
+
+export interface ComsNetResponseHint {
+  peer: string;
+  msgId?: string;
 }
 
 function formatTime(ts?: number): string | null {
@@ -89,11 +95,37 @@ function estimateBlockChars(block: AssistantContentBlock): number {
   return 0;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, comsNetResponse, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
   if (message.role === "user") {
+    const legacyComsNetEvent = parseLegacyComsNetUserMessage(message as UserMessage);
+    if (legacyComsNetEvent) {
+      return (
+        <div style={{ marginBottom: 16 }}>
+          <ComsNetMessageCard event={legacyComsNetEvent} />
+        </div>
+      );
+    }
     return <UserMessageView message={message as UserMessage} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
   }
   if (message.role === "assistant") {
+    if (comsNetResponse) {
+      const response = assistantMessageText(message as AssistantMessage);
+      if (response) {
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <ComsNetMessageCard
+              event={{
+                direction: "response-out",
+                title: "Answered coms-net request",
+                peer: comsNetResponse.peer,
+                response,
+                msgId: comsNetResponse.msgId,
+              }}
+            />
+          </div>
+        );
+      }
+    }
     return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} />;
   }
   if (message.role === "toolResult") {
@@ -340,6 +372,16 @@ function CustomMessageView({ message, showTimestamp }: { message: CustomMessage;
   const content = messageContentToText(message.content);
   const time = showTimestamp ? formatTime(message.timestamp) : null;
   const isSubagent = isSubagentCustomType(message.customType, message.content);
+  const comsNet = parseComsNetMessage(message.customType, content, message.details);
+
+  if (comsNet) {
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <ComsNetMessageCard event={comsNet} />
+        {time && <div style={{ marginTop: 4, fontSize: 10, color: "var(--text-dim)" }}>{time}</div>}
+      </div>
+    );
+  }
 
   if (isSubagent) {
     const notifications = parseSubagentNotifications(content, message.details);
@@ -365,6 +407,200 @@ function CustomMessageView({ message, showTimestamp }: { message: CustomMessage;
         </ReactMarkdown>
       </div>
       {time && <div style={{ marginTop: 4, fontSize: 10, color: "var(--text-dim)" }}>{time}</div>}
+    </div>
+  );
+}
+
+type ComsNetDirection = "inbound" | "outbound" | "response-in" | "response-out";
+
+interface ComsNetEvent {
+  direction: ComsNetDirection;
+  title: string;
+  peer: string;
+  prompt?: string;
+  response?: string;
+  msgId?: string;
+  status?: string;
+  error?: string | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function stringifyDetail(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function assistantMessageText(message: AssistantMessage): string {
+  return message.content
+    .filter((part): part is TextContent => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+}
+
+function parseComsNetMessage(customType: string, content: string, details: unknown): ComsNetEvent | null {
+  if (!customType.startsWith("coms-net-")) return null;
+  const d = isRecord(details) ? details : {};
+  const sender = isRecord(d.sender) ? d.sender : {};
+  const target = isRecord(d.target) ? d.target : {};
+  const peer = stringValue(sender.name) ?? stringValue(target.name) ?? stringValue(d.target) ?? "peer";
+  const msgId = stringValue(d.msg_id);
+  const status = stringValue(d.status);
+  const prompt = stringValue(d.prompt) ?? content.replace(/^Sent coms-net request to [\s\S]*?:\s*/, "").replace(/^coms-net request from [\s\S]*?:\s*/, "");
+  const response = stringifyDetail(d.response);
+  const error = stringValue(d.error) ?? null;
+
+  if (customType === "coms-net-inbound") {
+    return { direction: "inbound", title: "Received coms-net request", peer, prompt, msgId, error };
+  }
+  if (customType === "coms-net-outbound") {
+    return { direction: "outbound", title: "Sent coms-net request", peer, prompt, msgId, status, error };
+  }
+  if (customType === "coms-net-response-received") {
+    return { direction: "response-in", title: error ? "coms-net response failed" : "Received coms-net response", peer, prompt, response, msgId, error };
+  }
+  if (customType === "coms-net-response-sent") {
+    return { direction: "response-out", title: error ? "Failed to answer coms-net request" : "Answered coms-net request", peer, response, msgId, error };
+  }
+  return null;
+}
+
+function parseLegacyComsNetUserMessage(message: UserMessage): ComsNetEvent | null {
+  const content = messageContentToText(message.content);
+  const match = content.match(/^A coms-net peer named "([^"]+)" asked for help\.\n\nRequest:\n([\s\S]*?)\n\nAnswer the peer directly\./);
+  if (!match) return null;
+  return {
+    direction: "inbound",
+    title: "Received coms-net request",
+    peer: match[1],
+    prompt: match[2].trim(),
+  };
+}
+
+function ComsNetMessageCard({ event }: { event: ComsNetEvent }) {
+  const isError = Boolean(event.error);
+  const isInbound = event.direction === "inbound" || event.direction === "response-in";
+  const color = isError ? "#f87171" : isInbound ? "#0ea5e9" : "#16a34a";
+  const bg = isError ? "rgba(248,113,113,0.06)" : isInbound ? "rgba(14,165,233,0.07)" : "rgba(34,197,94,0.06)";
+  const border = isError ? "rgba(248,113,113,0.45)" : isInbound ? "rgba(14,165,233,0.35)" : "rgba(34,197,94,0.32)";
+  const tinyMonoStyle = { fontFamily: "var(--font-mono)", fontSize: 11 } as const;
+  const label = event.direction === "inbound"
+    ? "From teammate"
+    : event.direction === "outbound"
+      ? "To teammate"
+      : event.direction === "response-in"
+        ? "From teammate"
+        : "To teammate";
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${border}`,
+        borderLeft: `3px solid ${color}`,
+        background: `linear-gradient(135deg, ${bg}, var(--bg-panel))`,
+        borderRadius: 7,
+        overflow: "hidden",
+        fontSize: 13,
+        boxShadow: "0 4px 14px rgba(0,0,0,0.05)",
+      }}
+    >
+      <div style={{ display: "flex", gap: 9, padding: "9px 10px", minWidth: 0 }}>
+        <span
+          aria-hidden="true"
+          style={{
+            width: 34,
+            height: 28,
+            borderRadius: 6,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color,
+            background: "var(--bg)",
+            border: `1px solid ${border}`,
+            fontSize: 9,
+            fontWeight: 800,
+            flexShrink: 0,
+          }}
+        >
+          NET
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 5 }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                height: 18,
+                padding: "0 7px",
+                borderRadius: 4,
+                border: `1px solid ${border}`,
+                background: "var(--bg)",
+                color,
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: "uppercase",
+              }}
+            >
+              {label}
+            </span>
+            <span style={{ color: "var(--text)", fontWeight: 650 }}>{event.title}</span>
+            <span style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {event.peer}
+            </span>
+          </div>
+
+          {event.prompt && (
+            <ComsNetDetail label="Request" text={event.prompt} />
+          )}
+          {event.response && (
+            <ComsNetDetail label={event.error ? "Error" : "Response"} text={event.error ?? event.response} isError={Boolean(event.error)} />
+          )}
+          {!event.response && event.error && (
+            <ComsNetDetail label="Error" text={event.error} isError />
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: event.prompt || event.response || event.error ? 8 : 0, color: "var(--text-dim)", fontSize: 11 }}>
+            {event.status && <span>status: <span style={tinyMonoStyle}>{event.status}</span></span>}
+            {event.msgId && <span>msg: <span style={tinyMonoStyle}>{event.msgId}</span></span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ComsNetDetail({ label, text, isError }: { label: string; text: string; isError?: boolean }) {
+  return (
+    <div style={{ marginTop: 7 }}>
+      <div style={{ color: "var(--text-dim)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>{label}</div>
+      <div
+        style={{
+          border: "1px solid var(--border)",
+          background: "var(--bg)",
+          borderRadius: 6,
+          padding: "7px 8px",
+          color: isError ? "#f87171" : "var(--text-muted)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          maxHeight: 240,
+          overflow: "auto",
+          lineHeight: 1.45,
+          fontSize: 12,
+        }}
+      >
+        {text}
+      </div>
     </div>
   );
 }
@@ -774,8 +1010,67 @@ function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCal
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
     const duration = toolCallDurations?.get(tc.toolCallId);
+    const comsNetToolEvent = parseComsNetToolCall(tc, result);
+    if (comsNetToolEvent) {
+      return <ComsNetMessageCard event={comsNetToolEvent} />;
+    }
     return <ToolCallBlock block={tc} result={result} isRunning={isStreaming && !result} duration={duration} />;
   }
+  return null;
+}
+
+function parseToolResultJson(result?: ToolResultMessage): Record<string, unknown> {
+  const resultWithDetails = result as (ToolResultMessage & { details?: unknown }) | undefined;
+  const fromDetails = isRecord(resultWithDetails?.details) ? resultWithDetails.details : null;
+  if (fromDetails) return fromDetails;
+  const text = result?.content
+    .filter((part): part is TextContent => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseComsNetToolCall(block: ToolCallContent, result?: ToolResultMessage): ComsNetEvent | null {
+  const input = isRecord(block.input) ? block.input : {};
+  const resultDetails = parseToolResultJson(result);
+  const resultText = result?.content
+    .filter((part): part is TextContent => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+
+  if (block.toolName === "coms_net_send") {
+    const target = stringValue(input.target) ?? stringValue(input.target_session) ?? "peer";
+    const prompt = stringValue(input.prompt) ?? "";
+    return {
+      direction: "outbound",
+      title: "Sent coms-net request",
+      peer: target,
+      prompt,
+      msgId: stringValue(resultDetails.msg_id),
+      status: stringValue(resultDetails.status),
+      error: result?.isError ? (resultText || "send_failed") : null,
+    };
+  }
+
+  if (block.toolName === "coms_net_await") {
+    return {
+      direction: "response-in",
+      title: result?.isError ? "coms-net response failed" : "Received coms-net response",
+      peer: "peer",
+      response: resultText,
+      msgId: stringValue(input.msg_id),
+      error: result?.isError ? (resultText || "response_failed") : null,
+    };
+  }
+
   return null;
 }
 
