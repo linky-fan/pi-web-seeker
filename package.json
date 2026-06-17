@@ -1,6 +1,6 @@
 {
   "name": "pi-web-seeker",
-  "version": "0.6.12",
+  "version": "0.6.17",
   "description": "Web UI for the pi coding agent",
   "license": "MIT",
   "repository": {
@@ -39,7 +39,7 @@
     "coms-net:server": "node scripts/coms-net-server.mjs",
     "test:context": "node scripts/model-context-test.mjs",
     "prepare": "node scripts/prepare-github-install.js",
-    "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
+    "release": "npm run build && npm publish --access public"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.79.1",
