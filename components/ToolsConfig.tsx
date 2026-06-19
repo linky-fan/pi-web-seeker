@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useLocale } from "@/lib/i18n";
 import { apiPath } from "@/lib/api-path";
+import { MotionModal } from "./MotionModal";
 
 interface ToolToggleEntry {
   name: string;
@@ -13,11 +14,12 @@ interface ToolToggleEntry {
 interface Props {
   cwd: string | null;
   onClose: () => void;
+  closeSignal?: unknown;
 }
 
 const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 
-export function ToolsConfig({ cwd, onClose }: Props) {
+export function ToolsConfig({ cwd, onClose, closeSignal }: Props) {
   const { t } = useLocale();
   const [tools, setTools] = useState<ToolToggleEntry[]>([]);
   const [active, setActive] = useState<Set<string>>(new Set());
@@ -79,42 +81,28 @@ export function ToolsConfig({ cwd, onClose }: Props) {
       });
       const data = await res.json() as { error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
-      onClose();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return false;
     } finally {
       setSaving(false);
     }
-  }, [active, onClose]);
+  }, [active]);
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        style={{
+    <MotionModal
+      onClose={onClose}
+      closeSignal={closeSignal}
+      panelStyle={{
           width: 520,
           maxWidth: "100%",
           maxHeight: "82vh",
-          background: "var(--bg)",
-          border: "1px solid var(--border)",
           borderRadius: 8,
-          display: "flex",
-          flexDirection: "column",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-          overflow: "hidden",
-        }}
-      >
+      }}
+    >
+      {(close) => (
+      <>
         <div
           style={{
             display: "flex",
@@ -165,12 +153,16 @@ export function ToolsConfig({ cwd, onClose }: Props) {
         >
           <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{t("toolsConfig.applyHint")}</span>
           <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" onClick={onClose} style={footerButtonStyle}>
+            <button type="button" onClick={close} style={footerButtonStyle}>
               {t("common.cancel")}
             </button>
             <button
               type="button"
-              onClick={handleSave}
+              onClick={() => {
+                void handleSave().then((saved) => {
+                  if (saved) close();
+                });
+              }}
               disabled={saving || loading || tools.length === 0}
               style={{
                 ...footerButtonStyle,
@@ -184,8 +176,9 @@ export function ToolsConfig({ cwd, onClose }: Props) {
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </>
+      )}
+    </MotionModal>
   );
 }
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n";
 import { apiPath } from "@/lib/api-path";
+import { MotionModal } from "./MotionModal";
 
 interface SubagentsStatus {
   packageName: string;
@@ -41,7 +42,15 @@ const TEST_PROMPT = `请使用 Agent 工具启动 2 个后台子智能体来并�
 
 启动后等待两个后台子智能体完成。如果需要，请使用 get_subagent_result 获取它们的结果。最后把两个子智能体的结论合并成一个简短总结。`;
 
-export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => void }) {
+export function SubagentsConfig({
+  cwd,
+  onClose,
+  closeSignal,
+}: {
+  cwd: string;
+  onClose: () => void;
+  closeSignal?: unknown;
+}) {
   const { t } = useLocale();
   const [status, setStatus] = useState<SubagentsStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,32 +98,22 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
   const stateLabel = status?.loaded ? t("subagents.loaded") : status?.installed ? t("subagents.configured") : t("subagents.notDetected");
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.42)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
+    <MotionModal
+      onClose={onClose}
+      closeSignal={closeSignal}
+      overlayStyle={{ background: "rgba(0,0,0,0.42)", padding: 20 }}
+      panelStyle={{
           width: "min(620px, 100%)",
           maxHeight: "min(720px, calc(100dvh - 40px))",
           overflow: "auto",
           background: "var(--bg-panel)",
-          border: "1px solid var(--border)",
           borderRadius: 8,
           color: "var(--text)",
           boxShadow: "0 24px 80px rgba(0,0,0,0.28)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
+      }}
+    >
+      {(close) => (
+      <>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
           <div
             aria-hidden="true"
@@ -141,7 +140,7 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={close}
             title={t("subagents.close")}
             style={{ width: 30, height: 30, border: "none", borderRadius: 6, background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}
           >
@@ -280,7 +279,8 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
             </section>
           ) : null}
         </div>
-      </div>
-    </div>
+      </>
+      )}
+    </MotionModal>
   );
 }

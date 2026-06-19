@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n";
+import { revealElement } from "@/lib/motion";
 import { SkillsConfig } from "./SkillsConfig";
 import { ToolsConfig } from "./ToolsConfig";
 import { SubagentsConfig } from "./SubagentsConfig";
@@ -19,10 +20,18 @@ const TABS: CapabilityTab[] = ["skills", "tools", "subagents", "network"];
 export function CapabilitiesConfig({ cwd, onClose }: Props) {
   const { t } = useLocale();
   const [activeTab, setActiveTab] = useState<CapabilityTab>("skills");
+  const [closeSignal, setCloseSignal] = useState(0);
+  const tabsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const tween = revealElement(tabsRef.current, { y: -6, duration: 0.2 });
+    return () => { tween?.kill(); };
+  }, []);
 
   return (
     <>
       <div
+        ref={tabsRef}
         style={{
           position: "fixed",
           top: 18,
@@ -65,7 +74,7 @@ export function CapabilitiesConfig({ cwd, onClose }: Props) {
         })}
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => setCloseSignal((value) => value + 1)}
           title={t("common.close")}
           style={{
             width: 30,
@@ -82,10 +91,10 @@ export function CapabilitiesConfig({ cwd, onClose }: Props) {
           x
         </button>
       </div>
-      {activeTab === "skills" && <SkillsConfig cwd={cwd} onClose={onClose} />}
-      {activeTab === "tools" && <ToolsConfig cwd={cwd} onClose={onClose} />}
-      {activeTab === "subagents" && <SubagentsConfig cwd={cwd} onClose={onClose} />}
-      {activeTab === "network" && <NetworkConfig cwd={cwd} onClose={onClose} />}
+      {activeTab === "skills" && <SkillsConfig cwd={cwd} onClose={onClose} closeSignal={closeSignal} />}
+      {activeTab === "tools" && <ToolsConfig cwd={cwd} onClose={onClose} closeSignal={closeSignal} />}
+      {activeTab === "subagents" && <SubagentsConfig cwd={cwd} onClose={onClose} closeSignal={closeSignal} />}
+      {activeTab === "network" && <NetworkConfig cwd={cwd} onClose={onClose} closeSignal={closeSignal} />}
     </>
   );
 }

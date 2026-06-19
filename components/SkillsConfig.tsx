@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { SkillSearchResult } from "@/app/api/skills/search/route";
 import { getPathRelativeToRoot } from "@/lib/path-identity";
 import { apiPath } from "@/lib/api-path";
+import { MotionModal } from "./MotionModal";
 
 interface Skill {
   name: string;
@@ -511,9 +512,11 @@ function AddSkillPanel({
 export function SkillsConfig({
   cwd,
   onClose,
+  closeSignal,
 }: {
   cwd: string;
   onClose: () => void;
+  closeSignal?: unknown;
 }) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -584,33 +587,9 @@ export function SkillsConfig({
   const selectedSkill = skills.find((s) => s.filePath === selected) ?? null;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        style={{
-          width: 860,
-          height: "78vh",
-          background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
-          display: "flex",
-          flexDirection: "column",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-          overflow: "hidden",
-        }}
-      >
+    <MotionModal onClose={onClose} closeSignal={closeSignal}>
+      {(close) => (
+      <>
         {/* Header */}
         <div
           style={{
@@ -643,7 +622,7 @@ export function SkillsConfig({
             </code>
           </div>
           <button
-            onClick={onClose}
+            onClick={close}
             style={{
               background: "none",
               border: "none",
@@ -894,7 +873,7 @@ export function SkillsConfig({
           }}
         >
           <button
-            onClick={onClose}
+            onClick={close}
             style={{
               padding: "6px 14px",
               background: "none",
@@ -908,7 +887,8 @@ export function SkillsConfig({
             Close
           </button>
         </div>
-      </div>
-    </div>
+      </>
+      )}
+    </MotionModal>
   );
 }

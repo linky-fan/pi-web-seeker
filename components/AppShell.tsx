@@ -14,6 +14,8 @@ import { LocaleToggleButton } from "./LocaleToggleButton";
 import { TopBarTypewriter } from "./BrandTypewriter";
 import { useLocale } from "@/lib/i18n";
 import { APP_NAME } from "@/lib/branding";
+import { revealElement } from "@/lib/motion";
+import { apiPath } from "@/lib/api-path";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
 
@@ -69,6 +71,20 @@ function updateBrowserTaskStatus(status: TaskStatus): void {
   link.href = statusFavicon(status);
 }
 
+const sessionExportLinkStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  height: 28,
+  padding: "0 10px",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  background: "var(--bg)",
+  color: "var(--text)",
+  fontSize: 12,
+  fontWeight: 600,
+  textDecoration: "none",
+} as const;
+
 function normalizeExplorerMentionPath(filePath: string): { path: string; projectRelative: boolean } {
   const normalized = filePath.replace(/\\/g, "/");
   const alreadyQualified = normalized.startsWith("/") ||
@@ -100,6 +116,7 @@ export function AppShell() {
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("done");
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
+  const topPanelDropdownRef = useRef<HTMLDivElement>(null);
 
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
@@ -144,10 +161,10 @@ export function AppShell() {
   }, [taskStatus]);
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"session" | "system" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  const toggleTopPanel = useCallback((panel: "branches" | "system") => {
+  const toggleTopPanel = useCallback((panel: "session" | "system") => {
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, []);
 
@@ -161,6 +178,12 @@ export function AppShell() {
     const ro = new ResizeObserver(update);
     ro.observe(topBarRef.current);
     return () => ro.disconnect();
+  }, [activeTopPanel]);
+
+  useEffect(() => {
+    if (!activeTopPanel) return;
+    const tween = revealElement(topPanelDropdownRef.current, { y: -5, duration: 0.18 });
+    return () => { tween?.kill(); };
   }, [activeTopPanel]);
 
   // Right panel — file tabs only
@@ -300,6 +323,7 @@ export function AppShell() {
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
+  const capabilitiesCwd = activeCwd || selectedSession?.cwd || newSessionCwd || null;
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
@@ -346,7 +370,7 @@ export function AppShell() {
             label: t("nav.capabilities"),
             shortLabel: t("nav.capabilitiesShort"),
             onClick: () => setCapabilitiesConfigOpen(true),
-            disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
+            disabled: !capabilitiesCwd,
             icon: (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2L2 7l10 5 10-5-10-5z" />
@@ -443,17 +467,30 @@ export function AppShell() {
           <LocaleToggleButton />
           {showChat && (
             <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
-              <BranchNavigator
-                sessionId={selectedSession?.id ?? null}
-                tree={branchTree}
-                activeLeafId={branchActiveLeafId}
-                onLeafChange={handleBranchLeafChange}
-                inline
-                containerRef={topBarRef}
-                open={activeTopPanel === "branches"}
-                onToggle={() => toggleTopPanel("branches")}
-                hasSession
-              />
+              <button
+                onClick={() => toggleTopPanel("session")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  height: "100%", padding: "0 12px",
+                  background: activeTopPanel === "session" ? "var(--bg-selected)" : "none",
+                  border: "none",
+                  borderTop: activeTopPanel === "session" ? "2px solid var(--accent)" : "2px solid transparent",
+                  borderRight: "1px solid var(--border)",
+                  cursor: "pointer",
+                  color: activeTopPanel === "session" ? "var(--text)" : "var(--text-muted)",
+                  fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = activeTopPanel === "session" ? "var(--text)" : "var(--text-muted)"; }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: selectedSession ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }}>
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <path d="M8 13h8" />
+                  <path d="M8 17h5" />
+                </svg>
+                <span>{t("session.label")}</span>
+              </button>
               <button
                 ref={systemBtnRef}
                 onClick={() => toggleTopPanel("system")}
@@ -568,13 +605,75 @@ export function AppShell() {
           })()}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
-            <div style={{
+            <div ref={topPanelDropdownRef} style={{
               position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,
               width: topPanelPos.width,
               zIndex: 500,
             }}>
+              {activeTopPanel === "session" && (
+                <div style={{
+                  background: "var(--bg-panel)",
+                  borderBottom: "1px solid var(--border)",
+                  boxShadow: "0 10px 28px rgba(0,0,0,0.12)",
+                }}>
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    padding: "10px 16px",
+                    borderBottom: "1px solid var(--border)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text)", fontSize: 12, fontWeight: 650 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--accent)" }}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      {t("session.exportTitle")}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {selectedSession ? (
+                        <>
+                          <a
+                            href={apiPath(`sessions/${encodeURIComponent(selectedSession.id)}/export?format=markdown${branchActiveLeafId ? `&leafId=${encodeURIComponent(branchActiveLeafId)}` : ""}`)}
+                            download
+                            onClick={() => setActiveTopPanel(null)}
+                            style={sessionExportLinkStyle}
+                          >
+                            {t("session.exportMarkdown")}
+                          </a>
+                          <a
+                            href={apiPath(`sessions/${encodeURIComponent(selectedSession.id)}/export?format=json${branchActiveLeafId ? `&leafId=${encodeURIComponent(branchActiveLeafId)}` : ""}`)}
+                            download
+                            onClick={() => setActiveTopPanel(null)}
+                            style={sessionExportLinkStyle}
+                          >
+                            {t("session.exportJson")}
+                          </a>
+                        </>
+                      ) : (
+                        <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{t("branches.noSession")}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ paddingTop: 1 }}>
+                    <div style={{ padding: "8px 16px 4px", fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>
+                      {t("session.branches")}
+                    </div>
+                    <BranchNavigator
+                      sessionId={selectedSession?.id ?? null}
+                      tree={branchTree}
+                      activeLeafId={branchActiveLeafId}
+                      onLeafChange={handleBranchLeafChange}
+                      hasSession={Boolean(selectedSession)}
+                      panelOnly
+                    />
+                  </div>
+                </div>
+              )}
               {activeTopPanel === "system" && (
                 <div style={{
                   background: "var(--bg-panel)",
@@ -705,9 +804,9 @@ export function AppShell() {
       </svg>
     </button>
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
-    {capabilitiesConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
+    {capabilitiesConfigOpen && capabilitiesCwd && (
       <CapabilitiesConfig
-        cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!}
+        cwd={capabilitiesCwd}
         onClose={() => setCapabilitiesConfigOpen(false)}
       />
     )}

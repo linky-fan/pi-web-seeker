@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale } from "@/lib/i18n";
 import { apiPath } from "@/lib/api-path";
+import { MotionModal } from "./MotionModal";
 
 interface NetworkStatus {
   packageName: string;
@@ -23,7 +24,15 @@ interface NetworkStatus {
   error?: string;
 }
 
-export function NetworkConfig({ cwd, onClose }: { cwd: string; onClose: () => void }) {
+export function NetworkConfig({
+  cwd,
+  onClose,
+  closeSignal,
+}: {
+  cwd: string;
+  onClose: () => void;
+  closeSignal?: unknown;
+}) {
   const { t } = useLocale();
   const [status, setStatus] = useState<NetworkStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,15 +94,16 @@ export function NetworkConfig({ cwd, onClose }: { cwd: string; onClose: () => vo
   const hubReady = status?.hub?.running === true;
 
   return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div style={panelStyle} onClick={(e) => e.stopPropagation()}>
+    <MotionModal onClose={onClose} closeSignal={closeSignal} overlayStyle={overlayStyle} panelStyle={panelStyle}>
+      {(close) => (
+      <>
         <div style={headerStyle}>
           <div style={badgeStyle}>NET</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 650 }}>{t("network.title")}</div>
             <div style={mutedLineStyle}>{cwd}</div>
           </div>
-          <button onClick={onClose} title={t("common.close")} style={closeButtonStyle}>x</button>
+          <button onClick={close} title={t("common.close")} style={closeButtonStyle}>x</button>
         </div>
 
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -189,8 +199,9 @@ export function NetworkConfig({ cwd, onClose }: { cwd: string; onClose: () => vo
             </div>
           ) : null}
         </div>
-      </div>
-    </div>
+      </>
+      )}
+    </MotionModal>
   );
 }
 

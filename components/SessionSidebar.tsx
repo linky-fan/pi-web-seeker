@@ -6,6 +6,7 @@ import { useLocale } from "@/lib/i18n";
 import type { SessionInfo } from "@/lib/types";
 import { getPathRelativeToRoot } from "@/lib/path-identity";
 import { apiPath } from "@/lib/api-path";
+import { popOnce, revealChildren, revealElement, rotateOnce } from "@/lib/motion";
 import { FileExplorer } from "./FileExplorer";
 
 interface Props {
@@ -127,106 +128,38 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
   return roots;
 }
 
-const SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
-
-function useScramble(target: string, running: boolean): string {
-  const [display, setDisplay] = useState(target);
-  const frameRef = useRef<number | null>(null);
-  const iterRef = useRef(0);
+function AppTitle() {
+  const titleRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!running) {
-      setDisplay(target);
-      return;
-    }
-    iterRef.current = 0;
-    const totalFrames = target.length * 4;
-
-    const step = () => {
-      iterRef.current += 1;
-      const progress = iterRef.current / totalFrames;
-      const resolved = Math.floor(progress * target.length);
-
-      setDisplay(
-        target
-          .split("")
-          .map((char, i) => {
-            if (char === " ") return " ";
-            if (i < resolved) return char;
-            return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
-          })
-          .join("")
-      );
-
-      if (iterRef.current < totalFrames) {
-        frameRef.current = requestAnimationFrame(step);
-      } else {
-        setDisplay(target);
-      }
-    };
-
-    frameRef.current = requestAnimationFrame(step);
-    return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
-  }, [target, running]);
-
-  return display;
-}
-
-function AppTitle() {
-  const [showVersion, setShowVersion] = useState(false);
-  const [scrambling, setScrambling] = useState(false);
-  const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : APP_NAME;
-  const display = useScramble(target, scrambling);
-
-  const triggerScramble = useCallback((toVersion: boolean) => {
-    setShowVersion(toVersion);
-    setScrambling(true);
-    setTimeout(() => setScrambling(false), (toVersion ? 6 : 8) * 4 * (1000 / 60) + 100);
+    const tween = revealElement(titleRef.current, { y: -3, duration: 0.24 });
+    return () => { tween?.kill(); };
   }, []);
 
-  const handleClick = useCallback(() => {
-    if (revertTimerRef.current) clearTimeout(revertTimerRef.current);
-
-    const next = !showVersion;
-    triggerScramble(next);
-
-    if (next) {
-      revertTimerRef.current = setTimeout(() => triggerScramble(false), 3000);
-    }
-  }, [showVersion, triggerScramble]);
-
-  useEffect(() => () => { if (revertTimerRef.current) clearTimeout(revertTimerRef.current); }, []);
-
   return (
-    <button
-      onClick={handleClick}
+    <div
+      ref={titleRef}
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 8,
+        gap: 7,
         minWidth: 0,
-        background: "none",
-        border: "none",
-        padding: 0,
-        cursor: "default",
-        color: showVersion ? "var(--accent)" : "var(--text)",
+        color: "var(--text)",
       }}
-      title={showVersion ? "Version" : APP_NAME}
+      title={APP_NAME}
     >
       <span
         aria-hidden="true"
         style={{
           display: "grid",
           placeItems: "center",
-          width: 28,
-          height: 28,
-          borderRadius: 7,
+          width: 26,
+          height: 26,
+          borderRadius: 6,
           background: "color-mix(in srgb, var(--accent) 14%, var(--bg))",
           border: "1px solid color-mix(in srgb, var(--accent) 32%, var(--border))",
           color: "var(--accent)",
-          fontSize: 17,
+          fontSize: 16,
           fontWeight: 800,
           lineHeight: 1,
           flexShrink: 0,
@@ -236,19 +169,19 @@ function AppTitle() {
       </span>
       <span
         style={{
-          minWidth: "6ch",
+          minWidth: 0,
           overflow: "hidden",
           whiteSpace: "nowrap",
           textOverflow: "ellipsis",
           fontFamily: "var(--font-mono)",
           fontWeight: 800,
-          fontSize: 15,
+          fontSize: 14,
           letterSpacing: 0,
         }}
       >
-        {display}
+        Seeker
       </span>
-    </button>
+    </div>
   );
 }
 
@@ -281,6 +214,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
   const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const dropdownMenuRef = useRef<HTMLDivElement>(null);
+  const sessionListRef = useRef<HTMLDivElement>(null);
+  const sessionRefreshButtonRef = useRef<HTMLButtonElement>(null);
+  const explorerRefreshButtonRef = useRef<HTMLButtonElement>(null);
+  const explorerContentRef = useRef<HTMLDivElement>(null);
 
   const loadSessions = useCallback(async (showLoading = false) => {
     try {
@@ -308,6 +247,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     initialLoadDone.current = true;
     loadSessions(isFirst);
   }, [loadSessions, refreshKey]);
+
+  useEffect(() => {
+    const tween = revealElement(headerRef.current, { y: -4, duration: 0.24 });
+    return () => { tween?.kill(); };
+  }, []);
+
+  useEffect(() => {
+    if (sessionRefreshDone) popOnce(sessionRefreshButtonRef.current);
+  }, [sessionRefreshDone]);
+
+  useEffect(() => {
+    if (explorerRefreshDone) popOnce(explorerRefreshButtonRef.current);
+  }, [explorerRefreshDone]);
 
   useEffect(() => {
     if (explorerRefreshKey !== undefined) setExplorerKey((k) => k + 1);
@@ -480,17 +432,50 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Build parent-child tree within the filtered set
   const sessionTree = buildSessionTree(filteredSessions);
 
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const menuTween = revealElement(dropdownMenuRef.current, { y: -4, scale: 0.985, duration: 0.18 });
+    const itemTween = revealChildren(dropdownMenuRef.current, "[data-motion-menu-item]", {
+      y: 3,
+      limit: 12,
+      stagger: 0.018,
+      duration: 0.18,
+    });
+    return () => {
+      menuTween?.kill();
+      itemTween?.kill();
+    };
+  }, [dropdownOpen, recentCwds.length, customPathOpen, directoryBrowserOpen]);
+
+  useEffect(() => {
+    if (loading || error) return;
+    const tween = revealChildren(sessionListRef.current, "[data-motion-session-item]", {
+      y: 4,
+      limit: 20,
+      stagger: 0.016,
+      duration: 0.18,
+    });
+    return () => { tween?.kill(); };
+  }, [loading, error, selectedCwd, sessionRefreshDone, sessionTree.length]);
+
+  useEffect(() => {
+    if (!explorerOpen) return;
+    const tween = revealElement(explorerContentRef.current, { y: 4, duration: 0.18 });
+    return () => { tween?.kill(); };
+  }, [explorerOpen, selectedCwdProp, selectedCwd]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Header */}
       <div
+        ref={headerRef}
         style={{
-          padding: "12px 10px 10px",
+          padding: "10px 10px 9px",
           borderBottom: "1px solid var(--border)",
           flexShrink: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
           <AppTitle />
           <div style={{ display: "flex", gap: 6 }}>
             <button
@@ -498,31 +483,39 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               disabled={!selectedCwd}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                background: "var(--bg-hover)",
-                border: "1px solid var(--border)",
-                color: selectedCwd ? "var(--text-muted)" : "var(--text-dim)",
+                background: selectedCwd ? "color-mix(in srgb, var(--accent) 12%, var(--bg))" : "var(--bg-hover)",
+                border: `1px solid ${selectedCwd ? "color-mix(in srgb, var(--accent) 30%, var(--border))" : "var(--border)"}`,
+                color: selectedCwd ? "var(--accent)" : "var(--text-dim)",
                 cursor: selectedCwd ? "pointer" : "not-allowed",
-                height: 32,
-                paddingLeft: 10,
-                paddingRight: 12,
-                borderRadius: 7,
+                height: 30,
+                paddingLeft: 9,
+                paddingRight: 10,
+                borderRadius: 6,
                 fontSize: 12,
-                fontWeight: 500,
-                letterSpacing: "-0.01em",
+                fontWeight: 650,
+                letterSpacing: 0,
                 flexShrink: 0,
-                transition: "background 0.12s, color 0.12s, border-color 0.12s",
+                transition: "background 0.14s, color 0.14s, border-color 0.14s, transform 0.12s",
               }}
               title={selectedCwd ? `New session in ${selectedCwd}` : "Select a project first"}
               onMouseEnter={(e) => {
                 if (!selectedCwd) return;
-                e.currentTarget.style.background = "var(--bg-selected)";
+                e.currentTarget.style.background = "color-mix(in srgb, var(--accent) 18%, var(--bg))";
                 e.currentTarget.style.color = "var(--accent)";
-                e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
+                e.currentTarget.style.borderColor = "color-mix(in srgb, var(--accent) 42%, var(--border))";
+                e.currentTarget.style.transform = "translateY(-1px)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = selectedCwd ? "var(--text-muted)" : "var(--text-dim)";
-                e.currentTarget.style.borderColor = "var(--border)";
+                e.currentTarget.style.background = selectedCwd ? "color-mix(in srgb, var(--accent) 12%, var(--bg))" : "var(--bg-hover)";
+                e.currentTarget.style.color = selectedCwd ? "var(--accent)" : "var(--text-dim)";
+                e.currentTarget.style.borderColor = selectedCwd ? "color-mix(in srgb, var(--accent) 30%, var(--border))" : "var(--border)";
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+              onMouseDown={(e) => {
+                if (selectedCwd) e.currentTarget.style.transform = "translateY(1px)";
+              }}
+              onMouseUp={(e) => {
+                if (selectedCwd) e.currentTarget.style.transform = "translateY(-1px)";
               }}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -532,28 +525,32 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               New
             </button>
             <button
-              onClick={() => loadSessions(false)}
+              ref={sessionRefreshButtonRef}
+              onClick={() => {
+                rotateOnce(sessionRefreshButtonRef.current);
+                void loadSessions(false);
+              }}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center",
-                background: sessionRefreshDone ? "rgba(74,222,128,0.18)" : "var(--bg-hover)",
+                background: sessionRefreshDone ? "rgba(74,222,128,0.16)" : "transparent",
                 border: `1px solid ${sessionRefreshDone ? "rgba(74,222,128,0.4)" : "var(--border)"}`,
                 color: sessionRefreshDone ? "#4ade80" : "var(--text-muted)",
                 cursor: "pointer",
-                width: 32, height: 32,
-                borderRadius: 7,
+                width: 30, height: 30,
+                borderRadius: 6,
                 padding: 0,
                 flexShrink: 0,
-                transition: "background 0.3s, color 0.3s, border-color 0.3s",
+                transition: "background 0.22s, color 0.22s, border-color 0.22s",
               }}
               onMouseEnter={(e) => {
                 if (sessionRefreshDone) return;
-                e.currentTarget.style.background = "var(--bg-selected)";
+                e.currentTarget.style.background = "var(--bg-hover)";
                 e.currentTarget.style.color = "var(--accent)";
                 e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
               }}
               onMouseLeave={(e) => {
                 if (sessionRefreshDone) return;
-                e.currentTarget.style.background = "var(--bg-hover)";
+                e.currentTarget.style.background = "transparent";
                 e.currentTarget.style.color = "var(--text-muted)";
                 e.currentTarget.style.borderColor = "var(--border)";
               }}
@@ -583,10 +580,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               width: "100%",
               display: "flex",
               alignItems: "center",
-              padding: "6px 10px",
-              background: selectedCwd ? "var(--bg-hover)" : "rgba(37,99,235,0.06)",
-              border: selectedCwd ? "1px solid var(--border)" : "1px solid rgba(37,99,235,0.4)",
-              borderRadius: 7,
+              gap: 7,
+              padding: "6px 8px",
+              background: selectedCwd ? "transparent" : "rgba(37,99,235,0.06)",
+              border: selectedCwd ? "1px solid color-mix(in srgb, var(--border) 72%, transparent)" : "1px solid rgba(37,99,235,0.4)",
+              borderRadius: 6,
               cursor: singleWorkspace ? "default" : "pointer",
               fontSize: 12,
               color: "var(--text)",
@@ -594,6 +592,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               transition: "border-color 0.15s, background 0.15s",
             }}
           >
+            <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" style={{ color: selectedCwd ? "var(--text-dim)" : "var(--accent)", flexShrink: 0 }}>
+              <path d="M1.5 4A1 1 0 0 1 2.5 3h2l1 1.3h4A1 1 0 0 1 10.5 5.3V9a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1V4Z" />
+            </svg>
             <span
               style={{
                 flex: 1,
@@ -608,10 +609,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             >
               {selectedCwd ? shortenCwd(selectedCwd, homeDir) : (initialSessionId && !restoredRef.current ? "" : "Select project…")}
             </span>
+            {!singleWorkspace && (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-dim)", transform: dropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}>
+                <polyline points="2 3.5 5 6.5 8 3.5" />
+              </svg>
+            )}
           </button>
 
           {dropdownOpen && !singleWorkspace && (
             <div
+              ref={dropdownMenuRef}
               style={{
                 position: "absolute",
                 top: "calc(100% + 4px)",
@@ -628,6 +635,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               {recentCwds.map((cwd) => (
                 <button
                   key={cwd}
+                  data-motion-menu-item
                   onClick={() => {
                     setSelectedCwd(cwd);
                     setDropdownOpen(false);
@@ -666,6 +674,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               {/* Default cwd shortcut */}
               {!customPathOpen && !singleWorkspace && (
                 <button
+                  data-motion-menu-item
                   onClick={(e) => { e.stopPropagation(); handleDefaultCwd(); }}
                   style={{
                     display: "flex",
@@ -691,6 +700,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
               {nativeDirectoryPicker && !customPathOpen && !directoryBrowserOpen && !singleWorkspace && (
                 <button
+                  data-motion-menu-item
                   onClick={(e) => {
                     e.stopPropagation();
                     void openNativeDirectoryPicker();
@@ -726,6 +736,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
               {!customPathOpen && !directoryBrowserOpen && !singleWorkspace && (
                 <button
+                  data-motion-menu-item
                   onClick={(e) => {
                     e.stopPropagation();
                     openDirectoryBrowser();
@@ -913,6 +924,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               {/* Custom path entry */}
               {!customPathOpen && !directoryBrowserOpen && !singleWorkspace ? (
                 <button
+                  data-motion-menu-item
                   onClick={(e) => {
                     e.stopPropagation();
                     setCustomPathOpen(true);
@@ -1013,7 +1025,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       </div>
 
       {/* Session list */}
-      <div style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "0", minHeight: 80 }}>
+      <div ref={sessionListRef} style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "0", minHeight: 80 }}>
         {loading && (
           <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: 12 }}>
             Loading...
@@ -1057,7 +1069,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             overflow: "hidden",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", flexShrink: 0, minHeight: 34 }}>
             <button
               onClick={() => setExplorerOpen((v) => !v)}
               style={{
@@ -1065,15 +1077,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 alignItems: "center",
                 gap: 6,
                 flex: 1,
-                padding: "6px 10px",
+                padding: "7px 10px",
                 background: "none",
                 border: "none",
                 color: "var(--text-muted)",
                 cursor: "pointer",
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 600,
-                letterSpacing: "0.05em",
-                textTransform: "uppercase",
+                letterSpacing: 0,
                 textAlign: "left",
               }}
             >
@@ -1088,11 +1099,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </button>
             <button
               onClick={() => {
+                rotateOnce(explorerRefreshButtonRef.current);
                 setExplorerKey((k) => k + 1);
                 setExplorerRefreshDone(true);
                 if (explorerRefreshTimerRef.current) clearTimeout(explorerRefreshTimerRef.current);
                 explorerRefreshTimerRef.current = setTimeout(() => setExplorerRefreshDone(false), 2000);
               }}
+              ref={explorerRefreshButtonRef}
               title="Refresh explorer"
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -1121,7 +1134,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </button>
           </div>
           {explorerOpen && (
-            <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+            <div ref={explorerContentRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
               <FileExplorer
                 cwd={selectedCwdProp ?? selectedCwd!}
                 onOpenFile={onOpenFile ?? (() => {})}
@@ -1280,6 +1293,7 @@ function SessionItem({
 
   return (
     <div
+      data-motion-session-item
       onClick={confirmDelete || renaming ? undefined : onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); }}
@@ -1296,7 +1310,7 @@ function SessionItem({
         borderLeft: confirmDelete
           ? "2px solid #ef4444"
           : isSelected ? "2px solid var(--accent)" : "2px solid transparent",
-        transition: "background 0.1s",
+        transition: "background 0.14s ease, border-color 0.14s ease, opacity 0.14s ease",
         opacity: deleting ? 0.5 : 1,
         gap: 6,
         overflow: "hidden",

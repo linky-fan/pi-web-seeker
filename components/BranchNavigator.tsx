@@ -19,6 +19,8 @@ interface Props {
   onToggle?: () => void;
   /** Whether a session is currently active (used to show appropriate empty reason) */
   hasSession?: boolean;
+  /** Render only the branch panel content; parent owns the trigger/dropdown chrome */
+  panelOnly?: boolean;
 }
 
 type BranchLabels = Record<string, string>;
@@ -592,10 +594,10 @@ function BranchPanel({
   );
 }
 
-export function BranchNavigator({ sessionId, tree, activeLeafId, onLeafChange, inline, containerRef, open: openProp, onToggle, hasSession }: Props) {
+export function BranchNavigator({ sessionId, tree, activeLeafId, onLeafChange, inline, containerRef, open: openProp, onToggle, hasSession, panelOnly }: Props) {
   const { t } = useLocale();
   const [openInternal, setOpenInternal] = useState(false);
-  const open = openProp !== undefined ? openProp : openInternal;
+  const open = panelOnly ? true : openProp !== undefined ? openProp : openInternal;
   const btnRef = useRef<HTMLButtonElement>(null);
   const labelInputRef = useRef<HTMLInputElement>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -695,6 +697,9 @@ export function BranchNavigator({ sessionId, tree, activeLeafId, onLeafChange, i
     </svg>
   );
 
+  if (panelOnly) {
+    return panel;
+  }
 
   if (inline) {
     return (

@@ -3,6 +3,7 @@
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent, useId } from "react";
 import { useLocale } from "@/lib/i18n";
 import { apiPath } from "@/lib/api-path";
+import { popOnce, revealChildren, revealElement } from "@/lib/motion";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -224,12 +225,65 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
+  const thinkingDropdownPanelRef = useRef<HTMLDivElement>(null);
   const snippetDropdownRef = useRef<HTMLDivElement>(null);
+  const snippetDropdownPanelRef = useRef<HTMLDivElement>(null);
+  const inputShellRef = useRef<HTMLDivElement>(null);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
+  const sendButtonRef = useRef<HTMLButtonElement>(null);
+  const streamActionsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<string[]>([]);
   const historyIndexRef = useRef<number | null>(null);
   const draftBeforeHistoryRef = useRef("");
   const effectiveDraftStorageKey = draftStorageKey ? `${DRAFT_STORAGE_KEY}:${draftStorageKey}` : DRAFT_STORAGE_KEY;
+  const canSend = value.trim().length > 0 || attachedImages.length > 0;
+  const prevCanSendRef = useRef(canSend);
+
+  useEffect(() => {
+    const tween = revealElement(inputShellRef.current, { y: 4, duration: 0.2 });
+    const controlsTween = revealChildren(bottomBarRef.current, "[data-motion-control]", {
+      y: 3,
+      limit: 8,
+      stagger: 0.02,
+      duration: 0.18,
+    });
+    return () => {
+      tween?.kill();
+      controlsTween?.kill();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (canSend && !prevCanSendRef.current) popOnce(sendButtonRef.current);
+    prevCanSendRef.current = canSend;
+  }, [canSend]);
+
+  useEffect(() => {
+    if (isStreaming) {
+      const tween = revealElement(streamActionsRef.current, { y: 3, duration: 0.18 });
+      return () => { tween?.kill(); };
+    }
+    return undefined;
+  }, [isStreaming]);
+
+  useEffect(() => {
+    if (!snippetDropdownOpen) return;
+    const tween = revealElement(snippetDropdownPanelRef.current, { y: 5, scale: 0.99, duration: 0.16 });
+    return () => { tween?.kill(); };
+  }, [snippetDropdownOpen]);
+
+  useEffect(() => {
+    if (!modelDropdownOpen) return;
+    const tween = revealElement(modelDropdownPanelRef.current, { y: 5, scale: 0.99, duration: 0.16 });
+    return () => { tween?.kill(); };
+  }, [modelDropdownOpen]);
+
+  useEffect(() => {
+    if (!thinkingDropdownOpen) return;
+    const tween = revealElement(thinkingDropdownPanelRef.current, { y: 5, scale: 0.99, duration: 0.16 });
+    return () => { tween?.kill(); };
+  }, [thinkingDropdownOpen]);
 
   const updateMentionState = useCallback((text: string, cursor?: number) => {
     const nextCursor = cursor ?? textareaRef.current?.selectionStart ?? text.length;
@@ -732,6 +786,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
         {/* Main input */}
         <div
+          ref={inputShellRef}
           style={{
             position: "relative",
             display: "flex",
@@ -866,7 +921,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           />
 
           {isStreaming ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-end" }}>
+            <div ref={streamActionsRef} style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-end" }}>
               {onSteer && (
                 <button
                   onClick={() => sendQueued("steer")}
@@ -917,23 +972,27 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           ) : (
             <button
-              onClick={handleSend}
-              disabled={!value.trim() && !attachedImages.length}
+              ref={sendButtonRef}
+              onClick={() => {
+                if (canSend) popOnce(sendButtonRef.current);
+                void handleSend();
+              }}
+              disabled={!canSend}
               style={{
                 flexShrink: 0,
                 alignSelf: "flex-end",
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "7px 14px",
-                background: (value.trim() || attachedImages.length) ? "var(--accent)" : "var(--bg-panel)",
+                background: canSend ? "var(--accent)" : "var(--bg-panel)",
                 border: "none",
                 borderRadius: 8,
-                color: (value.trim() || attachedImages.length) ? "#fff" : "var(--text-dim)",
-                cursor: (value.trim() || attachedImages.length) ? "pointer" : "not-allowed",
+                color: canSend ? "#fff" : "var(--text-dim)",
+                cursor: canSend ? "pointer" : "not-allowed",
                 fontSize: 13,
                 fontWeight: 600,
                 letterSpacing: "-0.01em",
-                boxShadow: (value.trim() || attachedImages.length) ? "0 1px 3px rgba(37,99,235,0.25)" : "none",
-                transition: "background 0.15s, box-shadow 0.15s",
+                boxShadow: canSend ? "0 1px 3px rgba(37,99,235,0.25)" : "none",
+                transition: "background 0.15s, box-shadow 0.15s, color 0.15s",
               }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -946,11 +1005,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         </div>
 
         {/* Bottom bar: left | center (context) | right */}
-        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", rowGap: 6 }}>
+        <div ref={bottomBarRef} style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", rowGap: 6 }}>
 
           {/* LEFT: attach + snippets + model selector */}
           <div style={{ flex: "1 1 280px", minWidth: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", rowGap: 4 }}>
             <label
+              data-motion-control
               htmlFor={imageInputId}
               role="button"
               aria-label={t("chat.attachImage")}
@@ -1005,6 +1065,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </label>
             <div ref={snippetDropdownRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
+                data-motion-control
                 onClick={() => setSnippetDropdownOpen((v) => !v)}
                 title={t("chat.promptSnippetsTitle")}
                 aria-label={t("chat.promptSnippetsTitle")}
@@ -1044,6 +1105,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </button>
               {snippetDropdownOpen && (
                 <div
+                  ref={snippetDropdownPanelRef}
                   role="menu"
                   style={{
                     position: "absolute", bottom: "calc(100% + 6px)", left: 0,
@@ -1085,7 +1147,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
             {/* Model selector — visible always, disabled during streaming */}
             {modelOptions.length > 0 && currentName && onModelChange && (
-                <div ref={dropdownRef} style={{ position: "relative" }}>
+                <div ref={dropdownRef} data-motion-control style={{ position: "relative" }}>
                   <button
                     onClick={(e) => {
                       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -1192,7 +1254,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {/* RIGHT: thinking + compact + sound (idle) | Stop + sound (streaming) */}
           <div style={{ flex: "0 1 auto", minWidth: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2, marginLeft: "auto", flexWrap: "wrap", rowGap: 4 }}>
             {!isStreaming && onThinkingLevelChange && (
-              <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
+              <div ref={thinkingDropdownRef} data-motion-control style={{ position: "relative" }}>
                 <button
                   onClick={() => !isStreaming && setThinkingDropdownOpen((v) => !v)}
                   disabled={isStreaming}
@@ -1233,7 +1295,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   })()}</span>
                 </button>
                 {thinkingDropdownOpen && (
-                  <div style={{
+                  <div ref={thinkingDropdownPanelRef} style={{
                     position: "absolute", bottom: "calc(100% + 6px)", right: 0,
                     zIndex: 100, background: "var(--bg)", border: "1px solid var(--border)",
                     borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
@@ -1293,7 +1355,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               const compactColor = isCompacting ? "#ef4444" : hasContextWindow ? contextTone.color : "var(--text-muted)";
               const compactBorder = isCompacting ? "rgba(239,68,68,0.28)" : hasContextWindow ? contextTone.border : "transparent";
               return (
-              <div style={{ position: "relative" }}>
+              <div data-motion-control style={{ position: "relative" }}>
                 {compactError && (
                   <div style={{
                     position: "absolute", bottom: "calc(100% + 6px)", right: 0,
@@ -1384,6 +1446,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
             {isStreaming && (
               <button
+                data-motion-control
                 onClick={onAbort}
                 title={t("chat.stopTitle")}
                 style={{
@@ -1411,6 +1474,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
             {onSoundToggle !== undefined && (
               <button
+                data-motion-control
                 onClick={onSoundToggle}
                 title={soundEnabled ? t("chat.soundOnTitle") : t("chat.soundOffTitle")}
                 style={{
