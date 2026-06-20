@@ -190,6 +190,14 @@ export interface SessionContext {
   model: { provider: string; modelId: string } | null;
 }
 
+export interface ToolExecutionStatus {
+  id: string;
+  name: string;
+  startedAt: number;
+  updatedAt: number;
+  outputText: string;
+}
+
 // RPC types
 export interface RpcSessionState {
   model?: { provider: string; id: string; contextWindow?: number };

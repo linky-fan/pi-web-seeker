@@ -17,6 +17,7 @@ import type {
   UserMessage,
   AssistantMessage,
   ToolResultMessage,
+  ToolExecutionStatus,
   AssistantContentBlock,
   TextContent,
   ImageContent,
@@ -29,6 +30,8 @@ interface Props {
   message: AgentMessage;
   isStreaming?: boolean;
   toolResults?: Map<string, ToolResultMessage>;
+  runningToolIds?: Set<string>;
+  toolExecutionStatuses?: Map<string, ToolExecutionStatus>;
   modelNames?: Record<string, string>;
   comsNetResponse?: ComsNetResponseHint;
   entryId?: string;
@@ -95,7 +98,7 @@ function estimateBlockChars(block: AssistantContentBlock): number {
   return 0;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, comsNetResponse, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, runningToolIds, toolExecutionStatuses, modelNames, comsNetResponse, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
   if (message.role === "user") {
     const legacyComsNetEvent = parseLegacyComsNetUserMessage(message as UserMessage);
     if (legacyComsNetEvent) {
@@ -126,7 +129,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
         );
       }
     }
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} runningToolIds={runningToolIds} toolExecutionStatuses={toolExecutionStatuses} modelNames={modelNames} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -781,6 +784,8 @@ function AssistantMessageView({
   message,
   isStreaming,
   toolResults,
+  runningToolIds,
+  toolExecutionStatuses,
   modelNames,
   showTimestamp,
   prevTimestamp,
@@ -788,6 +793,8 @@ function AssistantMessageView({
   message: AssistantMessage;
   isStreaming?: boolean;
   toolResults?: Map<string, ToolResultMessage>;
+  runningToolIds?: Set<string>;
+  toolExecutionStatuses?: Map<string, ToolExecutionStatus>;
   modelNames?: Record<string, string>;
   showTimestamp?: boolean;
   prevTimestamp?: number;
@@ -946,7 +953,7 @@ function AssistantMessageView({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {blocks.map((block, i) => (
-          <BlockView key={i} block={block} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(i) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} />
+          <BlockView key={i} block={block} toolResults={toolResults} runningToolIds={runningToolIds} toolExecutionStatuses={toolExecutionStatuses} isStreaming={isStreaming} streamingDuration={streamingDurations.get(i) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} />
         ))}
       </div>
 
@@ -999,7 +1006,7 @@ function AssistantMessageView({
   );
 }
 
-function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCallDurations }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number> }) {
+function BlockView({ block, toolResults, runningToolIds, toolExecutionStatuses, isStreaming, streamingDuration, toolCallDurations }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; runningToolIds?: Set<string>; toolExecutionStatuses?: Map<string, ToolExecutionStatus>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number> }) {
   if (block.type === "text") {
     return <TextBlock block={block as TextContent} />;
   }
@@ -1009,12 +1016,14 @@ function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCal
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
+    const isRunning = Boolean((tc.toolCallId && runningToolIds?.has(tc.toolCallId)) || (isStreaming && !result));
+    const liveStatus = tc.toolCallId ? toolExecutionStatuses?.get(tc.toolCallId) : undefined;
     const duration = toolCallDurations?.get(tc.toolCallId);
     const comsNetToolEvent = parseComsNetToolCall(tc, result);
     if (comsNetToolEvent) {
       return <ComsNetMessageCard event={comsNetToolEvent} />;
     }
-    return <ToolCallBlock block={tc} result={result} isRunning={isStreaming && !result} duration={duration} />;
+    return <ToolCallBlock block={tc} result={result} isRunning={isRunning} liveStatus={liveStatus} duration={duration} />;
   }
   return null;
 }
@@ -1167,10 +1176,50 @@ function ThinkingBlock({ block, duration }: { block: ThinkingContent; duration?:
   );
 }
 
+function formatDurationBrief(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return rest > 0 ? `${minutes}m ${rest}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const minuteRest = minutes % 60;
+  return minuteRest > 0 ? `${hours}h ${minuteRest}m` : `${hours}h`;
+}
 
-function ToolCallBlock({ block, result, isRunning, duration }: { block: ToolCallContent; result?: ToolResultMessage; isRunning?: boolean; duration?: number }) {
+function toolTimeoutSeconds(input: Record<string, unknown>): number | null {
+  const value = input.timeout ?? input.timeoutSeconds ?? input.timeout_ms ?? input.timeoutMs;
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value > 10_000 ? Math.round(value / 1000) : Math.round(value);
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed > 10_000 ? Math.round(parsed / 1000) : Math.round(parsed);
+  }
+  return null;
+}
+
+function ToolCallBlock({ block, result, isRunning, liveStatus, duration }: { block: ToolCallContent; result?: ToolResultMessage; isRunning?: boolean; liveStatus?: ToolExecutionStatus; duration?: number }) {
+  const { t } = useLocale();
   const [expanded, setExpanded] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [nowMs, setNowMs] = useState(0);
   const inputStr = JSON.stringify(block.input, null, 2);
+  const timeout = toolTimeoutSeconds(block.input);
+
+  useEffect(() => {
+    if (!isRunning) {
+      setElapsed(0);
+      return;
+    }
+    const started = liveStatus?.startedAt ?? Date.now();
+    setNowMs(Date.now());
+    const interval = window.setInterval(() => {
+      const now = Date.now();
+      setNowMs(now);
+      setElapsed(Math.max(1, Math.round((now - started) / 1000)));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [isRunning, liveStatus?.startedAt]);
 
   // Result display
   const resultText = result
@@ -1178,7 +1227,27 @@ function ToolCallBlock({ block, result, isRunning, duration }: { block: ToolCall
     : null;
   const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
   const isError = result?.isError ?? false;
-  const toolColor = isError ? "#f87171" : isRunning ? "var(--accent)" : "#16a34a";
+  const isMissingResult = !result && !isRunning;
+  const secondsSinceUpdate = isRunning && liveStatus?.updatedAt
+    ? Math.max(0, Math.round(((nowMs || liveStatus.updatedAt) - liveStatus.updatedAt) / 1000))
+    : 0;
+  const hasLiveOutput = Boolean(liveStatus?.outputText.trim());
+  const showNoOutputWarning = Boolean(isRunning && elapsed >= 60 && (!hasLiveOutput || secondsSinceUpdate >= 60));
+  const toolColor = isError ? "#f87171" : isRunning ? "var(--accent)" : isMissingResult ? "#f59e0b" : "#16a34a";
+  const borderColor = isError
+    ? "rgba(248,113,113,0.45)"
+    : isRunning
+      ? "rgba(96,165,250,0.35)"
+      : isMissingResult
+        ? "rgba(245,158,11,0.38)"
+        : "rgba(34,197,94,0.25)";
+  const background = isError
+    ? "rgba(248,113,113,0.05)"
+    : isRunning
+      ? "rgba(96,165,250,0.06)"
+      : isMissingResult
+        ? "rgba(245,158,11,0.07)"
+        : "rgba(34,197,94,0.04)";
 
   return (
     <div
@@ -1186,8 +1255,8 @@ function ToolCallBlock({ block, result, isRunning, duration }: { block: ToolCall
         borderRadius: 7,
         overflow: "hidden",
         fontSize: 12,
-        border: isError ? "1px solid rgba(248,113,113,0.45)" : isRunning ? "1px solid rgba(96,165,250,0.35)" : "1px solid rgba(34,197,94,0.25)",
-        background: isError ? "rgba(248,113,113,0.05)" : isRunning ? "rgba(96,165,250,0.06)" : "rgba(34,197,94,0.04)",
+        border: `1px solid ${borderColor}`,
+        background,
       }}
     >
       {/* ── Tool call header ── */}
@@ -1213,12 +1282,22 @@ function ToolCallBlock({ block, result, isRunning, duration }: { block: ToolCall
         </span>
         {isRunning && (
           <span style={{ color: "var(--accent)", fontSize: 10, flexShrink: 0 }}>
-            running
+            {t("message.tool.running")} {elapsed > 0 ? formatDurationBrief(elapsed) : ""}
+          </span>
+        )}
+        {isMissingResult && (
+          <span style={{ color: "#f59e0b", fontSize: 10, flexShrink: 0 }}>
+            {t("message.tool.missingResult")}
           </span>
         )}
         <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
           {getToolPreview(block)}
         </span>
+        {timeout !== null && (
+          <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+            {t("message.tool.timeout", { duration: formatDurationBrief(timeout) })}
+          </span>
+        )}
         {duration !== undefined && (
           <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
         )}
@@ -1245,6 +1324,54 @@ function ToolCallBlock({ block, result, isRunning, duration }: { block: ToolCall
         >
           {inputStr}
         </pre>
+      )}
+
+      {isMissingResult && (
+        <div style={{
+          padding: "6px 10px",
+          borderTop: "1px solid rgba(245,158,11,0.22)",
+          color: "var(--text-dim)",
+          fontSize: 11,
+          lineHeight: 1.45,
+        }}>
+          {t("message.tool.missingHint")}
+        </div>
+      )}
+
+      {isRunning && (hasLiveOutput || showNoOutputWarning) && (
+        <div style={{
+          padding: "7px 10px",
+          borderTop: "1px solid rgba(96,165,250,0.18)",
+          color: "var(--text-dim)",
+          fontSize: 11,
+          lineHeight: 1.45,
+          background: "rgba(96,165,250,0.04)",
+        }}>
+          {showNoOutputWarning && (
+            <div style={{ marginBottom: hasLiveOutput ? 6 : 0, color: "#f59e0b" }}>
+              {t("message.tool.noRecentOutput", { duration: formatDurationBrief(secondsSinceUpdate || elapsed) })}
+            </div>
+          )}
+          {hasLiveOutput && (
+            <>
+              <div style={{ marginBottom: 4, fontWeight: 600, color: "var(--text-muted)" }}>
+                {t("message.tool.latestOutput")}
+              </div>
+              <pre style={{
+                margin: 0,
+                maxHeight: 140,
+                overflow: "auto",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                fontSize: 11,
+                lineHeight: 1.45,
+                color: "var(--text-muted)",
+              }}>
+                {liveStatus!.outputText}
+              </pre>
+            </>
+          )}
+        </div>
       )}
 
       {/* ── Paired result — only shown when expanded ── */}

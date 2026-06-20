@@ -522,6 +522,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
     taskError,
     agentPhase,
+    toolExecutionStatuses,
     isNew,
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
@@ -608,6 +609,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     }
     return history;
   }, [messages]);
+
+  const runningToolIds = useMemo(() => {
+    if (agentPhase?.kind !== "running_tools") return new Set<string>();
+    return new Set(agentPhase.tools.map((tool) => tool.id));
+  }, [agentPhase]);
 
   const messageRenderData = useMemo(() => {
     const toolResultsMap = new Map<string, import("@/lib/types").ToolResultMessage>();
@@ -882,6 +888,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     key={messageKey}
                     message={msg}
                     toolResults={messageRenderData.toolResultsMap}
+                    runningToolIds={runningToolIds}
+                    toolExecutionStatuses={toolExecutionStatuses}
                     modelNames={modelNames}
                     comsNetResponse={messageRenderData.comsNetResponses.get(idx)}
                     entryId={entryIds[idx]}
@@ -920,7 +928,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             })()}
 
             {streamState.isStreaming && streamState.streamingMessage && (
-              <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} />
+              <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming runningToolIds={runningToolIds} toolExecutionStatuses={toolExecutionStatuses} modelNames={modelNames} />
             )}
 
             {agentRunning && !streamState.streamingMessage && (

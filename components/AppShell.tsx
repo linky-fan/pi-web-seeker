@@ -85,6 +85,11 @@ const sessionExportLinkStyle = {
   textDecoration: "none",
 } as const;
 
+const sessionImportButtonStyle = {
+  ...sessionExportLinkStyle,
+  cursor: "pointer",
+} as const;
+
 function normalizeExplorerMentionPath(filePath: string): { path: string; projectRelative: boolean } {
   const normalized = filePath.replace(/\\/g, "/");
   const alreadyQualified = normalized.startsWith("/") ||
@@ -163,6 +168,9 @@ export function AppShell() {
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"session" | "system" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const sessionImportInputRef = useRef<HTMLInputElement>(null);
+  const [sessionImporting, setSessionImporting] = useState(false);
+  const [sessionImportError, setSessionImportError] = useState<string | null>(null);
 
   const toggleTopPanel = useCallback((panel: "session" | "system") => {
     setActiveTopPanel((cur) => cur === panel ? null : panel);
@@ -277,6 +285,43 @@ export function AppShell() {
       id: newSessionId,
     }));
     router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
+  }, [router]);
+
+  const handleSessionImportClick = useCallback(() => {
+    setSessionImportError(null);
+    if (sessionImportInputRef.current) sessionImportInputRef.current.value = "";
+    sessionImportInputRef.current?.click();
+  }, []);
+
+  const handleSessionImportFile = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    setSessionImporting(true);
+    setSessionImportError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(apiPath("sessions/import"), {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json() as { session?: SessionInfo; error?: string };
+      if (!res.ok || !data.session) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setNewSessionCwd(null);
+      setSelectedSession(data.session);
+      setRefreshKey((k) => k + 1);
+      setSessionKey((k) => k + 1);
+      setBranchTree([]);
+      setBranchActiveLeafId(null);
+      setSystemPrompt(null);
+      setActiveTopPanel(null);
+      router.replace(`?session=${encodeURIComponent(data.session.id)}`, { scroll: false });
+    } catch (error) {
+      setSessionImportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSessionImporting(false);
+      event.currentTarget.value = "";
+    }
   }, [router]);
 
   const handleInitialRestoreDone = useCallback(() => {
@@ -406,6 +451,13 @@ export function AppShell() {
 
   return (
     <>
+    <input
+      ref={sessionImportInputRef}
+      type="file"
+      accept=".json,.jsonl,application/json,application/x-ndjson"
+      onChange={handleSessionImportFile}
+      style={{ display: "none" }}
+    />
     <div style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
       {/* Mobile overlay backdrop */}
       <div
@@ -635,6 +687,17 @@ export function AppShell() {
                       {t("session.exportTitle")}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={handleSessionImportClick}
+                        disabled={sessionImporting}
+                        style={{
+                          ...sessionImportButtonStyle,
+                          opacity: sessionImporting ? 0.6 : 1,
+                        }}
+                      >
+                        {sessionImporting ? t("session.importing") : t("session.import")}
+                      </button>
                       {selectedSession ? (
                         <>
                           <a
@@ -659,6 +722,16 @@ export function AppShell() {
                       )}
                     </div>
                   </div>
+                  {sessionImportError && (
+                    <div style={{
+                      padding: "7px 16px",
+                      borderBottom: "1px solid var(--border)",
+                      color: "var(--danger)",
+                      fontSize: 12,
+                    }}>
+                      {t("session.importFailed")}: {sessionImportError}
+                    </div>
+                  )}
                   <div style={{ paddingTop: 1 }}>
                     <div style={{ padding: "8px 16px 4px", fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>
                       {t("session.branches")}

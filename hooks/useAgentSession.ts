@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useReducer, useMemo } from "react";
-import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
+import type { AgentMessage, SessionInfo, SessionTreeNode, TextContent, ToolExecutionStatus } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { getSubagentMessageKey } from "@/lib/subagents";
 import { sendAgentCommand } from "@/lib/agent-client";
@@ -60,7 +60,29 @@ type LiveAgentState = {
 
 type AgentStateResponse = { running: boolean; state?: LiveAgentState };
 
+function userMessageKey(message: AgentMessage): string | null {
+  if (message.role !== "user") return null;
+  if (typeof message.content === "string") return `text:${message.content.trim()}`;
+  return message.content
+    .map((block) => {
+      if (block.type === "text") return `text:${block.text.trim()}`;
+      const data = block.source.data ?? "";
+      const url = block.source.url ?? "";
+      return `image:${block.source.media_type ?? ""}:${data.length}:${data.slice(0, 64)}:${url}`;
+    })
+    .join("\n");
+}
+
+function userMessagesMatch(a: AgentMessage, b: AgentMessage): boolean {
+  if (a.role !== "user" || b.role !== "user") return false;
+  return userMessageKey(a) === userMessageKey(b);
+}
+
 function appendCompletedMessage(messages: AgentMessage[], message: AgentMessage): AgentMessage[] {
+  if (message.role === "user") {
+    const last = messages[messages.length - 1];
+    return last && userMessagesMatch(last, message) ? messages : [...messages, message];
+  }
   if (message.role !== "custom") return [...messages, message];
   const key = getSubagentMessageKey(message);
   if (!key) return [...messages, message];
@@ -73,6 +95,15 @@ export type AgentPhase =
   | { kind: "waiting_model" }
   | { kind: "running_tools"; tools: { id: string; name: string }[] }
   | null;
+
+function textFromToolPartial(partial: unknown): string {
+  const content = (partial as { content?: unknown } | null)?.content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((block): block is TextContent => Boolean(block) && (block as { type?: unknown }).type === "text")
+    .map((block) => block.text)
+    .join("\n");
+}
 
 export interface UseAgentSessionOptions {
   session: SessionInfo | null;
@@ -133,8 +164,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [compactError, setCompactError] = useState<string | null>(null);
   const [taskError, setTaskError] = useState<string | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
+  const [toolExecutionStatuses, setToolExecutionStatuses] = useState<Map<string, ToolExecutionStatus>>(new Map());
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const messagesRef = useRef<AgentMessage[]>([]);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const agentRunningRef = useRef(false);
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
@@ -145,6 +178,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   const setNewSessionModel = opts.setNewSessionModel ?? setNewSessionModelState;
+  messagesRef.current = messages;
 
   const currentModel = currentModelOverride ?? data?.context.model ?? pendingModel ?? null;
   const displayModel = isNew ? newSessionModel : currentModel;
@@ -284,11 +318,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setTaskError(null);
         setAgentRunning(true);
         setAgentPhase({ kind: "waiting_model" });
+        setToolExecutionStatuses(new Map());
         dispatch({ type: "start" });
         break;
       case "agent_end":
         setAgentRunning(false);
         setAgentPhase(null);
+        setToolExecutionStatuses(new Map());
         setRetryInfo(null);
         dispatch({ type: "end" });
         if (sessionIdRef.current) {
@@ -307,7 +343,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "message_update": {
         const msg = event.message as Partial<AgentMessage> | undefined;
         if (msg) {
-          dispatch({ type: "update", message: normalizeToolCalls(msg as AgentMessage) });
+          const normalized = normalizeToolCalls(msg as AgentMessage);
+          const last = messagesRef.current[messagesRef.current.length - 1];
+          if (!(normalized.role === "user" && last && userMessagesMatch(last, normalized))) {
+            dispatch({ type: "update", message: normalized });
+          }
         }
         setAgentPhase(null);
         break;
@@ -327,6 +367,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "tool_execution_start": {
         const id = event.toolCallId as string;
         const name = event.toolName as string;
+        const now = Date.now();
+        setToolExecutionStatuses((prev) => {
+          const existing = prev.get(id);
+          const next = new Map(prev);
+          next.set(id, {
+            id,
+            name,
+            startedAt: existing?.startedAt ?? now,
+            updatedAt: now,
+            outputText: existing?.outputText ?? "",
+          });
+          return next;
+        });
         setAgentPhase((prev) => {
           const tools = prev?.kind === "running_tools" ? [...prev.tools] : [];
           if (!tools.some((t) => t.id === id)) tools.push({ id, name });
@@ -334,8 +387,33 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         });
         break;
       }
+      case "tool_execution_update": {
+        const id = event.toolCallId as string;
+        const name = event.toolName as string;
+        const outputText = textFromToolPartial(event.partialResult);
+        const now = Date.now();
+        setToolExecutionStatuses((prev) => {
+          const existing = prev.get(id);
+          const next = new Map(prev);
+          next.set(id, {
+            id,
+            name: name || existing?.name || "tool",
+            startedAt: existing?.startedAt ?? now,
+            updatedAt: now,
+            outputText: outputText || existing?.outputText || "",
+          });
+          return next;
+        });
+        break;
+      }
       case "tool_execution_end": {
         const id = event.toolCallId as string;
+        setToolExecutionStatuses((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Map(prev);
+          next.delete(id);
+          return next;
+        });
         setAgentPhase((prev) => {
           if (prev?.kind !== "running_tools") return prev;
           const tools = prev.tools.filter((t) => t.id !== id);
@@ -665,7 +743,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
-    taskError, agentPhase,
+    taskError, agentPhase, toolExecutionStatuses,
     isNew,
     // Refs
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,

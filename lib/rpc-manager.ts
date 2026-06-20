@@ -28,6 +28,28 @@ interface PendingGuide {
   images?: Array<{ type: "image"; data: string; mimeType: string }>;
 }
 
+interface ToolCallHookContext {
+  toolCall: { id?: string; name?: string };
+  args: unknown;
+}
+
+interface BeforeToolCallResult {
+  block?: boolean;
+  reason?: string;
+}
+
+type BeforeToolCallHook = (
+  context: ToolCallHookContext,
+  signal?: AbortSignal
+) => Promise<BeforeToolCallResult | undefined>;
+
+interface AgentWithToolHooks {
+  beforeToolCall?: BeforeToolCallHook;
+}
+
+const MAX_FOREGROUND_TIMEOUT_SECONDS = 300;
+const LONG_TASK_TIMEOUT_SECONDS = 120;
+
 function getRuntimeOsLabel(): string {
   switch (process.platform) {
     case "darwin":
@@ -83,8 +105,94 @@ function buildRuntimeSystemPrompt(cwd: string): string {
     "- Prefer existing package scripts before inventing direct framework commands.",
     "- File lookup scope: when a file is requested by a bare name, only check the current working directory itself. Do not run recursive or global searches such as `find`, `rg --files`, or `Get-ChildItem -Recurse` to locate it.",
     "- Only read/search outside the current directory level when the user provides a complete path, either absolute or explicitly relative from the working directory (for example `./components/AppShell.tsx` or `components/AppShell.tsx`).",
+    "- Long-running commands must stay observable and recoverable. Do not run downloads, renders, transcodes, builds, test suites, model jobs, or other slow tasks as one foreground command with a very large timeout.",
+    "- For tasks expected to take more than 120 seconds, use a job-style loop: start the task in the background, write logs to a known file, print the PID and log path, then poll with short commands that inspect process status, recent logs, and output file size.",
+    "- For large or unreliable downloads, prefer resumable commands such as `curl -L -C -` or tool-specific resume flags. Use short time windows and repeat progress checks instead of waiting silently for completion.",
+    "- For video or audio rendering, first render a small sample or still frame to estimate duration. Run the full render as a background job with a log file, then check progress periodically with short `tail`, `ps`, `ls`, or tool-specific status commands.",
+    "- Keep individual bash timeouts modest unless the user explicitly asks to block. Prefer 10-60 seconds for status checks and avoid timeouts over 300 seconds for a single foreground command.",
     "- Do not print secrets from environment variables, auth files, or local config.",
   ].join("\n");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function numberFromUnknown(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function isBackgroundJobCommand(command: string): boolean {
+  return /\b(nohup|setsid|disown)\b/i.test(command) ||
+    /\bStart-Process\b/i.test(command) ||
+    /(^|\s)&\s*(?:[#;]|$)/.test(command) ||
+    />\s*[^&\n]+\s*2>&1\s*&/i.test(command);
+}
+
+function isLikelyLongRunningCommand(command: string): boolean {
+  return /\b(remotion\s+render|ffmpeg|ffprobe|curl|wget|aria2c|yt-dlp)\b/i.test(command);
+}
+
+function hasShortDownloadLimit(command: string): boolean {
+  return /\b(--max-time|-m|--timeout|--connect-timeout|--speed-time)\b/i.test(command);
+}
+
+function longRunningToolBlockReason(command: string, timeout?: number): string | null {
+  if (isBackgroundJobCommand(command)) return null;
+
+  const longTask = isLikelyLongRunningCommand(command);
+  if (timeout !== undefined && timeout > MAX_FOREGROUND_TIMEOUT_SECONDS) {
+    return [
+      `Blocked by Pi Web long-running tool guard: this foreground bash command requested timeout=${timeout}s.`,
+      "",
+      "Do not wait for slow downloads, renders, transcodes, builds, or tests in one foreground tool call.",
+      "Use a job-style loop instead:",
+      "1. Start the task in the background.",
+      "2. Redirect output to a known log file.",
+      "3. Print the PID and log path.",
+      "4. Poll with short commands that inspect process status, recent logs, and output file size.",
+      "",
+      "For downloads, use resumable options such as `curl -L -C -` plus short `--max-time` windows.",
+      "For video/audio renders, render a small sample first, then run the full render as a background job and poll the log.",
+    ].join("\n");
+  }
+
+  if (longTask && (timeout === undefined || timeout > LONG_TASK_TIMEOUT_SECONDS)) {
+    const downloadHint = /\b(curl|wget|aria2c)\b/i.test(command) && !hasShortDownloadLimit(command)
+      ? "\nFor this download, add resume and short-window options, for example `curl -L -C - --max-time 60 -o <file> <url>`."
+      : "";
+    return [
+      "Blocked by Pi Web long-running tool guard: this looks like a long-running foreground task.",
+      "",
+      `Use a timeout of ${LONG_TASK_TIMEOUT_SECONDS}s or less for foreground checks, or start it as a background job with a log file and poll progress.${downloadHint}`,
+    ].join("\n");
+  }
+
+  return null;
+}
+
+function installLongRunningToolGuard(session: AgentSessionLike): void {
+  const agent = session.agent as AgentWithToolHooks;
+  const existingBeforeToolCall = agent.beforeToolCall?.bind(agent);
+  agent.beforeToolCall = async (context, signal) => {
+    const existingResult = await existingBeforeToolCall?.(context, signal);
+    if (existingResult?.block) return existingResult;
+    if (context.toolCall.name !== "bash" || !isRecord(context.args)) return existingResult;
+
+    const command = typeof context.args.command === "string" ? context.args.command : "";
+    if (!command.trim()) return existingResult;
+
+    const timeout = numberFromUnknown(context.args.timeout);
+    const reason = longRunningToolBlockReason(command, timeout);
+    if (!reason) return existingResult;
+
+    return { block: true, reason };
+  };
 }
 
 function includeExtensionTools(requestedToolNames: string[], extensionToolNames: string[]): string[] {
@@ -481,6 +589,7 @@ export async function startRpcSession(
     }
 
     await inner.bindExtensions?.({ mode: "rpc" });
+    installLongRunningToolGuard(inner);
 
     const wrapper = new AgentSessionWrapper(inner);
     wrapper.start();
