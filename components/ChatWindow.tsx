@@ -900,6 +900,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     onEditContent={handleEditMessageContent}
                     showTimestamp={messageRenderData.showTimestamp[idx]}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as import("@/lib/types").AgentMessage & { timestamp?: number }).timestamp : undefined}
+                    nextTimestamp={idx < messages.length - 1 ? (messages[idx + 1] as import("@/lib/types").AgentMessage & { timestamp?: number }).timestamp : undefined}
                   />
                 );
                 if (msg.role === "toolResult") return view;

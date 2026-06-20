@@ -42,6 +42,7 @@ interface Props {
   onEditContent?: (content: string) => void;
   showTimestamp?: boolean;
   prevTimestamp?: number;
+  nextTimestamp?: number;
 }
 
 export interface ComsNetResponseHint {
@@ -98,7 +99,7 @@ function estimateBlockChars(block: AssistantContentBlock): number {
   return 0;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, runningToolIds, toolExecutionStatuses, modelNames, comsNetResponse, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, runningToolIds, toolExecutionStatuses, modelNames, comsNetResponse, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, nextTimestamp }: Props) {
   if (message.role === "user") {
     const legacyComsNetEvent = parseLegacyComsNetUserMessage(message as UserMessage);
     if (legacyComsNetEvent) {
@@ -129,7 +130,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
         );
       }
     }
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} runningToolIds={runningToolIds} toolExecutionStatuses={toolExecutionStatuses} modelNames={modelNames} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} runningToolIds={runningToolIds} toolExecutionStatuses={toolExecutionStatuses} modelNames={modelNames} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} nextTimestamp={nextTimestamp} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -789,6 +790,7 @@ function AssistantMessageView({
   modelNames,
   showTimestamp,
   prevTimestamp,
+  nextTimestamp,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -798,6 +800,7 @@ function AssistantMessageView({
   modelNames?: Record<string, string>;
   showTimestamp?: boolean;
   prevTimestamp?: number;
+  nextTimestamp?: number;
 }) {
   const time = showTimestamp ? formatTime(message.timestamp) : null;
   const blocks = useMemo(() => message.content ?? [], [message.content]);
@@ -841,6 +844,12 @@ function AssistantMessageView({
     }
     return map;
   }, [toolResults, message.timestamp]);
+
+  const missingResultDuration = useMemo<number | undefined>(() => {
+    if (isStreaming || !message.timestamp || !nextTimestamp) return undefined;
+    const secs = Math.round((nextTimestamp - message.timestamp) / 1000);
+    return secs > 0 ? secs : undefined;
+  }, [isStreaming, message.timestamp, nextTimestamp]);
 
   const textContent = useMemo(() => blocks
     .filter((b): b is TextContent => b.type === "text")
@@ -953,7 +962,7 @@ function AssistantMessageView({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {blocks.map((block, i) => (
-          <BlockView key={i} block={block} toolResults={toolResults} runningToolIds={runningToolIds} toolExecutionStatuses={toolExecutionStatuses} isStreaming={isStreaming} streamingDuration={streamingDurations.get(i) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} />
+          <BlockView key={i} block={block} toolResults={toolResults} runningToolIds={runningToolIds} toolExecutionStatuses={toolExecutionStatuses} isStreaming={isStreaming} streamingDuration={streamingDurations.get(i) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} missingResultDuration={missingResultDuration} />
         ))}
       </div>
 
@@ -1006,7 +1015,7 @@ function AssistantMessageView({
   );
 }
 
-function BlockView({ block, toolResults, runningToolIds, toolExecutionStatuses, isStreaming, streamingDuration, toolCallDurations }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; runningToolIds?: Set<string>; toolExecutionStatuses?: Map<string, ToolExecutionStatus>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number> }) {
+function BlockView({ block, toolResults, runningToolIds, toolExecutionStatuses, isStreaming, streamingDuration, toolCallDurations, missingResultDuration }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; runningToolIds?: Set<string>; toolExecutionStatuses?: Map<string, ToolExecutionStatus>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; missingResultDuration?: number }) {
   if (block.type === "text") {
     return <TextBlock block={block as TextContent} />;
   }
@@ -1023,7 +1032,7 @@ function BlockView({ block, toolResults, runningToolIds, toolExecutionStatuses, 
     if (comsNetToolEvent) {
       return <ComsNetMessageCard event={comsNetToolEvent} />;
     }
-    return <ToolCallBlock block={tc} result={result} isRunning={isRunning} liveStatus={liveStatus} duration={duration} />;
+    return <ToolCallBlock block={tc} result={result} isRunning={isRunning} liveStatus={liveStatus} duration={duration} missingDuration={missingResultDuration} />;
   }
   return null;
 }
@@ -1198,7 +1207,7 @@ function toolTimeoutSeconds(input: Record<string, unknown>): number | null {
   return null;
 }
 
-function ToolCallBlock({ block, result, isRunning, liveStatus, duration }: { block: ToolCallContent; result?: ToolResultMessage; isRunning?: boolean; liveStatus?: ToolExecutionStatus; duration?: number }) {
+function ToolCallBlock({ block, result, isRunning, liveStatus, duration, missingDuration }: { block: ToolCallContent; result?: ToolResultMessage; isRunning?: boolean; liveStatus?: ToolExecutionStatus; duration?: number; missingDuration?: number }) {
   const { t } = useLocale();
   const [expanded, setExpanded] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -1227,6 +1236,7 @@ function ToolCallBlock({ block, result, isRunning, liveStatus, duration }: { blo
     : null;
   const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
   const isError = result?.isError ?? false;
+  const isTimedOut = Boolean(isError && resultText && /\btimed?\s*out\b|\btimeout\b/i.test(resultText));
   const isMissingResult = !result && !isRunning;
   const secondsSinceUpdate = isRunning && liveStatus?.updatedAt
     ? Math.max(0, Math.round(((nowMs || liveStatus.updatedAt) - liveStatus.updatedAt) / 1000))
@@ -1290,6 +1300,16 @@ function ToolCallBlock({ block, result, isRunning, liveStatus, duration }: { blo
             {t("message.tool.missingResult")}
           </span>
         )}
+        {!isRunning && !isMissingResult && isTimedOut && (
+          <span style={{ color: "#f87171", fontSize: 10, flexShrink: 0 }}>
+            {t("message.tool.timedOut")}
+          </span>
+        )}
+        {!isRunning && !isMissingResult && isError && !isTimedOut && (
+          <span style={{ color: "#f87171", fontSize: 10, flexShrink: 0 }}>
+            {t("message.tool.error")}
+          </span>
+        )}
         <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
           {getToolPreview(block)}
         </span>
@@ -1300,6 +1320,11 @@ function ToolCallBlock({ block, result, isRunning, liveStatus, duration }: { blo
         )}
         {duration !== undefined && (
           <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+        )}
+        {isMissingResult && missingDuration !== undefined && (
+          <span style={{ fontSize: 11, color: "#f59e0b", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+            {t("message.tool.missingAfter", { duration: formatDurationBrief(missingDuration) })}
+          </span>
         )}
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
           <polyline points="2 3.5 5 6.5 8 3.5" />
@@ -1334,7 +1359,9 @@ function ToolCallBlock({ block, result, isRunning, liveStatus, duration }: { blo
           fontSize: 11,
           lineHeight: 1.45,
         }}>
-          {t("message.tool.missingHint")}
+          {missingDuration !== undefined
+            ? t("message.tool.missingAfterHint", { duration: formatDurationBrief(missingDuration) })
+            : t("message.tool.missingHint")}
         </div>
       )}
 

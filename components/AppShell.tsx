@@ -305,7 +305,7 @@ export function AppShell() {
         method: "POST",
         body: form,
       });
-      const data = await res.json() as { session?: SessionInfo; error?: string };
+      const data = await res.json().catch(() => ({})) as { session?: SessionInfo; error?: string };
       if (!res.ok || !data.session) throw new Error(data.error ?? `HTTP ${res.status}`);
       setNewSessionCwd(null);
       setSelectedSession(data.session);
