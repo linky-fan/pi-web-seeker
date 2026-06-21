@@ -313,6 +313,8 @@ interface AgentsMdStatus {
   result?: AgentsMdReport | null;
 }
 
+const MAX_VISIBLE_AGENTS_MD_FINDINGS = 5;
+
 function AgentsMdHint({ cwd }: { cwd: string }) {
   const { t } = useLocale();
   const [status, setStatus] = useState<AgentsMdStatus | null>(null);
@@ -409,6 +411,9 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
   const errors = report?.errors?.length ?? 0;
   const draftWarnings = draft?.warnings?.length ?? 0;
   const draftQuestions = draft?.questions?.length ?? 0;
+  const visibleErrors = report?.errors?.slice(0, MAX_VISIBLE_AGENTS_MD_FINDINGS) ?? [];
+  const visibleWarnings = report?.warnings?.slice(0, Math.max(0, MAX_VISIBLE_AGENTS_MD_FINDINGS - visibleErrors.length)) ?? [];
+  const hiddenFindings = Math.max(0, errors + warnings - visibleErrors.length - visibleWarnings.length);
   const statusText = !status
     ? t("subagents.checking")
     : status.exists
@@ -615,16 +620,21 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
           {hasFindings && (
             <>
               <div style={{ marginBottom: 6, color: "var(--text-muted)" }}>{t("agentsMd.manualFixHint")}</div>
-              {report?.errors?.map((item, idx) => (
+              {visibleErrors.map((item, idx) => (
                 <div key={`error:${idx}`} style={{ color: "#ef4444", marginTop: 4 }}>
                   {t("agentsMd.errorLabel")}: {item}
                 </div>
               ))}
-              {report?.warnings?.map((item, idx) => (
+              {visibleWarnings.map((item, idx) => (
                 <div key={`warning:${idx}`} style={{ marginTop: 4 }}>
                   {t("agentsMd.warningLabel")}: {item}
                 </div>
               ))}
+              {hiddenFindings > 0 && (
+                <div style={{ marginTop: 4, color: "var(--text-dim)" }}>
+                  {t("agentsMd.moreFindings", { count: hiddenFindings })}
+                </div>
+              )}
             </>
           )}
         </div>

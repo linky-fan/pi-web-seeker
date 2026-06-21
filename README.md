@@ -36,12 +36,12 @@ Pi Web Seeker 内置多套 theme，可在左下角或顶部工具栏快速切换
 
 ### AGENTS.md 智能生成
 
-新建或切换工作区时，Pi Web Seeker 会检查项目是否已有 `AGENTS.md`。没有时可以先生成草稿预览；已有时可以直接检查，或根据当前仓库重新生成改进建议。
+新建或切换工作区时，Pi Web Seeker 会检查项目是否已有 `AGENTS.md`。没有时可以先生成草稿预览；已有时可以直接检查，或根据当前仓库重新生成一份更短的对照草稿。
 
 | 生成草稿 | 已有文件 |
 | --- | --- |
 | ![AGENTS.md draft generation](docs/screenshots/agents-md-draft.jpg) | ![AGENTS.md ready state](docs/screenshots/agents-md-ready.jpg) |
-| 空项目或早期项目会显示待确认问题，并只提供草稿预览，用户确认后才写入。 | 已有 `AGENTS.md` 的项目会显示检查入口，也可生成新的项目化建议，不自动覆盖现有文件。 |
+| 空项目或早期项目会显示少量待确认问题，并只提供草稿预览，用户确认后才写入。 | 已有 `AGENTS.md` 的项目会显示检查入口，也可生成新的对照草稿，不自动覆盖现有文件。 |
 
 ## 快速开始
 
@@ -227,14 +227,15 @@ docker run --rm -it \
 
 `AGENTS.md` 会进入智能体的 system prompt，适合保存每次都值得加载的高频规则；长篇架构说明、完整 schema、文件树和示例应放到 `docs/agent-notes/` 后按需读取。
 
-打开一个工作区的新会话首页时，页面会提示当前项目是否已有 `AGENTS.md`。缺失时可以先生成项目化草稿；已有时可以运行检查或生成改进建议。草稿只在页面中预览，只有点击“写入 AGENTS.md”才会落盘。
+打开一个工作区的新会话首页时，页面会提示当前项目是否已有 `AGENTS.md`。缺失时可以先生成项目化草稿；已有时可以运行检查或生成一份新的对照草稿。草稿只在页面中预览，只有点击“写入 AGENTS.md”才会落盘。
 
 ![AGENTS.md draft preview](docs/screenshots/agents-md-draft.jpg)
 
-生成器由两部分组成：
+生成器保持轻量，主要做三件事：
 
-- 确定性扫描器：只读扫描 `package.json`、lockfile、Docker/Compose、Python 配置、README 和根目录结构，提取项目画像与可证实命令。
-- AGENTS Architect：借鉴 PromptX 的“自然语言创建专家”思路，把空项目或早期项目转成访谈式问题，避免编造命令和规则。
+- 扫描：只读扫描 `package.json`、lockfile、Docker/Compose、Python 配置、README 和根目录结构，提取项目画像与可证实命令。
+- 草稿：只把能证实的信息写入短草稿；空项目只给 TODO 和少量待确认问题。
+- 检查：指出过长、缺章节、疑似密钥、无效命令、大段文件树、长代码块或长 schema 等明显问题。
 
 推荐的文档分层：
 
@@ -269,7 +270,7 @@ npm run agents:templates
 
 `detect` 会只读扫描 `package.json`、lockfile、Docker/Compose、Python 配置、README 和根目录结构，输出项目画像；`draft` 返回 Markdown 草稿但不写文件；`init --template auto` 才会写入 `AGENTS.md`，且默认不覆盖已有文件。
 
-空项目或早期项目会返回待确认问题，适合交给 AGENTS Architect 继续访谈：先确认项目目标、技术栈、运行/测试命令、危险操作和团队偏好，再写入短小的 `AGENTS.md`。
+空项目或早期项目会返回待确认问题：先确认项目目标、技术栈、运行/测试命令、危险操作和团队偏好，再写入短小的 `AGENTS.md`。
 
 检查已有项目：
 
@@ -277,7 +278,7 @@ npm run agents:templates
 npm run agents:check -- --path /path/to/project/AGENTS.md
 ```
 
-检查器会输出字符数、近似 token 数、章节长度、缺失章节、疑似密钥、大文件树和过长代码块等提示。默认只报告 warning，不会因为过长直接失败；如果希望用于 CI，可加 `--strict`。
+检查器会输出字符数、近似 token 数、章节长度、缺失章节、疑似密钥、无效命令、大文件树、过长代码块和长 schema 等提示。默认只报告 warning，不会因为过长直接失败；如果希望用于 CI，可加 `--strict`。
 
 推荐目标：
 
