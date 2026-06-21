@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 const execFileAsync = promisify(execFile);
 const SCRIPT_PATH = path.join(process.cwd(), "scripts", "agents-md.mjs");
 
-type AgentsCommand = "init" | "check";
+type AgentsCommand = "init" | "check" | "detect" | "draft";
 
 function agentsPath(cwd: string): string {
   return path.join(cwd, "AGENTS.md");
@@ -60,17 +60,20 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { cwd?: string; action?: AgentsCommand; template?: string; strict?: boolean };
+    const body = await req.json() as { cwd?: string; action?: AgentsCommand; template?: string; strict?: boolean; force?: boolean };
     const cwd = await assertCwd(body.cwd);
     const action = body.action;
-    if (action !== "init" && action !== "check") {
-      return NextResponse.json({ error: "action must be init or check" }, { status: 400 });
+    if (action !== "init" && action !== "check" && action !== "detect" && action !== "draft") {
+      return NextResponse.json({ error: "action must be init, check, detect, or draft" }, { status: 400 });
     }
 
     const filePath = agentsPath(cwd);
-    const args = action === "init"
-      ? ["init", "--template", body.template ?? "standard", "--dir", cwd]
-      : ["check", "--path", filePath, ...(body.strict ? ["--strict"] : [])];
+    const args =
+      action === "init"
+        ? ["init", "--template", body.template ?? "standard", "--dir", cwd, ...(body.force ? ["--force"] : [])]
+        : action === "check"
+          ? ["check", "--path", filePath, ...(body.strict ? ["--strict"] : [])]
+          : [action, "--dir", cwd];
 
     try {
       const result = await runAgentsTool(args);
@@ -87,6 +90,7 @@ export async function POST(req: Request) {
     } catch (error) {
       const err = error as { stdout?: string; stderr?: string; message?: string; code?: number };
       const stdout = (err.stdout ?? "").trim();
+      const errorMessage = (err.stderr ?? "").trim() || err.message || String(error);
       let result: unknown = null;
       if (stdout) {
         try {
@@ -104,8 +108,8 @@ export async function POST(req: Request) {
         result,
         output: stdout,
         stderr: (err.stderr ?? "").trim(),
-        error: (err.stderr ?? "").trim() || err.message || String(error),
-      }, { status: 500 });
+        error: errorMessage,
+      }, { status: errorMessage.includes("already exists") ? 409 : 500 });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

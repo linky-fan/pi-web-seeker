@@ -34,6 +34,15 @@ Pi Web Seeker 内置多套 theme，可在左下角或顶部工具栏快速切换
 | ![Tokyo Night theme preview](docs/screenshots/theme-tokyo.png) | ![Gruvbox theme preview](docs/screenshots/theme-gruvbox.png) |
 | 深色蓝紫，适合夜间编码。 | 复古暖色终端风，辨识度高。 |
 
+### AGENTS.md 智能生成
+
+新建或切换工作区时，Pi Web Seeker 会检查项目是否已有 `AGENTS.md`。没有时可以先生成草稿预览；已有时可以直接检查，或根据当前仓库重新生成改进建议。
+
+| 生成草稿 | 已有文件 |
+| --- | --- |
+| ![AGENTS.md draft generation](docs/screenshots/agents-md-draft.jpg) | ![AGENTS.md ready state](docs/screenshots/agents-md-ready.jpg) |
+| 空项目或早期项目会显示待确认问题，并只提供草稿预览，用户确认后才写入。 | 已有 `AGENTS.md` 的项目会显示检查入口，也可生成新的项目化建议，不自动覆盖现有文件。 |
+
 ## 快速开始
 
 **无需安装，直接从当前仓库运行：**
@@ -196,7 +205,7 @@ docker run --rm -it \
 | 模型与工具 | 对话中切换模型，管理 provider / model / API key / OAuth，测试模型连通性，控制工具预设与 thinking level |
 | 上下文与统计 | 会话压缩、input / output / cache tokens、费用、上下文使用率、system prompt 查看、长上下文 CLI needle 测试 |
 | 文件与工作区 | 项目目录选择、文件搜索、最近文件、Git tracked-only、下载文件、路径插入输入框、代码 / Markdown / HTML / 图片 / 音频预览 |
-| 扩展能力 | Skills 管理、Subagent 通知卡片、coms-net 局域网 Pi 协作、Pi Pi 专家协作模板、AGENTS.md 模板与检查器、运行时 OS/shell/path 系统提示词上下文 |
+| 扩展能力 | Skills 管理、Subagent 通知卡片、coms-net 局域网 Pi 协作、Pi Pi 专家协作模板、AGENTS.md 项目扫描 / 草稿生成 / 检查器、运行时 OS/shell/path 系统提示词上下文 |
 | 体验与性能 | 多主题、English / 简体中文、聊天 Minimap、session/index/allowed-roots 缓存、长会话懒渲染 |
 
 ## 项目目录选择
@@ -218,7 +227,14 @@ docker run --rm -it \
 
 `AGENTS.md` 会进入智能体的 system prompt，适合保存每次都值得加载的高频规则；长篇架构说明、完整 schema、文件树和示例应放到 `docs/agent-notes/` 后按需读取。
 
-打开一个工作区的新会话首页时，页面会提示当前项目是否已有 `AGENTS.md`，并提供创建模板或运行检查的按钮。
+打开一个工作区的新会话首页时，页面会提示当前项目是否已有 `AGENTS.md`。缺失时可以先生成项目化草稿；已有时可以运行检查或生成改进建议。草稿只在页面中预览，只有点击“写入 AGENTS.md”才会落盘。
+
+![AGENTS.md draft preview](docs/screenshots/agents-md-draft.jpg)
+
+生成器由两部分组成：
+
+- 确定性扫描器：只读扫描 `package.json`、lockfile、Docker/Compose、Python 配置、README 和根目录结构，提取项目画像与可证实命令。
+- AGENTS Architect：借鉴 PromptX 的“自然语言创建专家”思路，把空项目或早期项目转成访谈式问题，避免编造命令和规则。
 
 推荐的文档分层：
 
@@ -229,10 +245,12 @@ flowchart TB
   Tool --> Report["tokens / sections / secrets / large blocks"]
 ```
 
-为新项目生成模板：
+为新项目生成项目化草稿：
 
 ```bash
-npm run agents:init -- --template standard --dir /path/to/project
+npm run agents -- detect --dir /path/to/project
+npm run agents -- draft --dir /path/to/project
+npm run agents:init -- --template auto --dir /path/to/project
 ```
 
 可用模板：
@@ -243,10 +261,15 @@ npm run agents:templates
 
 当前内置：
 
+- `auto`（扫描项目后生成草稿）
 - `standard`
 - `next-app`
 - `python`
 - `docker-service`
+
+`detect` 会只读扫描 `package.json`、lockfile、Docker/Compose、Python 配置、README 和根目录结构，输出项目画像；`draft` 返回 Markdown 草稿但不写文件；`init --template auto` 才会写入 `AGENTS.md`，且默认不覆盖已有文件。
+
+空项目或早期项目会返回待确认问题，适合交给 AGENTS Architect 继续访谈：先确认项目目标、技术栈、运行/测试命令、危险操作和团队偏好，再写入短小的 `AGENTS.md`。
 
 检查已有项目：
 
