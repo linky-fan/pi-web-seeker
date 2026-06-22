@@ -571,14 +571,13 @@ function printHelp() {
   npm run agents -- templates
   npm run agents -- detect --dir /path/to/project
   npm run agents -- draft --dir /path/to/project
-  npm run agents:init -- --template standard --dir /path/to/project
   npm run agents:init -- --template auto --dir /path/to/project
   npm run agents:check -- --path /path/to/project/AGENTS.md
 
 Commands:
-  init                 Write an AGENTS.md template
+  init                 Write an AGENTS.md draft or template
   check                Inspect AGENTS.md length, structure, and obvious risks
-  detect               Detect a project profile for AGENTS.md generation
+  detect               Detect repository signals for AGENTS.md drafting
   draft                Generate an AGENTS.md draft without writing it
   templates            List available templates
 
@@ -595,7 +594,7 @@ Options:
 }
 
 const args = parseArgs(process.argv.slice(2));
-const command = args._[0] ?? "check";
+const command = args.help ? "help" : args._[0] ?? "check";
 
 try {
   if (command === "init") {

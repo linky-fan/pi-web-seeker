@@ -210,6 +210,10 @@ export function SubagentsConfig({
             </button>
           </section>
 
+          <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5 }}>
+            {t("subagents.strategyHint")}
+          </div>
+
           {status?.runtime && (
             <section>
               <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 6 }}>{t("subagents.runtime")}</div>

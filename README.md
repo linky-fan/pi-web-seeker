@@ -34,31 +34,39 @@ Pi Web Seeker 内置多套 theme，可在左下角或顶部工具栏快速切换
 | ![Tokyo Night theme preview](docs/screenshots/theme-tokyo.png) | ![Gruvbox theme preview](docs/screenshots/theme-gruvbox.png) |
 | 深色蓝紫，适合夜间编码。 | 复古暖色终端风，辨识度高。 |
 
-### AGENTS.md 智能生成
+### AGENTS.md 草稿助手
 
-新建或切换工作区时，Pi Web Seeker 会检查项目是否已有 `AGENTS.md`。没有时可以先生成草稿预览；已有时可以直接检查，或根据当前仓库重新生成一份更短的对照草稿。
+新建或切换工作区时，Pi Web Seeker 会检查项目是否已有 `AGENTS.md`。没有时可以基于仓库中可证实的信息生成草稿预览；已有时可以直接检查，或重新生成一份更短的对照草稿。
 
 | 生成草稿 | 已有文件 |
 | --- | --- |
 | ![AGENTS.md draft generation](docs/screenshots/agents-md-draft.jpg) | ![AGENTS.md ready state](docs/screenshots/agents-md-ready.jpg) |
-| 空项目或早期项目会显示少量待确认问题，并只提供草稿预览，用户确认后才写入。 | 已有 `AGENTS.md` 的项目会显示检查入口，也可生成新的对照草稿，不自动覆盖现有文件。 |
+| 空项目或早期项目会显示少量待确认问题，不会编造命令，并只提供草稿预览，用户确认后才写入。 | 已有 `AGENTS.md` 的项目会显示检查入口，也可生成新的对照草稿，不自动覆盖现有文件。 |
 
 ## 快速开始
 
-**无需安装，直接从当前仓库运行：**
+**无需安装，直接运行已发布版本：**
+
+```bash
+npx @agegr/pi-web
+```
+
+已发布的 npm 包会带上 Next.js 生产产物；`pi-web` 会直接启动这些产物。本地开发目录里执行 `npm install` 不会自动构建，仍按下方开发流程使用 `npm run dev`。
+
+**或全局安装后使用：**
+
+```bash
+npm install -g @agegr/pi-web
+pi-web
+```
+
+如果需要直接运行 GitHub 上的最新源码：
 
 ```bash
 npx github:linky-fan/pi-web-seeker
 ```
 
-首次从 GitHub 运行时，npm 会自动构建一次 Next.js 生产产物；之后 `pi-web` 会直接用构建好的产物启动。本地开发目录里执行 `npm install` 不会自动构建，仍按下方开发流程使用 `npm run dev`。
-
-**或全局安装后使用：**
-
-```bash
-npm install -g github:linky-fan/pi-web-seeker
-pi-web
-```
+首次从 GitHub 运行时，npm 会自动构建一次 Next.js 生产产物。
 
 默认监听 `0.0.0.0`，本机打开 [http://localhost:30141](http://localhost:30141)，局域网设备可访问 `http://<你的局域网 IP>:30141`。
 
@@ -227,13 +235,13 @@ docker run --rm -it \
 
 `AGENTS.md` 会进入智能体的 system prompt，适合保存每次都值得加载的高频规则；长篇架构说明、完整 schema、文件树和示例应放到 `docs/agent-notes/` 后按需读取。
 
-打开一个工作区的新会话首页时，页面会提示当前项目是否已有 `AGENTS.md`。缺失时可以先生成项目化草稿；已有时可以运行检查或生成一份新的对照草稿。草稿只在页面中预览，只有点击“写入 AGENTS.md”才会落盘。
+打开一个工作区的新会话首页时，页面会提示当前项目是否已有 `AGENTS.md`。缺失时可以先基于扫描结果生成草稿；已有时可以运行检查或生成一份新的对照草稿。草稿只在页面中预览，只有点击“写入 AGENTS.md”才会落盘。
 
 ![AGENTS.md draft preview](docs/screenshots/agents-md-draft.jpg)
 
 生成器保持轻量，主要做三件事：
 
-- 扫描：只读扫描 `package.json`、lockfile、Docker/Compose、Python 配置、README 和根目录结构，提取项目画像与可证实命令。
+- 扫描：只读扫描 `package.json`、lockfile、Docker/Compose、Python 配置、README 和根目录结构，提取可证实的项目线索与命令。
 - 草稿：只把能证实的信息写入短草稿；空项目只给 TODO 和少量待确认问题。
 - 检查：指出过长、缺章节、疑似密钥、无效命令、大段文件树、长代码块或长 schema 等明显问题。
 
@@ -246,7 +254,7 @@ flowchart TB
   Tool --> Report["tokens / sections / secrets / large blocks"]
 ```
 
-为新项目生成项目化草稿：
+为新项目生成扫描草稿：
 
 ```bash
 npm run agents -- detect --dir /path/to/project
@@ -268,7 +276,7 @@ npm run agents:templates
 - `python`
 - `docker-service`
 
-`detect` 会只读扫描 `package.json`、lockfile、Docker/Compose、Python 配置、README 和根目录结构，输出项目画像；`draft` 返回 Markdown 草稿但不写文件；`init --template auto` 才会写入 `AGENTS.md`，且默认不覆盖已有文件。
+`detect` 会只读扫描 `package.json`、lockfile、Docker/Compose、Python 配置、README 和根目录结构，输出可证实的项目线索；`draft` 返回 Markdown 草稿但不写文件；`init --template auto` 才会写入 `AGENTS.md`，且默认不覆盖已有文件。
 
 空项目或早期项目会返回待确认问题：先确认项目目标、技术栈、运行/测试命令、危险操作和团队偏好，再写入短小的 `AGENTS.md`。
 
@@ -347,7 +355,7 @@ Subagent 依赖 `Agent` / `get_subagent_result` / `steer_subagent` 这些扩展�
 
 默认建议最多同时启动 2 个后台 subagents，常见组合是 `Explore + Plan`、`Implement + Review` 或 `Debug + Review`。子任务 prompt 应该具体、边界清楚，默认只读；主智能体仍负责汇总结果、处理冲突和给出最终结论，不能把最终责任交给子智能体。
 
-测试提示词示例：
+复杂任务提示词示例：
 
 ```text
 请把这个请求当作复杂仓库分析任务处理。若 Agent 工具可用，请启动最多 2 个后台子智能体来并行分析当前项目；如果不可用，请直接说明工具不可用。

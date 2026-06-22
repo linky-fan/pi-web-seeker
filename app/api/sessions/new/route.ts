@@ -1,7 +1,6 @@
-// This route is no longer used — new sessions are created fully client-side.
-// Kept as a no-op for reference.
+// Legacy no-op for older clients; new sessions are created through /api/agent/new.
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  return new Response("Not used", { status: 410 });
+  return new Response("Legacy route", { status: 410 });
 }

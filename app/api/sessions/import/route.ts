@@ -9,7 +9,7 @@ import {
   invalidateSessionFileCache,
   invalidateSessionListCache,
 } from "@/lib/session-reader";
-import { isWindowsStylePath } from "@/lib/path-identity";
+import { isWindowsStylePath, normalizePathForComparison } from "@/lib/path-identity";
 import type { FileEntry, SessionEntry, SessionHeader, SessionInfo } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -183,6 +183,12 @@ function sessionDirForImportedCwd(cwd: string): string {
   return SessionManager.create(storageCwdForImport(cwd)).getSessionDir();
 }
 
+function localParentSessionForImport(parentSession: string | undefined, localSessionPaths: Set<string>): string | undefined {
+  const trimmed = parentSession?.trim();
+  if (!trimmed) return undefined;
+  return localSessionPaths.has(normalizePathForComparison(trimmed)) ? trimmed : undefined;
+}
+
 function newSessionId(existingIds: Set<string>): string {
   let id = randomUUID();
   while (existingIds.has(id)) id = randomUUID();
@@ -237,11 +243,13 @@ export async function POST(req: Request) {
 
     const index = await getSessionListIndex({ force: true });
     const existingIds = new Set(index.sessions.map((session) => session.id));
+    const localSessionPaths = new Set(index.sessions.map((session) => normalizePathForComparison(session.path)));
     const storageCwd = storageCwdForImport(importedHeader.cwd);
     const header: SessionHeader = {
       ...importedHeader,
       cwd: storageCwd,
       id: existingIds.has(importedHeader.id) ? newSessionId(existingIds) : importedHeader.id,
+      parentSession: localParentSessionForImport(importedHeader.parentSession, localSessionPaths),
     };
     existingIds.add(header.id);
     const sessionDir = sessionDirForImportedCwd(storageCwd);

@@ -13,7 +13,7 @@
 - `app/` - Next.js routes, layouts, and API handlers.
 - `components/` - reusable UI and client components.
 - `lib/` - shared server/client helpers.
-- `public/` - static assets.
+- `public/` - static assets, if present.
 - More details: `docs/agent-notes/architecture.md`
 
 ## Critical Rules

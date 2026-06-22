@@ -8,10 +8,6 @@ import { normalizeSubagentRecordsForContext } from "./subagents";
 
 export { getAgentDir };
 
-export function getSessionsDir(): string {
-  return `${getAgentDir()}/sessions`;
-}
-
 interface CachedSessionListIndex {
   sessions: SessionInfo[];
   idToPath: Map<string, string>;
@@ -201,52 +197,6 @@ export function getCachedSessionContext(snapshot: CachedSessionFile, leafId?: st
   return context;
 }
 
-export function getSessionEntries(filePath: string): SessionEntry[] {
-  const cached = getCachedSessionFile(filePath);
-  return cached.entries;
-}
-
-export function getUncachedSessionEntries(filePath: string): SessionEntry[] {
-  const entries = SessionManager.open(filePath).getEntries();
-  return entries as unknown as SessionEntry[];
-}
-
-export function buildTree(entries: SessionEntry[]): SessionTreeNode[] {
-  const nodeMap = new Map<string, SessionTreeNode>();
-  const labelsById = new Map<string, string>();
-
-  for (const entry of entries) {
-    if (entry.type === "label") {
-      const l = entry as { type: "label"; targetId: string; label?: string };
-      if (l.label) labelsById.set(l.targetId, l.label);
-      else labelsById.delete(l.targetId);
-    }
-  }
-
-  const roots: SessionTreeNode[] = [];
-  for (const entry of entries) {
-    nodeMap.set(entry.id, { entry, children: [], label: labelsById.get(entry.id) });
-  }
-  for (const entry of entries) {
-    const node = nodeMap.get(entry.id)!;
-    if (!entry.parentId) {
-      roots.push(node);
-    } else {
-      const parent = nodeMap.get(entry.parentId);
-      if (parent) parent.children.push(node);
-      else roots.push(node);
-    }
-  }
-
-  const stack = [...roots];
-  while (stack.length > 0) {
-    const node = stack.pop()!;
-    node.children.sort((a, b) => new Date(a.entry.timestamp).getTime() - new Date(b.entry.timestamp).getTime());
-    stack.push(...node.children);
-  }
-  return roots;
-}
-
 export function buildSessionContext(entries: SessionEntry[], leafId?: string | null): SessionContext {
   const contextEntries = normalizeSubagentRecordsForContext(entries);
   const byId = new Map<string, SessionEntry>();
@@ -326,9 +276,4 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
     thinkingLevel: piCtx.thinkingLevel,
     model: piCtx.model,
   };
-}
-
-export function getLeafId(entries: SessionEntry[]): string | null {
-  if (entries.length === 0) return null;
-  return entries[entries.length - 1].id;
 }

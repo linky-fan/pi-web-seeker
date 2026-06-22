@@ -70,7 +70,7 @@ export async function POST(req: Request) {
     const filePath = agentsPath(cwd);
     const args =
       action === "init"
-        ? ["init", "--template", body.template ?? "standard", "--dir", cwd, ...(body.force ? ["--force"] : [])]
+        ? ["init", "--template", body.template ?? "auto", "--dir", cwd, ...(body.force ? ["--force"] : [])]
         : action === "check"
           ? ["check", "--path", filePath, ...(body.strict ? ["--strict"] : [])]
           : [action, "--dir", cwd];

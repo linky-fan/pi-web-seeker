@@ -90,7 +90,7 @@ function firstXmlNumber(xml: string, tags: string[]): number | undefined {
   return undefined;
 }
 
-export function decodeXml(value: string): string {
+function decodeXml(value: string): string {
   return value
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -125,12 +125,12 @@ function notificationIdentityFromRecord(record: Record<string, unknown>): string
   return firstString(record, ID_KEYS) ?? firstString(record, TOOL_CALL_KEYS);
 }
 
-export function getSubagentRecordId(entry: SessionEntry): string | undefined {
+function getSubagentRecordId(entry: SessionEntry): string | undefined {
   if (entry.type !== "custom" || entry.customType !== "subagents:record") return undefined;
   return isRecord(entry.data) ? notificationIdentityFromRecord(entry.data) : undefined;
 }
 
-export function getSubagentNotificationId(entry: SessionEntry): string | undefined {
+function getSubagentNotificationId(entry: SessionEntry): string | undefined {
   if (entry.type !== "custom_message") return undefined;
   if (!isSubagentCustomType(entry.customType, entry.content)) return undefined;
   if (isRecord(entry.details)) {
@@ -237,7 +237,7 @@ export function getSubagentMessageKey(message: CustomMessage): string | undefine
   return notificationIdFromContent(messageContentToText(message.content));
 }
 
-export function subagentRecordToCustomMessage(entry: SessionEntry): SessionEntry {
+function subagentRecordToCustomMessage(entry: SessionEntry): SessionEntry {
   if (entry.type !== "custom" || entry.customType !== "subagents:record" || !isRecord(entry.data)) return entry;
 
   const notification = notificationFromRecord(entry.data);

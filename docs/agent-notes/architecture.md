@@ -28,7 +28,7 @@ Session browsing is read-only and reads `.jsonl` files directly through `lib/ses
 - `app/api/sessions/route.ts` - list all sessions.
 - `app/api/sessions/[id]/route.ts` - get, rename, or delete one session.
 - `app/api/sessions/[id]/context/route.ts` - get context for a specific `leafId`.
-- `app/api/sessions/new/route.ts` - returns 410; no longer used.
+- `app/api/sessions/new/route.ts` - legacy no-op that returns 410 for older clients.
 - `app/api/default-cwd/route.ts` - default cwd helper.
 - `app/api/home/route.ts` - home directory helper.
 - `app/api/agent/new/route.ts` - create a session from `{ cwd, message, toolNames, provider, modelId }`.
