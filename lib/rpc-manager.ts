@@ -90,6 +90,19 @@ function getPathStyleGuidance(): string {
   ].join("; ");
 }
 
+function buildSubagentsGuidance(): string[] {
+  return [
+    "",
+    "Subagents guidance:",
+    "- If subagent tools such as `Agent`, `get_subagent_result`, or `steer_subagent` are available, use them only when the task is complex or uncertain enough to benefit from parallel work.",
+    "- Good fits: large codebase exploration, cross-module changes, design tradeoff analysis, risk review, complex debugging, or investigation before implementation.",
+    "- Poor fits: simple questions, single-file edits, direct command requests, small obvious fixes, or any task where the user asks you not to use subagents.",
+    "- By default, start at most two background subagents. Useful pairings include Explore + Plan, Implement + Review, or Debug + Review.",
+    "- Give each subagent a narrow, concrete prompt with clear boundaries. Default subagent work to read-only unless the user explicitly asked for implementation.",
+    "- The main agent owns the final answer and any file edits: collect subagent results, resolve conflicts, and summarize the decision before concluding.",
+  ];
+}
+
 function buildRuntimeSystemPrompt(cwd: string): string {
   return [
     "Runtime context:",
@@ -111,6 +124,7 @@ function buildRuntimeSystemPrompt(cwd: string): string {
     "- For video or audio rendering, first render a small sample or still frame to estimate duration. Run the full render as a background job with a log file, then check progress periodically with short `tail`, `ps`, `ls`, or tool-specific status commands.",
     "- Keep individual bash timeouts modest unless the user explicitly asks to block. Prefer 10-60 seconds for status checks and avoid timeouts over 300 seconds for a single foreground command.",
     "- Do not print secrets from environment variables, auth files, or local config.",
+    ...buildSubagentsGuidance(),
   ].join("\n");
 }
 

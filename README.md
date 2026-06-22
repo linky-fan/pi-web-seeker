@@ -343,13 +343,20 @@ Compose 默认把 `./.pi-web-data` 挂载到容器的 `/home/piweb/.pi`，所以
 
 Subagent 依赖 `Agent` / `get_subagent_result` / `steer_subagent` 这些扩展工具。Pi Web Seeker 的工具预设中，`Low` 和 `High` 会保留已启用的扩展工具；只有 `Off` 会关闭全部工具。如果测试时模型说没有 `Agent` 工具，请确认工具预设不是 `Off`，并新建一个会话。
 
+调用策略是“按任务类型自动考虑”，不是 pi-web 后端直接创建后台任务。新的 AgentSession 会在 system prompt 中获得一段轻量准则：如果 subagent 工具可用，复杂或不确定任务可以并行启动子智能体；简单问答、单文件小改、明确命令执行或用户要求不要并行时，不应启动。
+
+默认建议最多同时启动 2 个后台 subagents，常见组合是 `Explore + Plan`、`Implement + Review` 或 `Debug + Review`。子任务 prompt 应该具体、边界清楚，默认只读；主智能体仍负责汇总结果、处理冲突和给出最终结论，不能把最终责任交给子智能体。
+
 测试提示词示例：
 
 ```text
-请使用 Agent 工具启动一个 Explore 子智能体，后台运行：
-任务是检查当前项目的目录结构，并总结主要模块。
-description: Explore repo
-run_in_background: true
+请把这个请求当作复杂仓库分析任务处理。若 Agent 工具可用，请启动最多 2 个后台子智能体来并行分析当前项目；如果不可用，请直接说明工具不可用。
+
+建议子任务：
+1. Explore：只读检查当前项目的目录结构，并总结主要模块。
+2. Plan：只读分析可能的改进方向和风险。
+
+启动后等待后台子智能体完成，必要时使用 get_subagent_result 获取结果。最后由主智能体合并结论并给出简短总结。
 ```
 
 安装后，`@tintinweb/pi-subagents` 会通过 `customType: "subagent-notification"` 和结构化 `<task-notification>` 把后台 agent 的完成通知写回主会话。Pi Web Seeker 会自动识别这些消息，并显示：

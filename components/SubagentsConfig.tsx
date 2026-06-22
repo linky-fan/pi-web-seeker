@@ -25,7 +25,7 @@ interface SubagentsStatus {
   error?: string;
 }
 
-const TEST_PROMPT = `请使用 Agent 工具启动 2 个后台子智能体来并行分析当前项目。不要自己直接完成分析，必须调用 Agent 工具。
+const TEST_PROMPT = `请把这个请求当作复杂仓库分析任务处理。若 Agent 工具可用，请启动最多 2 个后台子智能体来并行分析当前项目；如果不可用，请直接说明工具不可用，不要假装已经启动。
 
 要求：
 1. 启动一个 Explore 子智能体：
@@ -40,7 +40,7 @@ const TEST_PROMPT = `请使用 Agent 工具启动 2 个后台子智能体来并�
    - run_in_background: true
    - prompt: 只读分析当前仓库已经做了哪些 subagents 集成，包括 README、Subagents 面板、MessageView 渲染、session-reader 兼容。给出下一步可改进建议。不要修改任何文件。
 
-启动后等待两个后台子智能体完成。如果需要，请使用 get_subagent_result 获取它们的结果。最后把两个子智能体的结论合并成一个简短总结。`;
+启动后等待后台子智能体完成。如果需要，请使用 get_subagent_result 获取它们的结果。最后由主智能体合并结论、处理冲突，并给出一个简短总结。`;
 
 export function SubagentsConfig({
   cwd,
@@ -91,6 +91,8 @@ export function SubagentsConfig({
     navigator.clipboard?.writeText(text).then(() => {
       setCopied(key);
       setTimeout(() => setCopied(null), 1200);
+    }).catch(() => {
+      setCopied(null);
     });
   };
 
