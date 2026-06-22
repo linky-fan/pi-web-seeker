@@ -60,6 +60,8 @@ type LiveAgentState = {
 
 type AgentStateResponse = { running: boolean; state?: LiveAgentState };
 
+const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 140;
+
 function userMessageKey(message: AgentMessage): string | null {
   if (message.role !== "user") return null;
   if (typeof message.content === "string") return `text:${message.content.trim()}`;
@@ -176,6 +178,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const pendingScrollToUserRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const shouldFollowOutputRef = useRef(true);
 
   const setNewSessionModel = opts.setNewSessionModel ?? setNewSessionModelState;
   messagesRef.current = messages;
@@ -656,7 +659,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      requestAnimationFrame(() => {
+        container.scrollTo({ top: container.scrollHeight, behavior });
+      });
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
+  const isNearBottom = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return true;
+    return container.scrollHeight - container.scrollTop - container.clientHeight <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
   }, []);
 
   const scrollUserMsgToTop = useCallback(() => {
@@ -700,15 +716,35 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (pendingScrollToUserRef.current) {
         pendingScrollToUserRef.current = false;
         initialScrollDoneRef.current = true;
+        shouldFollowOutputRef.current = true;
         scrollUserMsgToTop();
       } else if (!initialScrollDoneRef.current) {
         initialScrollDoneRef.current = true;
+        shouldFollowOutputRef.current = true;
         scrollToBottom("instant");
       } else if (!agentRunningRef.current) {
+        shouldFollowOutputRef.current = true;
         scrollToBottom("smooth");
       }
     }
   }, [messages.length, agentRunning, scrollToBottom, scrollUserMsgToTop]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const updateShouldFollow = () => {
+      shouldFollowOutputRef.current = isNearBottom();
+    };
+    updateShouldFollow();
+    container.addEventListener("scroll", updateShouldFollow, { passive: true });
+    return () => container.removeEventListener("scroll", updateShouldFollow);
+  }, [isNearBottom]);
+
+  useEffect(() => {
+    if (!streamState.isStreaming || !streamState.streamingMessage) return;
+    if (!shouldFollowOutputRef.current) return;
+    scrollToBottom("auto");
+  }, [streamState.isStreaming, streamState.streamingMessage, scrollToBottom]);
 
   // Load model list
   useEffect(() => {
