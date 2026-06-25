@@ -49,6 +49,7 @@ interface AgentWithToolHooks {
 
 const MAX_FOREGROUND_TIMEOUT_SECONDS = 300;
 const LONG_TASK_TIMEOUT_SECONDS = 120;
+const RPC_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 function getRuntimeOsLabel(): string {
   switch (process.platform) {
@@ -271,7 +272,13 @@ export class AgentSessionWrapper {
 
   private resetIdleTimer(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => this.destroy(), 10 * 60 * 1000);
+    this.idleTimer = setTimeout(() => {
+      if (this.inner.isStreaming || this.inner.isCompacting) {
+        this.resetIdleTimer();
+        return;
+      }
+      this.destroy();
+    }, RPC_SESSION_IDLE_TIMEOUT_MS);
   }
 
   onEvent(listener: EventListener): () => void {
