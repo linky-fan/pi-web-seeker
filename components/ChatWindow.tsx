@@ -295,6 +295,7 @@ interface AgentsMdProfile {
   frameworks?: string[];
   tools?: string[];
   evidence?: string[];
+  metadataOnly?: boolean;
   commands?: Array<{ label: string; command: string; source?: string }>;
 }
 
@@ -434,6 +435,7 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
     ...(draft.profile.frameworks ?? []),
     ...(draft.profile.languages ?? []),
   ].filter(Boolean) : [];
+  const evidenceBits = draft?.profile?.evidence?.slice(0, 8) ?? [];
   const actionButtonStyle = {
     height: 20,
     padding: 0,
@@ -575,7 +577,17 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
                     {t("agentsMd.emptyProject")}
                   </span>
                 )}
+                {draft.profile.metadataOnly && (
+                  <span style={{ border: "1px solid rgba(234,179,8,0.35)", borderRadius: 999, padding: "2px 6px", color: "rgba(234,179,8,0.98)" }}>
+                    {t("agentsMd.metadataOnly")}
+                  </span>
+                )}
               </div>
+              {evidenceBits.length > 0 && (
+                <div style={{ marginTop: 6, color: "var(--text-dim)" }}>
+                  {t("agentsMd.evidence")}: {evidenceBits.join(", ")}
+                </div>
+              )}
             </div>
           )}
           {draft?.questions?.length ? (

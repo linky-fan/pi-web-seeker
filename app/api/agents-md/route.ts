@@ -1,5 +1,5 @@
 import { execFile } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import path from "path";
 import { promisify } from "util";
 import { NextResponse } from "next/server";
@@ -39,6 +39,14 @@ async function assertCwd(cwd: unknown): Promise<string> {
     throw new Error("cwd required");
   }
   await assertPathAllowed(cwd);
+  try {
+    if (!statSync(cwd).isDirectory()) {
+      throw new Error("cwd must be a directory");
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "cwd must be a directory") throw error;
+    throw new Error("cwd does not exist");
+  }
   return cwd;
 }
 

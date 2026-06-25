@@ -35,6 +35,9 @@ const IGNORED_ROOT_NAMES = new Set([
   "__pycache__",
 ]);
 
+const SOURCE_FILE_RE = /\.(?:[cm]?[jt]sx?|py|go|rs|java|kt|swift|rb|php|cs|c|cc|cpp|h|hpp)$/i;
+const SOURCE_DIR_NAMES = new Set(["app", "components", "lib", "src", "tests", "test", "pages", "server", "api"]);
+
 function parseArgs(argv) {
   const out = { _: [] };
   for (let i = 0; i < argv.length; i += 1) {
@@ -79,6 +82,28 @@ function readJson(filePath) {
   }
 }
 
+function readJsonFile(dir, fileName) {
+  const filePath = path.join(dir, fileName);
+  if (!fs.existsSync(filePath)) return { exists: false, value: null, error: null };
+  try {
+    return { exists: true, value: JSON.parse(fs.readFileSync(filePath, "utf8")), error: null };
+  } catch (error) {
+    return { exists: true, value: null, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function assertExistingDirectory(dir) {
+  let stat;
+  try {
+    stat = fs.statSync(dir);
+  } catch {
+    throw new Error(`${dir} does not exist. Select an existing project directory before generating AGENTS.md.`);
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`${dir} is not a directory. Select a project directory before generating AGENTS.md.`);
+  }
+}
+
 function rootEntries(dir) {
   try {
     return fs.readdirSync(dir, { withFileTypes: true })
@@ -95,6 +120,32 @@ function hasFile(dir, name) {
 
 function hasAnyFile(dir, names) {
   return names.some((name) => hasFile(dir, name));
+}
+
+function hasAnyRootSourceFile(rootFiles) {
+  return rootFiles.some((name) => SOURCE_FILE_RE.test(name));
+}
+
+function dirHasAnyVisibleEntry(dir, name) {
+  try {
+    return fs.readdirSync(path.join(dir, name)).some((entryName) => !IGNORED_ROOT_NAMES.has(entryName));
+  } catch {
+    return false;
+  }
+}
+
+function hasShallowFile(dir, rootDirs, fileRe) {
+  if (rootDirs.length === 0) return false;
+  for (const rootDir of rootDirs.filter((name) => SOURCE_DIR_NAMES.has(name))) {
+    let entries;
+    try {
+      entries = fs.readdirSync(path.join(dir, rootDir), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    if (entries.some((entry) => entry.isFile() && fileRe.test(entry.name))) return true;
+  }
+  return false;
 }
 
 function packageManagerFor(dir, pkg) {
@@ -125,10 +176,12 @@ function compactList(values, max = 8) {
 
 function detectProject(dir) {
   const resolvedDir = path.resolve(String(dir ?? process.cwd()));
+  assertExistingDirectory(resolvedDir);
   const entries = rootEntries(resolvedDir);
   const rootFiles = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
   const rootDirs = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-  const pkg = readJson(path.join(resolvedDir, "package.json"));
+  const packageJson = readJsonFile(resolvedDir, "package.json");
+  const pkg = packageJson.value;
   const scripts = pkg && typeof pkg === "object" && pkg.scripts && typeof pkg.scripts === "object"
     ? Object.fromEntries(Object.entries(pkg.scripts).filter(([, value]) => typeof value === "string"))
     : {};
@@ -148,22 +201,35 @@ function detectProject(dir) {
   const tools = [];
   const warnings = [];
   const questions = [];
+  const rootSourceFiles = hasAnyRootSourceFile(rootFiles);
+  const hasShallowJsTs = hasShallowFile(resolvedDir, rootDirs, /\.(?:[cm]?[jt]sx?)$/i);
+  const hasShallowPython = hasShallowFile(resolvedDir, rootDirs, /\.py$/i);
+  const hasSourceDirContent = rootDirs.some((name) => SOURCE_DIR_NAMES.has(name) && dirHasAnyVisibleEntry(resolvedDir, name));
 
+  if (packageJson.error) {
+    warnings.push("package.json exists but could not be parsed; ignored package metadata and scripts.");
+    questions.push("Fix package.json or confirm the canonical commands manually.");
+  }
   if (pkg) {
-    addUnique(languages, "JavaScript/TypeScript");
     evidence.push("package.json");
+  }
+  if (pkg && (Object.keys(scripts).length > 0 || depNames.length > 0 || hasAnyFile(resolvedDir, ["tsconfig.json", "tsconfig.base.json"]) || hasShallowJsTs || rootFiles.some((name) => /\.(?:[cm]?[jt]sx?)$/i.test(name)))) {
+    addUnique(languages, "JavaScript/TypeScript");
   }
   if (hasAnyFile(resolvedDir, ["tsconfig.json", "tsconfig.base.json"])) addUnique(languages, "TypeScript");
   if (pyproject || requirements || rootDirs.includes("tests") || rootDirs.includes("src")) {
-    const hasPythonSignal = pyproject || requirements || rootFiles.some((name) => name.endsWith(".py"));
+    const hasPythonSignal = pyproject || requirements || rootFiles.some((name) => name.endsWith(".py")) || hasShallowPython;
     if (hasPythonSignal) addUnique(languages, "Python");
   }
-  if (depNames.includes("next") || rootDirs.includes("app") && hasFile(resolvedDir, "next.config.mjs")) {
+  if (depNames.includes("next") || hasAnyFile(resolvedDir, ["next.config.mjs", "next.config.js", "next.config.ts"])) {
     addUnique(frameworks, "Next.js");
-    evidence.push(depNames.includes("next") ? "next dependency" : "next.config.mjs");
+    evidence.push(depNames.includes("next") ? "package.json next dependency" : "Next config");
+    if (depNames.includes("next") && !hasAnyFile(resolvedDir, ["next.config.mjs", "next.config.js", "next.config.ts"]) && !rootDirs.includes("app") && !rootDirs.includes("pages")) {
+      warnings.push("Next.js detected only from package.json dependency; confirm the app structure before relying on Next-specific notes.");
+    }
   }
-  if (depNames.includes("react")) addUnique(frameworks, "React");
-  if (depNames.includes("vite") || hasFile(resolvedDir, "vite.config.ts") || hasFile(resolvedDir, "vite.config.js")) addUnique(frameworks, "Vite");
+  if (depNames.includes("react") || rootFiles.some((name) => /\.(?:jsx|tsx)$/i.test(name)) || hasShallowFile(resolvedDir, rootDirs, /\.(?:jsx|tsx)$/i)) addUnique(frameworks, "React");
+  if (depNames.includes("vite") || hasAnyFile(resolvedDir, ["vite.config.ts", "vite.config.js", "vite.config.mjs"])) addUnique(frameworks, "Vite");
   if (pyproject) {
     evidence.push("pyproject.toml");
     if (/\bpytest\b/i.test(pyproject)) addUnique(tools, "pytest");
@@ -195,8 +261,8 @@ function detectProject(dir) {
   const commands = [];
   if (scripts.dev) commands.push({ label: "Dev", command: scriptCommand(packageManager, "dev"), source: "package.json scripts.dev" });
   if (scripts.typecheck) commands.push({ label: "Typecheck", command: scriptCommand(packageManager, "typecheck"), source: "package.json scripts.typecheck" });
-  else if (depNames.includes("typescript") || hasAnyFile(resolvedDir, ["tsconfig.json", "tsconfig.base.json"])) {
-    commands.push({ label: "Typecheck", command: "node_modules/.bin/tsc --noEmit", source: "typescript dependency or tsconfig" });
+  else if (hasAnyFile(resolvedDir, ["tsconfig.json", "tsconfig.base.json"])) {
+    commands.push({ label: "Typecheck", command: "node_modules/.bin/tsc --noEmit", source: "tsconfig" });
   }
   if (scripts.lint) commands.push({ label: "Lint", command: scriptCommand(packageManager, "lint"), source: "package.json scripts.lint" });
   if (scripts.test) commands.push({ label: "Test", command: scriptCommand(packageManager, "test"), source: "package.json scripts.test" });
@@ -209,11 +275,11 @@ function detectProject(dir) {
     commands.push({ label: "Compose", command: "docker compose up", source: "compose file" });
   }
 
-  const codeSignals = rootFiles.filter((name) => !/^(README(?:\.md)?|LICENSE|AGENTS\.md)$/i.test(name)).length +
-    rootDirs.filter((name) => !["docs", "templates"].includes(name)).length;
+  const codeSignals = (rootSourceFiles ? 1 : 0) + (hasSourceDirContent ? 1 : 0);
+  const metadataOnly = codeSignals === 0 && (Boolean(pkg) || Boolean(readme) || rootFiles.length > 0 || rootDirs.length > 0);
   const isEmpty = codeSignals === 0;
   const template = frameworks.includes("Next.js")
-    ? "next-app"
+    ? metadataOnly ? "standard" : "next-app"
     : frameworks.includes("Docker") && commands.length <= 2
       ? "docker-service"
       : languages.includes("Python") && !pkg
@@ -221,12 +287,13 @@ function detectProject(dir) {
         : "standard";
 
   if (isEmpty) {
-    questions.push("What kind of project is this, and who will work on it?");
+    questions.push(metadataOnly ? "This repository has metadata but no visible source yet; confirm the intended project type." : "What kind of project is this, and who will work on it?");
     questions.push("Which commands should agents use for development, tests, linting, and release?");
     questions.push("Which files, data, or operations should agents avoid touching?");
   }
   if (commands.length === 0) questions.push("Confirm the canonical dev/test/lint commands before relying on this AGENTS.md.");
-  if (!readme) warnings.push("No README found; generated architecture notes are based only on file names.");
+  if (!readme) warnings.push("No README found; generated architecture notes are based only on file and directory names.");
+  if (metadataOnly) warnings.push("Only metadata or placeholder files were detected; the draft intentionally keeps project-specific workflow claims as TODOs.");
 
   return {
     dir: resolvedDir,
@@ -242,6 +309,7 @@ function detectProject(dir) {
     scripts,
     commands,
     evidence: compactList(evidence, 12),
+    metadataOnly,
     warnings,
     questions,
   };
@@ -250,12 +318,21 @@ function detectProject(dir) {
 function architectureBullets(profile) {
   const bullets = [];
   const dirs = new Set(profile.rootDirs);
-  if (dirs.has("app")) bullets.push("`app/` - application routes, pages, layouts, or API handlers.");
-  if (dirs.has("components")) bullets.push("`components/` - reusable UI and client components.");
-  if (dirs.has("lib")) bullets.push("`lib/` - shared helpers and integration code.");
-  if (dirs.has("src")) bullets.push("`src/` - primary application or package source.");
-  if (dirs.has("tests")) bullets.push("`tests/` - automated test suite.");
-  if (dirs.has("public")) bullets.push("`public/` - static assets.");
+  const canDescribeApp = !profile.metadataOnly && (profile.frameworks.includes("Next.js") || profile.frameworks.includes("React"));
+  if (dirs.has("app")) {
+    bullets.push(canDescribeApp
+      ? "`app/` - application routes, pages, layouts, or API handlers."
+      : "`app/` - present at the repository root; confirm its role before adding framework-specific notes.");
+  }
+  if (dirs.has("components")) {
+    bullets.push(canDescribeApp
+      ? "`components/` - reusable UI and client components."
+      : "`components/` - present at the repository root; confirm its role before adding UI-specific notes.");
+  }
+  if (dirs.has("lib")) bullets.push("`lib/` - present at the repository root; inspect before documenting ownership.");
+  if (dirs.has("src")) bullets.push("`src/` - present at the repository root; inspect before documenting ownership.");
+  if (dirs.has("tests")) bullets.push("`tests/` - present at the repository root; confirm the test runner before documenting commands.");
+  if (dirs.has("public")) bullets.push("`public/` - static assets or public files, if used by this project.");
   if (dirs.has("docs")) bullets.push("`docs/` - project documentation and lower-frequency agent notes.");
   if (profile.frameworks.includes("Docker")) {
     if (profile.rootFiles.includes("Dockerfile")) bullets.push("`Dockerfile` - container image build.");
@@ -265,15 +342,28 @@ function architectureBullets(profile) {
   return bullets;
 }
 
+function existingAgentNoteLinks(profile) {
+  const links = [];
+  const maybeAdd = (label, ref) => {
+    if (fs.existsSync(path.join(profile.dir, ref))) links.push(`- ${label}: \`${ref}\``);
+  };
+  maybeAdd("Architecture", "docs/agent-notes/architecture.md");
+  maybeAdd("Deployment/runtime config", "docs/agent-notes/deployment.md");
+  maybeAdd("Data formats", "docs/agent-notes/data-formats.md");
+  return links;
+}
+
 function draftAgentsMarkdown(profile) {
   const lines = [];
   const commandLines = profile.commands.length > 0
     ? profile.commands.map((item) => `- ${item.label}: \`${item.command}\`.`)
     : ["- TODO: Confirm development, test, lint, and release commands with the project owner."];
   const architecture = architectureBullets(profile);
-  const isNext = profile.frameworks.includes("Next.js");
+  const useFrameworkNotes = !profile.metadataOnly;
+  const isNext = useFrameworkNotes && profile.frameworks.includes("Next.js");
   const isDocker = profile.frameworks.includes("Docker");
-  const isPython = profile.languages.includes("Python");
+  const isPython = useFrameworkNotes && profile.languages.includes("Python");
+  const noteLinks = existingAgentNoteLinks(profile);
 
   lines.push(`# ${profile.projectName} - Development Notes`);
   lines.push("");
@@ -293,7 +383,9 @@ function draftAgentsMarkdown(profile) {
   lines.push("## Architecture");
   lines.push("");
   for (const bullet of architecture) lines.push(bullet.startsWith("- ") ? bullet : `- ${bullet}`);
-  lines.push("- More details: `docs/agent-notes/architecture.md`");
+  if (noteLinks.length > 0) {
+    for (const link of noteLinks.filter((line) => line.startsWith("- Architecture:"))) lines.push(link.replace("- Architecture:", "- More details:"));
+  }
   lines.push("");
   lines.push("## Critical Rules");
   lines.push("");
@@ -306,7 +398,7 @@ function draftAgentsMarkdown(profile) {
   lines.push("");
   lines.push("## Common Flows");
   lines.push("");
-  if (isNext || profile.frameworks.includes("React")) {
+  if (isNext || (useFrameworkNotes && profile.frameworks.includes("React"))) {
     lines.push("- UI changes: edit the relevant component or route, run type/lint checks, then smoke-test the affected page in a browser.");
     lines.push("- API changes: inspect the route handler and shared helper together; verify success and error paths.");
   } else if (isPython) {
@@ -334,14 +426,16 @@ function draftAgentsMarkdown(profile) {
     }
   }
   if (!lines.at(-1)?.startsWith("- ")) lines.push("- TODO: Add the smallest reliable verification command for ordinary changes.");
-  if (isNext || profile.frameworks.includes("React")) lines.push("- Browser: load the affected route and check for console errors, clipping, and broken interactions.");
+  if (isNext || (useFrameworkNotes && profile.frameworks.includes("React"))) lines.push("- Browser: load the affected route and check for console errors, clipping, and broken interactions.");
   if (isDocker) lines.push("- Docker: verify container startup, logs, permissions, and exposed ports.");
   lines.push("");
   lines.push("## More Details");
   lines.push("");
-  lines.push("- Architecture: `docs/agent-notes/architecture.md`");
-  if (isDocker) lines.push("- Deployment/runtime config: `docs/agent-notes/deployment.md`");
-  if (isPython) lines.push("- Data formats: `docs/agent-notes/data-formats.md`");
+  if (noteLinks.length > 0) {
+    lines.push(...noteLinks);
+  } else {
+    lines.push("- TODO: Add deeper project notes under `docs/agent-notes/` once they exist.");
+  }
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
 }
 
