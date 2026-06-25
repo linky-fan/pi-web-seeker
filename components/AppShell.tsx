@@ -21,6 +21,27 @@ import type { ChatInputHandle } from "./ChatInput";
 
 type TaskStatus = "done" | "running" | "error";
 
+interface DebugBundleSummary {
+  targetCwd: string;
+  sessionId: string;
+  fileCount: number;
+  fileBytes: number;
+  mediaCount: number;
+  mediaBytes: number;
+  warnings?: string[];
+  manifest?: {
+    source?: {
+      cwd?: string;
+      platform?: string;
+      appVersion?: string;
+      piVersion?: string;
+    };
+    workspace?: {
+      excluded?: Array<{ path: string; reason: string; size?: number }>;
+    };
+  };
+}
+
 const TASK_STATUS_META: Record<TaskStatus, { label: string; color: string; glow: string; shadow: string }> = {
   done: { label: "Done", color: "#34d399", glow: "#10b981", shadow: "rgba(16,185,129,0.72)" },
   running: { label: "Running", color: "#7dd3fc", glow: "#38bdf8", shadow: "rgba(56,189,248,0.76)" },
@@ -69,6 +90,23 @@ function updateBrowserTaskStatus(status: TaskStatus): void {
     document.head.appendChild(link);
   }
   link.href = statusFavicon(status);
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let idx = 0;
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024;
+    idx += 1;
+  }
+  return `${value >= 10 || idx === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[idx]}`;
+}
+
+function isDebugBundleFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".tar.gz") || name.endsWith(".tgz");
 }
 
 const sessionExportLinkStyle = {
@@ -171,6 +209,8 @@ export function AppShell() {
   const sessionImportInputRef = useRef<HTMLInputElement>(null);
   const [sessionImporting, setSessionImporting] = useState(false);
   const [sessionImportError, setSessionImportError] = useState<string | null>(null);
+  const [debugBundleFile, setDebugBundleFile] = useState<File | null>(null);
+  const [debugBundleSummary, setDebugBundleSummary] = useState<DebugBundleSummary | null>(null);
 
   const toggleTopPanel = useCallback((panel: "session" | "system") => {
     setActiveTopPanel((cur) => cur === panel ? null : panel);
@@ -289,16 +329,47 @@ export function AppShell() {
 
   const handleSessionImportClick = useCallback(() => {
     setSessionImportError(null);
+    setDebugBundleFile(null);
+    setDebugBundleSummary(null);
     if (sessionImportInputRef.current) sessionImportInputRef.current.value = "";
     sessionImportInputRef.current?.click();
   }, []);
 
+  const applyImportedSession = useCallback((session: SessionInfo) => {
+    setNewSessionCwd(null);
+    setSelectedSession(session);
+    setRefreshKey((k) => k + 1);
+    setSessionKey((k) => k + 1);
+    setBranchTree([]);
+    setBranchActiveLeafId(null);
+    setSystemPrompt(null);
+    setActiveTopPanel(null);
+    router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+  }, [router]);
+
   const handleSessionImportFile = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
+    const input = event.currentTarget;
+    const file = input.files?.[0];
     if (!file) return;
     setSessionImporting(true);
     setSessionImportError(null);
+    setDebugBundleFile(null);
+    setDebugBundleSummary(null);
     try {
+      if (isDebugBundleFile(file)) {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch(apiPath("debug-bundles/inspect"), {
+          method: "POST",
+          body: form,
+        });
+        const data = await res.json().catch(() => ({})) as { summary?: DebugBundleSummary; error?: string };
+        if (!res.ok || !data.summary) throw new Error(data.error ?? `HTTP ${res.status}`);
+        setDebugBundleFile(file);
+        setDebugBundleSummary(data.summary);
+        return;
+      }
+
       const form = new FormData();
       form.append("file", file);
       const res = await fetch(apiPath("sessions/import"), {
@@ -307,22 +378,44 @@ export function AppShell() {
       });
       const data = await res.json().catch(() => ({})) as { session?: SessionInfo; error?: string };
       if (!res.ok || !data.session) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setNewSessionCwd(null);
-      setSelectedSession(data.session);
-      setRefreshKey((k) => k + 1);
-      setSessionKey((k) => k + 1);
-      setBranchTree([]);
-      setBranchActiveLeafId(null);
-      setSystemPrompt(null);
-      setActiveTopPanel(null);
-      router.replace(`?session=${encodeURIComponent(data.session.id)}`, { scroll: false });
+      applyImportedSession(data.session);
     } catch (error) {
       setSessionImportError(error instanceof Error ? error.message : String(error));
     } finally {
       setSessionImporting(false);
-      event.currentTarget.value = "";
+      input.value = "";
     }
-  }, [router]);
+  }, [applyImportedSession]);
+
+  const handleDebugBundleImportConfirm = useCallback(async () => {
+    if (!debugBundleFile) return;
+    setSessionImporting(true);
+    setSessionImportError(null);
+    try {
+      const form = new FormData();
+      form.append("file", debugBundleFile);
+      form.append("confirm", "1");
+      const res = await fetch(apiPath("debug-bundles/import"), {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json().catch(() => ({})) as { session?: SessionInfo; error?: string };
+      if (!res.ok || !data.session) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setDebugBundleFile(null);
+      setDebugBundleSummary(null);
+      applyImportedSession(data.session);
+    } catch (error) {
+      setSessionImportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSessionImporting(false);
+    }
+  }, [applyImportedSession, debugBundleFile]);
+
+  const handleDebugBundleImportCancel = useCallback(() => {
+    setDebugBundleFile(null);
+    setDebugBundleSummary(null);
+    setSessionImportError(null);
+  }, []);
 
   const handleInitialRestoreDone = useCallback(() => {
     setInitialSessionRestored(true);
@@ -454,7 +547,7 @@ export function AppShell() {
     <input
       ref={sessionImportInputRef}
       type="file"
-      accept=".json,.jsonl,application/json,application/x-ndjson"
+      accept=".json,.jsonl,.tar.gz,.tgz,application/json,application/x-ndjson,application/gzip"
       onChange={handleSessionImportFile}
       style={{ display: "none" }}
     />
@@ -716,6 +809,14 @@ export function AppShell() {
                           >
                             {t("session.exportJson")}
                           </a>
+                          <a
+                            href={apiPath(`sessions/${encodeURIComponent(selectedSession.id)}/debug-bundle`)}
+                            download
+                            onClick={() => setActiveTopPanel(null)}
+                            style={sessionExportLinkStyle}
+                          >
+                            {t("session.exportDebugBundle")}
+                          </a>
                         </>
                       ) : (
                         <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{t("branches.noSession")}</span>
@@ -730,6 +831,58 @@ export function AppShell() {
                       fontSize: 12,
                     }}>
                       {t("session.importFailed")}: {sessionImportError}
+                    </div>
+                  )}
+                  {debugBundleSummary && (
+                    <div style={{
+                      padding: "9px 16px",
+                      borderBottom: "1px solid var(--border)",
+                      color: "var(--text-muted)",
+                      fontSize: 12,
+                      display: "grid",
+                      gap: 7,
+                    }}>
+                      <div style={{ color: "var(--text)", fontWeight: 650 }}>{t("session.debugBundleReady")}</div>
+                      <div style={{ display: "grid", gap: 4 }}>
+                        <div>{t("session.debugBundleOriginalCwd")}: <span style={{ fontFamily: "var(--font-mono)" }}>{debugBundleSummary.manifest?.source?.cwd ?? "-"}</span></div>
+                        <div>{t("session.debugBundleTargetCwd")}: <span style={{ fontFamily: "var(--font-mono)" }}>{debugBundleSummary.targetCwd}</span></div>
+                        <div>
+                          {t("session.debugBundleContents", {
+                            files: debugBundleSummary.fileCount,
+                            fileBytes: formatBytes(debugBundleSummary.fileBytes),
+                            media: debugBundleSummary.mediaCount,
+                            mediaBytes: formatBytes(debugBundleSummary.mediaBytes),
+                          })}
+                        </div>
+                        {debugBundleSummary.manifest?.workspace?.excluded?.length ? (
+                          <div>
+                            {t("session.debugBundleExcluded", { count: debugBundleSummary.manifest.workspace.excluded.length })}
+                          </div>
+                        ) : null}
+                        {debugBundleSummary.warnings?.slice(0, 3).map((warning, idx) => (
+                          <div key={`debug-warning:${idx}`} style={{ color: "rgba(234,179,8,0.98)" }}>
+                            {warning}
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          type="button"
+                          onClick={() => void handleDebugBundleImportConfirm()}
+                          disabled={sessionImporting}
+                          style={{ ...sessionImportButtonStyle, opacity: sessionImporting ? 0.6 : 1 }}
+                        >
+                          {sessionImporting ? t("session.importing") : t("session.debugBundleImport")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDebugBundleImportCancel}
+                          disabled={sessionImporting}
+                          style={{ ...sessionImportButtonStyle, opacity: sessionImporting ? 0.6 : 1 }}
+                        >
+                          {t("session.debugBundleCancel")}
+                        </button>
+                      </div>
                     </div>
                   )}
                   <div style={{ paddingTop: 1 }}>

@@ -15,7 +15,7 @@ import type { FileEntry, SessionEntry, SessionHeader, SessionInfo } from "@/lib/
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
+const MAX_IMPORT_BYTES = 250 * 1024 * 1024;
 
 interface ParsedImport {
   header: SessionHeader;
@@ -232,7 +232,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Import file is empty" }, { status: 400 });
     }
     if (file.size > MAX_IMPORT_BYTES) {
-      return NextResponse.json({ error: "Import file is too large" }, { status: 413 });
+      return NextResponse.json({ error: "Import file is too large (>250MB)" }, { status: 413 });
     }
 
     const text = await file.text();
