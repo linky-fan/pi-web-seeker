@@ -361,6 +361,26 @@ pre, code {
 }
 .markdown-body th { background: var(--bg-panel); font-weight: 600; }
 .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+.plan-card-markdown {
+  font-size: 13px;
+  line-height: 1.65;
+}
+.plan-card-markdown ul,
+.plan-card-markdown ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.plan-card-markdown li {
+  margin: 3px 0;
+}
+.plan-card-markdown code {
+  background: var(--bg-selected);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
 
 /* File viewer markdown preview — larger headings */
 .markdown-file-preview h1 { font-size: 1.8em; }

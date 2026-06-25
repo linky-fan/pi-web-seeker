@@ -6,6 +6,7 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { getSubagentMessageKey } from "@/lib/subagents";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { apiPath } from "@/lib/api-path";
+import type { PlanMode } from "@/lib/plan-mode";
 
 export interface SessionData {
   sessionId: string;
@@ -56,11 +57,13 @@ type LiveAgentState = {
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   systemPrompt?: string;
   thinkingLevel?: string;
+  planMode?: boolean;
 };
 
 type AgentStateResponse = { running: boolean; state?: LiveAgentState };
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 140;
+const PLAN_MODE_STORAGE_PREFIX = "pi-web.planMode";
 
 function userMessageKey(message: AgentMessage): string | null {
   if (message.role !== "user") return null;
@@ -167,6 +170,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [taskError, setTaskError] = useState<string | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
   const [toolExecutionStatuses, setToolExecutionStatuses] = useState<Map<string, ToolExecutionStatus>>(new Map());
+  const [planMode, setPlanMode] = useState<PlanMode>("normal");
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const messagesRef = useRef<AgentMessage[]>([]);
@@ -185,6 +189,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const currentModel = currentModelOverride ?? data?.context.model ?? pendingModel ?? null;
   const displayModel = isNew ? newSessionModel : currentModel;
+  const planModeStorageKey = session?.id
+    ? `${PLAN_MODE_STORAGE_PREFIX}:session:${session.id}`
+    : newSessionCwd
+      ? `${PLAN_MODE_STORAGE_PREFIX}:cwd:${newSessionCwd}`
+      : null;
 
   const sessionStats = useMemo(() => {
     const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -222,7 +231,48 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (agentState.state.contextUsage !== undefined) setContextUsage(agentState.state.contextUsage ?? null);
     if (agentState.state.systemPrompt !== undefined) setSystemPrompt(agentState.state.systemPrompt ?? null);
     if (agentState.state.thinkingLevel !== undefined) setThinkingLevel((agentState.state.thinkingLevel as ThinkingLevelOption) ?? "auto");
+    if (agentState.state.planMode !== undefined) setPlanMode(agentState.state.planMode ? "plan" : "normal");
   }, []);
+
+  useEffect(() => {
+    if (!planModeStorageKey) {
+      setPlanMode("normal");
+      return;
+    }
+    try {
+      setPlanMode(window.localStorage.getItem(planModeStorageKey) === "plan" ? "plan" : "normal");
+    } catch {
+      setPlanMode("normal");
+    }
+  }, [planModeStorageKey]);
+
+  const persistPlanMode = useCallback((key: string | null, mode: PlanMode) => {
+    if (!key) return;
+    try {
+      if (mode === "plan") window.localStorage.setItem(key, "plan");
+      else window.localStorage.removeItem(key);
+    } catch {
+      // localStorage may be unavailable in restricted contexts
+    }
+  }, []);
+
+  const handlePlanModeChange = useCallback(async (mode: PlanMode): Promise<boolean> => {
+    if (agentRunningRef.current) return false;
+    const previousMode = planMode;
+    setPlanMode(mode);
+    persistPlanMode(planModeStorageKey, mode);
+    const sid = sessionIdRef.current;
+    if (!sid || isNew) return true;
+    try {
+      await sendAgentCommand(sid, { type: "set_plan_mode", enabled: mode === "plan" });
+      return true;
+    } catch (e) {
+      console.error("Failed to set plan mode:", e);
+      setPlanMode(previousMode);
+      persistPlanMode(planModeStorageKey, previousMode);
+      return false;
+    }
+  }, [isNew, persistPlanMode, planMode, planModeStorageKey]);
 
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
     try {
@@ -480,6 +530,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             cwd: newSessionCwd,
             type: "prompt",
             message,
+            planMode: planMode === "plan",
             ...(piImages?.length ? { images: piImages } : {}),
             ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
             ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
@@ -489,6 +540,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (!res.ok || result.error || !result.sessionId) throw new Error(result.error ?? `HTTP ${res.status}`);
         const realId = result.sessionId;
         sessionIdRef.current = realId;
+        if (planMode === "plan" && newSessionCwd) {
+          persistPlanMode(`${PLAN_MODE_STORAGE_PREFIX}:session:${realId}`, "plan");
+          persistPlanMode(`${PLAN_MODE_STORAGE_PREFIX}:cwd:${newSessionCwd}`, "normal");
+        }
         connectEvents(realId, { syncOnConnect: false });
         onSessionCreated?.({
           id: realId,
@@ -505,6 +560,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         await sendAgentCommand(session.id, {
           type: "prompt",
           message,
+          planMode: planMode === "plan",
           ...(piImages?.length ? { images: piImages } : {}),
         });
       } else {
@@ -520,7 +576,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         dispatch({ type: "end" });
         return false;
       }
-  }, [isNew, newSessionCwd, newSessionModel, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated]);
+  }, [isNew, newSessionCwd, newSessionModel, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated, persistPlanMode, planMode]);
 
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -613,12 +669,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         type: "steer",
         message,
         interrupt: true,
+        planMode: planMode === "plan",
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
       console.error("Failed to steer:", e);
     }
-  }, []);
+  }, [planMode]);
 
   const handleFollowUp = useCallback(async (message: string, images?: AttachedImage[]) => {
     const sid = sessionIdRef.current;
@@ -629,12 +686,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       await sendAgentCommand(sid, {
         type: "follow_up",
         message,
+        planMode: planMode === "plan",
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
       console.error("Failed to follow up:", e);
     }
-  }, []);
+  }, [planMode]);
 
   const handleAbortCompaction = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -659,19 +717,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    const container = scrollContainerRef.current;
-    if (container) {
-      requestAnimationFrame(() => {
-        container.scrollTo({ top: container.scrollHeight, behavior });
-      });
-      return;
-    }
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior, block: "end" });
+    });
   }, []);
 
   const isNearBottom = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return true;
+    const anchor = messagesEndRef.current;
+    if (anchor) {
+      const anchorRect = anchor.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      return anchorRect.bottom - containerRect.bottom <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
+    }
     return container.scrollHeight - container.scrollTop - container.clientHeight <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
   }, []);
 
@@ -779,7 +838,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
-    taskError, agentPhase, toolExecutionStatuses,
+    taskError, agentPhase, toolExecutionStatuses, planMode,
     isNew,
     // Refs
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,
@@ -787,7 +846,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Actions
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
-    handleThinkingLevelChange, setActiveLeafId, setData, setMessages,
+    handleThinkingLevelChange, handlePlanModeChange, setActiveLeafId, setData, setMessages,
     dispatch, setAgentRunning, setForkingEntryId,
     // Subscriptions
     handleAgentEventRef,

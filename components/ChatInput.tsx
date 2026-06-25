@@ -4,6 +4,7 @@ import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, f
 import { useLocale } from "@/lib/i18n";
 import { apiPath } from "@/lib/api-path";
 import { popOnce, revealChildren, revealElement } from "@/lib/motion";
+import { getSlashCommandQuery, type PlanMode, type SlashCommandQuery } from "@/lib/plan-mode";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -53,6 +54,8 @@ interface Props {
   contextUsage?: ContextUsage | null;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh") => void;
+  planMode?: PlanMode;
+  onPlanModeChange?: (mode: PlanMode) => boolean | Promise<boolean>;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
@@ -199,7 +202,7 @@ function getMentionQuery(text: string, cursor: number): MentionQuery | null {
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, modelNames, modelList, onModelChange,
   onCompact, onAbortCompaction, isCompacting, compactError, contextUsage,
-  thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
+  thinkingLevel, onThinkingLevelChange, planMode = "normal", onPlanModeChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
   soundEnabled, onSoundToggle,
   promptHistory = [],
@@ -219,9 +222,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
   const [mentionLoading, setMentionLoading] = useState(false);
+  const [slashQuery, setSlashQuery] = useState<SlashCommandQuery | null>(null);
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+  const [slashNotice, setSlashNotice] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionPanelRef = useRef<HTMLDivElement>(null);
+  const slashPanelRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
@@ -239,6 +247,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const effectiveDraftStorageKey = draftStorageKey ? `${DRAFT_STORAGE_KEY}:${draftStorageKey}` : DRAFT_STORAGE_KEY;
   const canSend = value.trim().length > 0 || attachedImages.length > 0;
   const prevCanSendRef = useRef(canSend);
+  const slashCommands = [
+    {
+      name: "plan",
+      label: t("chat.slash.plan"),
+      description: t("chat.slash.planDesc"),
+      mode: "plan" as PlanMode,
+      active: planMode === "plan",
+    },
+    {
+      name: "normal",
+      label: t("chat.slash.normal"),
+      description: t("chat.slash.normalDesc"),
+      mode: "normal" as PlanMode,
+      active: planMode === "normal",
+    },
+  ].filter((command) => !slashQuery?.query || command.name.startsWith(slashQuery.query));
 
   useEffect(() => {
     const tween = revealElement(inputShellRef.current, { y: 4, duration: 0.2 });
@@ -292,6 +316,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setMentionOpen(Boolean(cwd && next));
     setMentionSelectedIndex(0);
   }, [cwd]);
+
+  const updateSlashState = useCallback((text: string, cursor?: number) => {
+    const nextCursor = cursor ?? textareaRef.current?.selectionStart ?? text.length;
+    const next = getSlashCommandQuery(text, nextCursor);
+    setSlashQuery(next);
+    setSlashOpen(Boolean(next));
+    setSlashSelectedIndex(0);
+  }, []);
 
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
@@ -401,6 +433,32 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.focus();
     });
   }, [mentionQuery, setInputValue]);
+
+  const runSlashCommand = useCallback(async (mode: PlanMode) => {
+    if (isStreaming) {
+      setSlashNotice(t("chat.slash.runningDisabled"));
+      window.setTimeout(() => setSlashNotice(null), 1800);
+      return;
+    }
+    const ok = await Promise.resolve(onPlanModeChange?.(mode) ?? true);
+    if (!ok) {
+      setSlashNotice(t("chat.slash.runningDisabled"));
+      window.setTimeout(() => setSlashNotice(null), 1800);
+      return;
+    }
+    const ta = textareaRef.current;
+    const activeQuery = slashQuery;
+    if (ta && activeQuery) {
+      const before = ta.value.slice(0, activeQuery.start);
+      const after = ta.value.slice(activeQuery.end);
+      setInputValue((before + after).replace(/^\s+/, ""));
+    } else {
+      setInputValue("");
+    }
+    setSlashOpen(false);
+    setSlashQuery(null);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [isStreaming, onPlanModeChange, setInputValue, slashQuery, t]);
 
   const rememberHistory = useCallback((text: string) => {
     const trimmed = text.trim();
@@ -519,6 +577,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (slashOpen && (e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        if (slashCommands.length === 0) return;
+        setSlashSelectedIndex((idx) => {
+          const delta = e.key === "ArrowDown" ? 1 : -1;
+          return (idx + delta + slashCommands.length) % slashCommands.length;
+        });
+        return;
+      }
+      if (slashOpen && (e.key === "Enter" || e.key === "Tab") && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && !e.nativeEvent.isComposing) {
+        e.preventDefault();
+        const selected = slashCommands[slashSelectedIndex];
+        if (selected) {
+          void runSlashCommand(selected.mode);
+          return;
+        }
+        return;
+      }
+      if (slashOpen && e.key === "Escape") {
+        e.preventDefault();
+        setSlashOpen(false);
+        return;
+      }
       if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (mentionOpen) {
           e.preventDefault();
@@ -585,15 +666,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [value, isStreaming, onSteer, onFollowUp, sendQueued, handleSend, setInputValue, mentionOpen, mentionEntries, mentionSelectedIndex, insertMention]
+    [value, isStreaming, onSteer, onFollowUp, sendQueued, handleSend, setInputValue, mentionOpen, mentionEntries, mentionSelectedIndex, insertMention, slashOpen, slashCommands, slashSelectedIndex, runSlashCommand]
   );
 
   const handleInput = useCallback(() => {
     resizeTextarea();
     historyIndexRef.current = null;
     const ta = textareaRef.current;
-    if (ta) updateMentionState(ta.value, ta.selectionStart);
-  }, [resizeTextarea, updateMentionState]);
+    if (ta) {
+      updateSlashState(ta.value, ta.selectionStart);
+      updateMentionState(ta.value, ta.selectionStart);
+    }
+  }, [resizeTextarea, updateMentionState, updateSlashState]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? []);
@@ -696,6 +780,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         !textareaRef.current.contains(e.target as Node)
       ) {
         setMentionOpen(false);
+      }
+      if (
+        slashPanelRef.current &&
+        !slashPanelRef.current.contains(e.target as Node) &&
+        textareaRef.current &&
+        !textareaRef.current.contains(e.target as Node)
+      ) {
+        setSlashOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -802,6 +894,101 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
           } as React.CSSProperties}
         >
+          {slashOpen && (
+            <div
+              ref={slashPanelRef}
+              role="listbox"
+              aria-label={t("chat.slash.title")}
+              tabIndex={-1}
+              style={{
+                position: "absolute",
+                left: 10,
+                bottom: "calc(100% + 8px)",
+                zIndex: 320,
+                width: "min(420px, calc(100vw - 56px))",
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                boxShadow: "0 -8px 24px rgba(15,23,42,0.16)",
+                padding: 4,
+              }}
+            >
+              <div style={{ padding: "7px 9px 6px", fontSize: 11, color: "var(--text-dim)", fontWeight: 650 }}>
+                {t("chat.slash.title")}
+              </div>
+              {slashCommands.length === 0 ? (
+                <div style={{ padding: "9px", color: "var(--text-dim)", fontSize: 12 }}>
+                  {t("chat.slash.empty")}
+                </div>
+              ) : (
+                slashCommands.map((command, idx) => {
+                  const active = idx === slashSelectedIndex;
+                  const disabled = isStreaming;
+                  return (
+                    <button
+                      key={command.name}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      disabled={disabled}
+                      onMouseEnter={() => setSlashSelectedIndex(idx)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        void runSlashCommand(command.mode);
+                      }}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "22px minmax(0, 1fr) auto",
+                        alignItems: "center",
+                        gap: 8,
+                        width: "100%",
+                        padding: "8px 9px",
+                        background: active ? "var(--bg-selected)" : "none",
+                        border: "none",
+                        borderRadius: 7,
+                        color: disabled ? "var(--text-dim)" : active ? "var(--text)" : "var(--text-muted)",
+                        cursor: disabled ? "not-allowed" : "pointer",
+                        textAlign: "left",
+                        fontSize: 12,
+                        opacity: disabled ? 0.62 : 1,
+                      }}
+                    >
+                      <span style={{ color: command.mode === "plan" ? "rgba(234,179,8,0.98)" : "var(--accent)", display: "flex" }}>
+                        {command.mode === "plan" ? (
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M9 11h6" /><path d="M9 15h4" />
+                            <path d="M5 4h14v16H5z" /><path d="M8 4V2" /><path d="M16 4V2" />
+                          </svg>
+                        ) : (
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M4 12h16" /><path d="M12 4v16" />
+                          </svg>
+                        )}
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: "block", color: active ? "var(--text)" : "var(--text-muted)", fontWeight: 650 }}>
+                          /{command.name}
+                        </span>
+                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 11, marginTop: 2 }}>
+                          {command.description}
+                        </span>
+                      </span>
+                      {command.active && (
+                        <span style={{ color: "var(--accent)", fontSize: 11, fontWeight: 650 }}>
+                          {t("chat.slash.active")}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+              {slashNotice && (
+                <div style={{ padding: "7px 9px 4px", color: "rgba(234,179,8,0.98)", fontSize: 11 }}>
+                  {slashNotice}
+                </div>
+              )}
+            </div>
+          )}
           {mentionOpen && (
             <div
               ref={mentionPanelRef}
@@ -894,8 +1081,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
-            onClick={(e) => updateMentionState(e.currentTarget.value, e.currentTarget.selectionStart)}
-            onSelect={(e) => updateMentionState(e.currentTarget.value, e.currentTarget.selectionStart)}
+            onClick={(e) => {
+              updateSlashState(e.currentTarget.value, e.currentTarget.selectionStart);
+              updateMentionState(e.currentTarget.value, e.currentTarget.selectionStart);
+            }}
+            onSelect={(e) => {
+              updateSlashState(e.currentTarget.value, e.currentTarget.selectionStart);
+              updateMentionState(e.currentTarget.value, e.currentTarget.selectionStart);
+            }}
             onPaste={handlePaste}
             placeholder={
               isStreaming && (onSteer || onFollowUp)
@@ -1009,6 +1202,38 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           {/* LEFT: attach + snippets + model selector */}
           <div style={{ flex: "1 1 280px", minWidth: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", rowGap: 4 }}>
+            {planMode === "plan" && (
+              <button
+                type="button"
+                data-motion-control
+                onClick={() => { if (!isStreaming) void onPlanModeChange?.("normal"); }}
+                disabled={isStreaming}
+                title={t("chat.planModeExit")}
+                style={{
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  height: 32,
+                  padding: "0 9px",
+                  background: "rgba(234,179,8,0.10)",
+                  border: "1px solid rgba(234,179,8,0.30)",
+                  borderRadius: 8,
+                  color: "rgba(180,130,0,1)",
+                  cursor: isStreaming ? "not-allowed" : "pointer",
+                  opacity: isStreaming ? 0.64 : 1,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 11h6" /><path d="M9 15h4" />
+                  <path d="M5 4h14v16H5z" /><path d="M8 4V2" /><path d="M16 4V2" />
+                </svg>
+                <span>{t("chat.planMode")}</span>
+              </button>
+            )}
             <label
               data-motion-control
               htmlFor={imageInputId}

@@ -3,6 +3,7 @@ import { join } from "path";
 import { createAgentSession, DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
+import { isSafePlanBashCommand, PLAN_MODE_SYSTEM_PROMPT } from "./plan-mode";
 import {
   BUILTIN_CODING_TOOL_NAMES,
   BUILTIN_CODING_TOOL_SET,
@@ -47,9 +48,14 @@ interface AgentWithToolHooks {
   beforeToolCall?: BeforeToolCallHook;
 }
 
+interface AgentSessionPlanAccess extends AgentSessionLike {
+  _baseSystemPrompt?: string;
+}
+
 const MAX_FOREGROUND_TIMEOUT_SECONDS = 300;
 const LONG_TASK_TIMEOUT_SECONDS = 120;
 const RPC_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+const PLAN_MODE_TOOL_NAMES = ["read", "bash", "grep", "find", "ls"];
 
 function getRuntimeOsLabel(): string {
   switch (process.platform) {
@@ -191,13 +197,16 @@ function longRunningToolBlockReason(command: string, timeout?: number): string |
   return null;
 }
 
-function installLongRunningToolGuard(session: AgentSessionLike): void {
+function installToolGuards(session: AgentSessionLike, isPlanModeEnabled: () => boolean): void {
   const agent = session.agent as AgentWithToolHooks;
   const existingBeforeToolCall = agent.beforeToolCall?.bind(agent);
   agent.beforeToolCall = async (context, signal) => {
     const existingResult = await existingBeforeToolCall?.(context, signal);
     if (existingResult?.block) return existingResult;
-    if (context.toolCall.name !== "bash" || !isRecord(context.args)) return existingResult;
+    const toolName = context.toolCall.name ?? "";
+    const planBlockReason = planModeToolBlockReason(isPlanModeEnabled(), toolName, context.args);
+    if (planBlockReason) return { block: true, reason: planBlockReason };
+    if (toolName !== "bash" || !isRecord(context.args)) return existingResult;
 
     const command = typeof context.args.command === "string" ? context.args.command : "";
     if (!command.trim()) return existingResult;
@@ -208,6 +217,30 @@ function installLongRunningToolGuard(session: AgentSessionLike): void {
 
     return { block: true, reason };
   };
+}
+
+function planModeToolBlockReason(planModeEnabled: boolean, toolName: string, args: unknown): string | null {
+  if (!planModeEnabled) return null;
+  if (!PLAN_MODE_TOOL_NAMES.includes(toolName)) {
+    return [
+      "Blocked by Pi Web Plan Mode: this mode is read-only.",
+      "",
+      `Tool "${toolName}" is not available while planning.`,
+      "Switch back to Normal mode before asking the agent to make changes.",
+    ].join("\n");
+  }
+  if (toolName !== "bash") return null;
+  if (!isRecord(args)) {
+    return "Blocked by Pi Web Plan Mode: bash arguments were not readable.";
+  }
+  const command = typeof args.command === "string" ? args.command : "";
+  if (isSafePlanBashCommand(command)) return null;
+  return [
+    "Blocked by Pi Web Plan Mode: bash is limited to read-only inspection commands.",
+    "",
+    "Allowed examples: rg, sed -n, cat, ls, pwd, git status/log/diff/show, npm list/view, node --version.",
+    `Command: ${command}`,
+  ].join("\n");
 }
 
 function includeExtensionTools(requestedToolNames: string[], extensionToolNames: string[]): string[] {
@@ -225,6 +258,8 @@ export class AgentSessionWrapper {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private pendingGuide: PendingGuide | null = null;
+  private planModeEnabled = false;
+  private normalActiveToolNames: string[] | null = null;
   private _alive = true;
 
   constructor(public readonly inner: AgentSessionLike) {}
@@ -239,6 +274,10 @@ export class AgentSessionWrapper {
 
   isAlive(): boolean {
     return this._alive;
+  }
+
+  isPlanModeEnabled(): boolean {
+    return this.planModeEnabled;
   }
 
   start(): void {
@@ -298,7 +337,15 @@ export class AgentSessionWrapper {
     const type = command.type as string;
 
     switch (type) {
+      case "set_plan_mode": {
+        this.setPlanMode(command.enabled === true);
+        return { planMode: this.planModeEnabled };
+      }
+
       case "prompt": {
+        if (typeof command.planMode === "boolean") {
+          this.setPlanMode(command.planMode);
+        }
         // Fire and forget — events come via subscribe
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         this.inner.prompt(command.message as string, promptImages?.length ? { images: promptImages } : undefined).catch(() => {});
@@ -327,6 +374,7 @@ export class AgentSessionWrapper {
             : null,
           systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
+          planMode: this.planModeEnabled,
         };
       }
 
@@ -416,6 +464,9 @@ export class AgentSessionWrapper {
       }
 
       case "steer": {
+        if (typeof command.planMode === "boolean") {
+          this.setPlanMode(command.planMode);
+        }
         const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         if (command.interrupt === true) {
           const guide = {
@@ -443,6 +494,9 @@ export class AgentSessionWrapper {
       }
 
       case "follow_up": {
+        if (typeof command.planMode === "boolean") {
+          this.setPlanMode(command.planMode);
+        }
         const followImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         await this.inner.followUp(command.message as string, followImages?.length ? followImages : undefined);
         return null;
@@ -489,6 +543,36 @@ export class AgentSessionWrapper {
       default:
         throw new Error(`Unsupported command: ${type}`);
     }
+  }
+
+  private setPlanMode(enabled: boolean): void {
+    if (enabled === this.planModeEnabled) return;
+
+    if (enabled) {
+      this.normalActiveToolNames = this.inner.getActiveToolNames();
+      const allToolNames = this.inner.getAllTools().map((tool) => tool.name);
+      this.inner.setActiveToolsByName(filterKnownToolNames(PLAN_MODE_TOOL_NAMES, allToolNames));
+      this.appendPlanModeSystemPrompt();
+      this.planModeEnabled = true;
+      return;
+    }
+
+    const allToolNames = this.inner.getAllTools().map((tool) => tool.name);
+    const restoreNames = this.normalActiveToolNames ?? uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES]);
+    const knownRestoreNames = filterKnownToolNames(restoreNames, allToolNames);
+    this.inner.setActiveToolsByName(knownRestoreNames);
+    if (knownRestoreNames.length === 0 && this.inner.agent.state) this.inner.agent.state.systemPrompt = "";
+    this.planModeEnabled = false;
+    this.normalActiveToolNames = null;
+  }
+
+  private appendPlanModeSystemPrompt(): void {
+    const inner = this.inner as AgentSessionPlanAccess;
+    const base = inner._baseSystemPrompt ?? this.inner.agent.state?.systemPrompt ?? "";
+    if (base.includes(PLAN_MODE_SYSTEM_PROMPT)) return;
+    const next = `${base}\n\n${PLAN_MODE_SYSTEM_PROMPT}`.trim();
+    inner._baseSystemPrompt = next;
+    if (this.inner.agent.state) this.inner.agent.state.systemPrompt = next;
   }
 
   destroy(): void {
@@ -610,9 +694,9 @@ export async function startRpcSession(
     }
 
     await inner.bindExtensions?.({ mode: "rpc" });
-    installLongRunningToolGuard(inner);
 
     const wrapper = new AgentSessionWrapper(inner);
+    installToolGuards(inner, () => wrapper.isPlanModeEnabled());
     wrapper.start();
 
     const realSessionId = inner.sessionId as string;

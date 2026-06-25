@@ -664,12 +664,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     taskError,
     agentPhase,
     toolExecutionStatuses,
+    planMode,
     isNew,
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
-    handleThinkingLevelChange, handleAgentEventRef,
+    handleThinkingLevelChange, handlePlanModeChange, handleAgentEventRef,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange,
@@ -918,6 +919,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       contextUsage={contextUsage}
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
+      planMode={planMode}
+      onPlanModeChange={handlePlanModeChange}
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}
       retryInfo={retryInfo}
@@ -1079,11 +1082,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               </div>
             )}
 
+            <div ref={messagesEndRef} />
+
             {agentRunning && (
               <div style={{ height: scrollContainerRef.current ? scrollContainerRef.current.clientHeight : "80vh" }} />
             )}
-
-            <div ref={messagesEndRef} />
           </div>
         </div>
         <ChatMinimap
