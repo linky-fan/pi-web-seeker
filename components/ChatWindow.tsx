@@ -665,6 +665,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     agentPhase,
     toolExecutionStatuses,
     planMode,
+    planExecutionMode,
+    planModeStatus,
     isNew,
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
@@ -920,6 +922,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       planMode={planMode}
+      planExecutionMode={planExecutionMode}
+      planModeStatus={planModeStatus}
       onPlanModeChange={handlePlanModeChange}
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}

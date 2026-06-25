@@ -4,7 +4,7 @@ import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, f
 import { useLocale } from "@/lib/i18n";
 import { apiPath } from "@/lib/api-path";
 import { popOnce, revealChildren, revealElement } from "@/lib/motion";
-import { getSlashCommandQuery, type PlanMode, type SlashCommandQuery } from "@/lib/plan-mode";
+import { getSlashCommandQuery, type PlanExecutionMode, type PlanMode, type PlanModeStatus, type SlashCommandQuery } from "@/lib/plan-mode";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -55,7 +55,9 @@ interface Props {
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh") => void;
   planMode?: PlanMode;
-  onPlanModeChange?: (mode: PlanMode) => boolean | Promise<boolean>;
+  planExecutionMode?: PlanExecutionMode;
+  planModeStatus?: PlanModeStatus | null;
+  onPlanModeChange?: (mode: PlanMode, executionMode?: PlanExecutionMode) => boolean | Promise<boolean>;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
@@ -202,7 +204,7 @@ function getMentionQuery(text: string, cursor: number): MentionQuery | null {
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, modelNames, modelList, onModelChange,
   onCompact, onAbortCompaction, isCompacting, compactError, contextUsage,
-  thinkingLevel, onThinkingLevelChange, planMode = "normal", onPlanModeChange, availableThinkingLevels, thinkingLevelMap,
+  thinkingLevel, onThinkingLevelChange, planMode = "normal", planExecutionMode = "main", planModeStatus, onPlanModeChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
   soundEnabled, onSoundToggle,
   promptHistory = [],
@@ -253,14 +255,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       label: t("chat.slash.plan"),
       description: t("chat.slash.planDesc"),
       mode: "plan" as PlanMode,
-      active: planMode === "plan",
+      executionMode: "main" as PlanExecutionMode,
+      active: planMode === "plan" && planExecutionMode === "main",
+      disabled: false,
+    },
+    {
+      name: "plan-subagent",
+      label: t("chat.slash.planSubagent"),
+      description: planModeStatus && !planModeStatus.subagentsAvailable
+        ? t("chat.slash.planSubagentUnavailable", { tools: planModeStatus.missingTools.join(", ") || "Agent" })
+        : t("chat.slash.planSubagentDesc"),
+      mode: "plan" as PlanMode,
+      executionMode: "subagent" as PlanExecutionMode,
+      active: planMode === "plan" && planExecutionMode === "subagent",
+      disabled: Boolean(planModeStatus && !planModeStatus.subagentsAvailable),
     },
     {
       name: "normal",
       label: t("chat.slash.normal"),
       description: t("chat.slash.normalDesc"),
       mode: "normal" as PlanMode,
+      executionMode: "main" as PlanExecutionMode,
       active: planMode === "normal",
+      disabled: false,
     },
   ].filter((command) => !slashQuery?.query || command.name.startsWith(slashQuery.query));
 
@@ -434,16 +451,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
   }, [mentionQuery, setInputValue]);
 
-  const runSlashCommand = useCallback(async (mode: PlanMode) => {
+  const runSlashCommand = useCallback(async (mode: PlanMode, executionMode: PlanExecutionMode = "main", disabled = false) => {
     if (isStreaming) {
       setSlashNotice(t("chat.slash.runningDisabled"));
       window.setTimeout(() => setSlashNotice(null), 1800);
       return;
     }
-    const ok = await Promise.resolve(onPlanModeChange?.(mode) ?? true);
+    if (disabled) {
+      setSlashNotice(planModeStatus?.installCommand ? t("chat.slash.subagentInstall", { command: planModeStatus.installCommand }) : t("chat.slash.runningDisabled"));
+      window.setTimeout(() => setSlashNotice(null), 2600);
+      return;
+    }
+    const ok = await Promise.resolve(onPlanModeChange?.(mode, executionMode) ?? true);
     if (!ok) {
-      setSlashNotice(t("chat.slash.runningDisabled"));
-      window.setTimeout(() => setSlashNotice(null), 1800);
+      setSlashNotice(executionMode === "subagent" ? t("chat.slash.subagentInstall", { command: planModeStatus?.installCommand ?? "npx --no-install pi install npm:@tintinweb/pi-subagents" }) : t("chat.slash.runningDisabled"));
+      window.setTimeout(() => setSlashNotice(null), 2600);
       return;
     }
     const ta = textareaRef.current;
@@ -458,7 +480,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setSlashOpen(false);
     setSlashQuery(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [isStreaming, onPlanModeChange, setInputValue, slashQuery, t]);
+  }, [isStreaming, onPlanModeChange, planModeStatus, setInputValue, slashQuery, t]);
 
   const rememberHistory = useCallback((text: string) => {
     const trimmed = text.trim();
@@ -590,7 +612,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         e.preventDefault();
         const selected = slashCommands[slashSelectedIndex];
         if (selected) {
-          void runSlashCommand(selected.mode);
+          void runSlashCommand(selected.mode, selected.executionMode, selected.disabled);
           return;
         }
         return;
@@ -923,7 +945,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               ) : (
                 slashCommands.map((command, idx) => {
                   const active = idx === slashSelectedIndex;
-                  const disabled = isStreaming;
+                  const disabled = isStreaming || command.disabled;
                   return (
                     <button
                       key={command.name}
@@ -934,7 +956,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       onMouseEnter={() => setSlashSelectedIndex(idx)}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        void runSlashCommand(command.mode);
+                        void runSlashCommand(command.mode, command.executionMode, command.disabled);
                       }}
                       style={{
                         display: "grid",
@@ -1208,7 +1230,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 data-motion-control
                 onClick={() => { if (!isStreaming) void onPlanModeChange?.("normal"); }}
                 disabled={isStreaming}
-                title={t("chat.planModeExit")}
+                title={planExecutionMode === "subagent" ? t("chat.planModeSubagentHint") : t("chat.planModeExit")}
                 style={{
                   flexShrink: 0,
                   display: "flex",
@@ -1231,7 +1253,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <path d="M9 11h6" /><path d="M9 15h4" />
                   <path d="M5 4h14v16H5z" /><path d="M8 4V2" /><path d="M16 4V2" />
                 </svg>
-                <span>{t("chat.planMode")}</span>
+                <span>{planExecutionMode === "subagent" ? t("chat.planModeSubagent") : t("chat.planMode")}</span>
               </button>
             )}
             <label

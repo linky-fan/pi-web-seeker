@@ -1,4 +1,12 @@
 export type PlanMode = "normal" | "plan";
+export type PlanExecutionMode = "main" | "subagent";
+
+export interface PlanModeStatus {
+  subagentsAvailable: boolean;
+  missingTools: string[];
+  installCommand: string;
+  loadErrors: string[];
+}
 
 export interface SlashCommandQuery {
   start: number;
@@ -18,6 +26,9 @@ export interface PlanDocument {
 }
 
 const PLAN_SECTION_KEYS: Array<PlanDocumentSection["key"]> = ["summary", "goals", "implementation", "tests", "risks"];
+export const PLAN_SUBAGENT_REQUIRED_TOOLS = ["Agent", "get_subagent_result"];
+export const PLAN_SUBAGENT_OPTIONAL_TOOLS = ["steer_subagent"];
+export const PLAN_SUBAGENTS_INSTALL_COMMAND = "npx --no-install pi install npm:@tintinweb/pi-subagents";
 
 const SECTION_ALIASES: Record<PlanDocumentSection["key"], RegExp> = {
   summary: /^(摘要|summary)$/i,
@@ -28,6 +39,9 @@ const SECTION_ALIASES: Record<PlanDocumentSection["key"], RegExp> = {
 };
 
 const DESTRUCTIVE_BASH_PATTERNS = [
+  /\$\(/,
+  /`[^`]*`/,
+  /<</,
   /\brm\b/i,
   /\brmdir\b/i,
   /\bmv\b/i,
@@ -42,9 +56,11 @@ const DESTRUCTIVE_BASH_PATTERNS = [
   /\btruncate\b/i,
   /\bdd\b/i,
   /\bshred\b/i,
+  /\bxargs\b/i,
+  /\bfind\b[^;&|]*\s-delete\b/i,
   /(^|[^<])>(?!>)/,
   />>/,
-  /\bnpm\s+(install|uninstall|update|ci|link|publish|run\s+(build|dev|start|release))/i,
+  /\bnpm\s+(install|uninstall|update|ci|link|publish|audit\s+fix|run\s+(build|dev|start|release))/i,
   /\byarn\s+(add|remove|install|publish|build|dev|start)/i,
   /\bpnpm\s+(add|remove|install|publish|build|dev|start)/i,
   /\bbun\s+(add|remove|install|run)/i,
@@ -52,6 +68,7 @@ const DESTRUCTIVE_BASH_PATTERNS = [
   /\bapt(-get)?\s+(install|remove|purge|update|upgrade)/i,
   /\bbrew\s+(install|uninstall|upgrade)/i,
   /\bgit\s+(add|commit|push|pull|merge|rebase|reset|checkout|switch|branch\s+-[dD]|stash|cherry-pick|revert|tag|init|clone|clean)/i,
+  /\bgit\s+diff\b[^;&|]*\s--output(?:=|\s+)/i,
   /\bsudo\b/i,
   /\bsu\b/i,
   /\bkill\b/i,
@@ -132,9 +149,20 @@ function sectionKeyForHeading(heading: string): PlanDocumentSection["key"] | nul
 
 export function getSlashCommandQuery(text: string, cursor: number): SlashCommandQuery | null {
   const beforeCursor = text.slice(0, cursor);
-  const match = beforeCursor.match(/^\/([a-z]*)$/i);
+  const match = beforeCursor.match(/^\/([a-z-]*)$/i);
   if (!match) return null;
   return { start: 0, end: cursor, query: match[1].toLowerCase() };
+}
+
+export function getPlanModeStatus(toolNames: string[], loadErrors: string[] = []): PlanModeStatus {
+  const available = new Set(toolNames);
+  const missingTools = PLAN_SUBAGENT_REQUIRED_TOOLS.filter((tool) => !available.has(tool));
+  return {
+    subagentsAvailable: missingTools.length === 0,
+    missingTools,
+    installCommand: PLAN_SUBAGENTS_INSTALL_COMMAND,
+    loadErrors,
+  };
 }
 
 export function isSafePlanBashCommand(command: string): boolean {
@@ -153,8 +181,8 @@ export function isSafePlanBashCommand(command: string): boolean {
 
 export function parsePlanDocument(markdown: string): PlanDocument | null {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  const titleIndex = lines.findIndex((line) => /^#\s+\S/.test(line.trim()));
-  if (titleIndex < 0) return null;
+  const titleIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (titleIndex < 0 || !/^#\s+\S/.test(lines[titleIndex].trim())) return null;
 
   const title = normalizeHeading(lines[titleIndex]);
   if (!title) return null;
@@ -169,6 +197,13 @@ export function parsePlanDocument(markdown: string): PlanDocument | null {
 
   const seen = new Set(headingMatches.map((item) => item.key));
   if (!PLAN_SECTION_KEYS.every((key) => seen.has(key))) return null;
+
+  const firstByKey = new Map<PlanDocumentSection["key"], number>();
+  for (const item of headingMatches) {
+    if (!firstByKey.has(item.key)) firstByKey.set(item.key, item.index);
+  }
+  const orderedIndexes = PLAN_SECTION_KEYS.map((key) => firstByKey.get(key) ?? -1);
+  if (orderedIndexes.some((index, i) => i > 0 && index < orderedIndexes[i - 1])) return null;
 
   const sections: PlanDocumentSection[] = [];
   for (let i = 0; i < headingMatches.length; i++) {
@@ -192,6 +227,42 @@ Rules:
 - Do not output patches or write commands.
 - Produce a decision-complete plan that another engineer or agent can execute without making key decisions.
 - Match the user's language.
+
+Final plan format:
+
+# <short plan title>
+
+## 摘要
+Use 2-4 sentences to state the goal, current state, recommended path, and what is intentionally out of scope.
+
+## 目标与验收
+- State the desired result.
+- List the acceptance criteria.
+
+## 实施方案
+- Group changes by subsystem or behavior.
+- Specify important data flow, interfaces, state, and failure handling.
+- Name concrete files only when needed to prevent ambiguity.
+
+## 测试计划
+- List the smallest relevant verification.
+- Cover important boundary cases and regression risks.
+
+## 假设与风险
+- Record assumptions, defaults, unresolved inputs, and remaining risks.
+`.trim();
+
+export const PLAN_MODE_SUBAGENT_SYSTEM_PROMPT = `
+Plan Mode is active with the optional Plan via Subagent workflow.
+
+Rules:
+- Use the subagent tools to start exactly one Plan subagent before producing the final plan.
+- The Plan subagent must work read-only: it may inspect files, commands, and session context, but must not edit, create, delete, install, commit, push, or otherwise mutate state.
+- Give the subagent a narrow prompt with the user's request, current cwd context, and the fixed plan format requirements.
+- Wait for the Plan subagent result with get_subagent_result before answering.
+- Base the final answer on the Plan subagent result. Resolve wording and formatting, but do not invent implementation facts that the subagent did not establish.
+- If the subagent tools fail after being available, explain the failure and ask the user whether to retry or use default Plan Mode.
+- Match the user's language and keep the final answer as a plan, not an implementation report.
 
 Final plan format:
 
