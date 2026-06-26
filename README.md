@@ -43,6 +43,15 @@ Pi Web Seeker 内置多套 theme，可在左下角或顶部工具栏快速切换
 | ![AGENTS.md draft generation](docs/screenshots/agents-md-draft.jpg) | ![AGENTS.md ready state](docs/screenshots/agents-md-ready.jpg) |
 | 空项目或早期项目会显示少量待确认问题，不会编造命令，并只提供草稿预览，用户确认后才写入。 | 已有 `AGENTS.md` 的项目会显示检查入口，也可生成新的对照草稿，不自动覆盖现有文件。 |
 
+### Plan Mode 调用流
+
+Plan Mode 支持默认主 agent 只读计划，也支持在 subagent 扩展可用时显式使用 Plan subagent。下面是发布文档用的脱敏调用图，不包含真实 session 列表、私有路径或对话内容。
+
+| 默认 `/plan` | 可选 `/plan-subagent` |
+| --- | --- |
+| ![默认计划模式调用流](docs/screenshots/plan-mode-main-flow.zh-CN.svg) | ![Plan subagent 调用流](docs/screenshots/plan-mode-subagent-flow.zh-CN.svg) |
+| 不依赖扩展；主 agent 使用只读工具探索并输出固定计划书。 | 需要 `Agent` 和 `get_subagent_result`；主 agent 编排，Plan subagent 负责只读探索和计划。 |
+
 ## 快速开始
 
 **无需安装，直接运行已发布版本：**
@@ -209,11 +218,12 @@ docker run --rm -it \
 | 场景 | 能力 |
 | --- | --- |
 | 对话与会话 | SSE 流式对话、刷新后重连、会话分叉、会话内分支、分支导航、消息复制与从历史节点继续 |
-| 输入与控制 | 图片上传 / 粘贴、提示词片段、输入历史、草稿保留、完成提示音、运行中引导、完成后追加 |
+| 输入与控制 | 图片上传 / 粘贴、提示词片段、输入历史、草稿保留、完成提示音、运行中引导、完成后追加、`/plan` 计划模式 |
 | 模型与工具 | 对话中切换模型，管理 provider / model / API key / OAuth，测试模型连通性，控制工具预设与 thinking level |
 | 上下文与统计 | 会话压缩、input / output / cache tokens、费用、上下文使用率、system prompt 查看、长上下文 CLI needle 测试 |
 | 文件与工作区 | 项目目录选择、文件搜索、最近文件、Git tracked-only、下载文件、路径插入输入框、代码 / Markdown / HTML / 图片 / 音频预览 |
-| 扩展能力 | Skills 管理、Subagent 通知卡片、coms-net 局域网 Pi 协作、Pi Pi 专家协作模板、AGENTS.md 项目扫描 / 草稿生成 / 检查器、运行时 OS/shell/path 系统提示词上下文 |
+| 扩展能力 | Skills 管理、Subagent 通知卡片、可选 Plan subagent、coms-net 局域网 Pi 协作、Pi Pi 专家协作模板、AGENTS.md 项目扫描 / 草稿生成 / 检查器、运行时 OS/shell/path 系统提示词上下文 |
+| 导入与导出 | Markdown / JSON 会话导出、普通 JSON 导入、跨机器调试用 Debug Bundle 导出 / inspect / 导入 |
 | 体验与性能 | 多主题、English / 简体中文、聊天 Minimap、session/index/allowed-roots 缓存、长会话懒渲染 |
 
 ## 项目目录选择
@@ -230,6 +240,31 @@ docker run --rm -it \
 在 Docker、Linux/headless 环境，或从局域网其他设备访问服务时，不会显示原生选择器，因为原生窗口会弹在运行 pi-web 的服务端机器上。此时菜单会显示网页内目录浏览器，可从 home、默认目录、最近会话目录等允许范围逐级选择。Docker Compose 默认只暴露 `/workspace` 单工作区。
 
 手动输入路径仍然可用，但会先通过 `/api/workspaces` 验证目录存在且可访问，避免发送第一条消息时才发现 `Access denied`。
+
+## Plan Mode
+
+在输入框开头键入 `/` 会弹出命令菜单：
+
+- `/plan`：进入默认计划模式。主 agent 只能使用只读工具探索，最终输出固定结构的 Markdown 计划书；匹配结构的计划会在主窗口渲染成 `PlanCard`。
+- `/normal`：退出计划模式，并恢复进入计划模式前的 active tools 和 system prompt。
+- `/plan-subagent`：可选增强路径。只有当前 session 已加载 `pi-subagents` 且存在 `Agent` / `get_subagent_result` 工具时可用；主 agent 只做编排，Plan subagent 负责只读探索并返回计划结果。
+
+计划模式按 session 记住；新会话创建前按 cwd 暂存，创建成功后迁移到真实 session id。agent 正在运行时不能切换模式，避免一轮任务中工具集和系统提示词突然变化。
+
+Plan Mode 是产品层只读约束，不是 OS sandbox。它会收窄 Pi Web 可用工具，并阻断明显写入类 bash 命令，例如重定向写文件、包安装、git 写操作、进程杀伤和编辑器命令。需要真正隔离不可信项目时，仍应使用容器或虚拟机。
+
+## Debug Bundle 调试包
+
+普通 Markdown / JSON 导出适合阅读或备份会话；Debug Bundle 面向跨机器复现调试。它会导出 `.tar.gz`，包含规范化 session、去重后的媒体文件、工作区快照和脱敏环境诊断信息。
+
+导出入口在会话导出的 `Debug Bundle` 按钮，对应接口是 `GET /api/sessions/[id]/debug-bundle`。导入分两步：
+
+1. `POST /api/debug-bundles/inspect`：先校验 bundle，展示原始 cwd、目标 sandbox、文件 / 媒体数量、大小和 warning。
+2. `POST /api/debug-bundles/import`：确认后恢复 session，并把导入后的 cwd 改写到新的 sandbox。
+
+默认工作区范围是 Git tracked 文件加未忽略的 untracked 文件；`.git`、`node_modules`、`.next`、build/cache 目录、`.env*`、疑似 auth/token/key 文件、超限大文件和 symlink 不会进入 bundle。被排除的路径和数量会记录到 manifest，但不会记录内容。
+
+导入后的 session 保证可查看完整对话、工具步骤、媒体证据和工作区快照；继续运行 agent 是 best effort，取决于目标机器是否已有兼容模型凭证、依赖和系统工具。
 
 ## AGENTS.md 项目规范
 

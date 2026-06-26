@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">默认计划模式调用流</title>
+  <desc id="desc">用于发布文档的默认 Pi Web 计划模式脱敏调用图。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#eef2f7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#18202c" flood-opacity="0.14"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="680" fill="url(#bg)"/>
+  <g filter="url(#shadow)">
+    <rect x="70" y="76" width="1060" height="528" rx="22" fill="#ffffff" stroke="#d9e0ea"/>
+  </g>
+  <path d="M92 76h1016a22 22 0 0 1 22 22v118H70V98a22 22 0 0 1 22-22z" fill="#fbfcfe" stroke="#e7ecf3"/>
+  <rect x="104" y="104" width="186" height="30" rx="15" fill="#fffbeb" stroke="#fde68a"/>
+  <text x="120" y="124" font-family="Inter, Arial, 'Noto Sans CJK SC', 'PingFang SC', sans-serif" font-size="13" font-weight="700" fill="#a16207">Pi Web Seeker - 计划模式</text>
+  <text x="104" y="166" font-family="Inter, Arial, 'Noto Sans CJK SC', 'PingFang SC', sans-serif" font-size="38" font-weight="780" fill="#18202c">默认计划模式</text>
+  <text x="104" y="198" font-family="Inter, Arial, 'Noto Sans CJK SC', 'PingFang SC', sans-serif" font-size="17" fill="#64748b">无需扩展，主 AgentSession 以只读方式探索并产出结构化计划。</text>
+  <g font-family="Inter, Arial, 'Noto Sans CJK SC', 'PingFang SC', sans-serif">
+    <g transform="translate(98 260)">
+      <rect width="158" height="142" rx="16" fill="#fbfdff" stroke="#dde5ef"/>
+      <rect x="18" y="18" width="30" height="30" rx="9" fill="#fef3c7"/>
+      <text x="33" y="38" text-anchor="middle" font-size="13" font-weight="800" fill="#92400e">1</text>
+      <text x="18" y="96" font-size="16" font-weight="720" fill="#1e293b">输入命令</text>
+      <text x="18" y="119" font-size="16" font-weight="720" fill="#1e293b">/plan</text>
+    </g>
+    <g transform="translate(273 260)">
+      <rect width="158" height="142" rx="16" fill="#fbfdff" stroke="#dde5ef"/>
+      <rect x="18" y="18" width="30" height="30" rx="9" fill="#fef3c7"/>
+      <text x="33" y="38" text-anchor="middle" font-size="13" font-weight="800" fill="#92400e">2</text>
+      <text x="18" y="96" font-size="16" font-weight="720" fill="#1e293b">RPC 同步</text>
+      <text x="18" y="119" font-size="16" font-weight="720" fill="#1e293b">set_plan_mode</text>
+    </g>
+    <g transform="translate(448 260)">
+      <rect width="158" height="142" rx="16" fill="#fbfdff" stroke="#dde5ef"/>
+      <rect x="18" y="18" width="30" height="30" rx="9" fill="#fef3c7"/>
+      <text x="33" y="38" text-anchor="middle" font-size="13" font-weight="800" fill="#92400e">3</text>
+      <text x="18" y="96" font-size="16" font-weight="720" fill="#1e293b">工具守卫</text>
+      <text x="18" y="119" font-size="16" font-weight="720" fill="#1e293b">收窄工具集</text>
+    </g>
+    <g transform="translate(623 260)">
+      <rect width="158" height="142" rx="16" fill="#fbfdff" stroke="#dde5ef"/>
+      <rect x="18" y="18" width="30" height="30" rx="9" fill="#fef3c7"/>
+      <text x="33" y="38" text-anchor="middle" font-size="13" font-weight="800" fill="#92400e">4</text>
+      <text x="18" y="96" font-size="16" font-weight="720" fill="#1e293b">主 agent</text>
+      <text x="18" y="119" font-size="16" font-weight="720" fill="#1e293b">只读探索</text>
+    </g>
+    <g transform="translate(798 260)">
+      <rect width="158" height="142" rx="16" fill="#fbfdff" stroke="#dde5ef"/>
+      <rect x="18" y="18" width="30" height="30" rx="9" fill="#fef3c7"/>
+      <text x="33" y="38" text-anchor="middle" font-size="13" font-weight="800" fill="#92400e">5</text>
+      <text x="18" y="96" font-size="16" font-weight="720" fill="#1e293b">固定结构</text>
+      <text x="18" y="119" font-size="16" font-weight="720" fill="#1e293b">Markdown 计划</text>
+    </g>
+    <g transform="translate(973 260)">
+      <rect width="128" height="142" rx="16" fill="#fbfdff" stroke="#dde5ef"/>
+      <rect x="18" y="18" width="30" height="30" rx="9" fill="#fef3c7"/>
+      <text x="33" y="38" text-anchor="middle" font-size="13" font-weight="800" fill="#92400e">6</text>
+      <text x="18" y="96" font-size="16" font-weight="720" fill="#1e293b">PlanCard</text>
+      <text x="18" y="119" font-size="16" font-weight="720" fill="#1e293b">展示</text>
+    </g>
+  </g>
+  <g fill="#ffffff" stroke="#d7e0ec">
+    <circle cx="265" cy="331" r="12"/><circle cx="440" cy="331" r="12"/><circle cx="615" cy="331" r="12"/><circle cx="790" cy="331" r="12"/><circle cx="965" cy="331" r="12"/>
+  </g>
+  <g font-family="Inter, Arial, sans-serif" font-size="24" fill="#64748b">
+    <text x="265" y="338" text-anchor="middle">&gt;</text><text x="440" y="338" text-anchor="middle">&gt;</text><text x="615" y="338" text-anchor="middle">&gt;</text><text x="790" y="338" text-anchor="middle">&gt;</text><text x="965" y="338" text-anchor="middle">&gt;</text>
+  </g>
+  <g font-family="Inter, Arial, 'Noto Sans CJK SC', 'PingFang SC', sans-serif" font-size="13" font-weight="650" fill="#475569">
+    <rect x="98" y="450" width="118" height="34" rx="17" fill="#f8fafc" stroke="#dbe3ee"/><text x="157" y="472" text-anchor="middle">无需扩展</text>
+    <rect x="228" y="450" width="176" height="34" rx="17" fill="#f8fafc" stroke="#dbe3ee"/><text x="316" y="472" text-anchor="middle">bash allowlist 阻断写入</text>
+    <rect x="416" y="450" width="160" height="34" rx="17" fill="#f8fafc" stroke="#dbe3ee"/><text x="496" y="472" text-anchor="middle">/normal 恢复工具</text>
+  </g>
+  <text x="98" y="540" font-family="Inter, Arial, 'Noto Sans CJK SC', 'PingFang SC', sans-serif" font-size="13" fill="#64748b">发布文档脱敏图：只展示调用流；不包含 session 列表、私有路径或真实对话。</text>
+</svg>

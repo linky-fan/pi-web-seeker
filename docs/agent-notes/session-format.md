@@ -25,3 +25,5 @@ Each line is one JSON object. The first line is the session header, followed by 
 - `parentSession` is display metadata and does not affect message context.
 - Orphaned sessions are files whose first line cannot be parsed as a valid session header.
 - Stored tool calls may use `{ id, name, arguments }`; UI code expects `{ toolCallId, toolName, input }`, so use `normalizeToolCalls()` when loading or streaming.
+- Plan Mode is runtime UI/RPC state and does not add fields to session entries. It is remembered by Pi Web localStorage per session or cwd.
+- Debug Bundle import/export does not change the JSONL schema. Export writes normalized entries to `session/session.jsonl`, externalizes inline media into `media/*`, and records workspace files and diagnostics in the bundle manifest. Import rehydrates media back into entries and rewrites the restored session header `cwd` to the new sandbox directory; the original absolute cwd stays metadata only.
