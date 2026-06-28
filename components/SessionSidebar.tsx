@@ -1025,7 +1025,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       </div>
 
       {/* Session list */}
-      <div ref={sessionListRef} style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "0", minHeight: 80 }}>
+      <div ref={sessionListRef} className="pi-session-list" style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "0", minHeight: 80 }}>
         {loading && (
           <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: 12 }}>
             Loading...
@@ -1060,6 +1060,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       {/* File Explorer section */}
       {(selectedCwdProp || selectedCwd) && (
         <div
+          className="pi-sidebar-explorer-section"
           style={{
             borderTop: "1px solid var(--border)",
             display: "flex",
@@ -1293,6 +1294,7 @@ function SessionItem({
 
   return (
     <div
+      className={`pi-session-item${isSelected ? " pi-session-item-selected" : ""}${confirmDelete ? " pi-session-item-danger" : ""}`}
       data-motion-session-item
       onClick={confirmDelete || renaming ? undefined : onClick}
       onMouseEnter={() => setHovered(true)}

@@ -10,6 +10,7 @@ import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { BrandTypewriterHeader } from "./BrandTypewriter";
 import { useLocale } from "@/lib/i18n";
+import { useUiMode } from "@/hooks/useUiMode";
 import { apiPath } from "@/lib/api-path";
 
 interface Props {
@@ -656,6 +657,7 @@ function AgentsMdHint({ cwd }: { cwd: string }) {
 }
 
 export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange, onTaskStatusChange }: Props) {
+  const { isFluid } = useUiMode();
   const {
     loading, error, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
@@ -954,7 +956,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   return (
     <div
-      className="relative flex h-full flex-col overflow-hidden"
+      className="pi-chat-window relative flex h-full flex-col overflow-hidden"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -993,7 +995,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       )}
 
       {isEmptyNew ? (
-        <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
+        <div
+          className={`${isFluid ? "pi-fluid-empty-chat" : "pi-empty-chat"} flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8`}
+          style={isFluid ? {
+            padding: "76px 48px 42px",
+            background: "transparent",
+          } : undefined}
+        >
           <div className="w-full max-w-[820px]">
             <div
               className="mb-3"
@@ -1010,9 +1018,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         </div>
       ) : (
       <>
-      <div className="relative flex flex-1 overflow-hidden">
-        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pt-4 [scrollbar-width:none]">
-          <div className="mx-auto max-w-[820px] px-4">
+      <div
+        className={`${isFluid ? "pi-fluid-chat-body" : "pi-chat-body"} relative flex flex-1 overflow-hidden`}
+      >
+        <div ref={scrollContainerRef} className="pi-chat-scroll flex-1 overflow-y-auto pt-4 [scrollbar-width:none]">
+          <div className="pi-message-stack mx-auto max-w-[820px] px-4">
 
             {(() => {
               let refIdx = 0;
@@ -1081,7 +1091,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             )}
 
             {agentRunning && !streamState.streamingMessage && (
-              <div className="py-2 text-[13px] text-text-muted">
+              <div className="pi-running-phase py-2 text-[13px] text-text-muted">
                 <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase)}</span>
               </div>
             )}
@@ -1093,15 +1103,22 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             )}
           </div>
         </div>
-        <ChatMinimap
-          messages={messages}
-          streamingMessage={streamState.streamingMessage}
-          scrollContainer={scrollContainerRef}
-          messageRefs={messageRefs}
-        />
+        {!isFluid && (
+          <ChatMinimap
+            messages={messages}
+            streamingMessage={streamState.streamingMessage}
+            scrollContainer={scrollContainerRef}
+            messageRefs={messageRefs}
+          />
+        )}
       </div>
 
-      <div className="relative">
+      <div
+        className={`${isFluid ? "pi-fluid-composer-dock" : "pi-composer-dock"} relative`}
+        style={isFluid ? {
+          background: "linear-gradient(180deg, transparent, color-mix(in srgb, var(--bg) 82%, transparent) 28px, color-mix(in srgb, var(--bg) 90%, transparent))",
+        } : undefined}
+      >
         {agentsMdElement}
         {chatInputElement}
       </div>

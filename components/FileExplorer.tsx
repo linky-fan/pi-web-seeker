@@ -179,6 +179,7 @@ function TreeNode({
   return (
     <div>
       <div
+        className={`pi-file-row${open ? " pi-file-row-open" : ""}`}
         onClick={handleClick}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -387,8 +388,8 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
   }
 
   return (
-    <div style={{ padding: "4px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "0 0 4px" }}>
+    <div className="pi-file-explorer" style={{ padding: "4px" }}>
+      <div className="pi-file-explorer-search" style={{ display: "flex", alignItems: "center", gap: 4, padding: "0 0 4px" }}>
         <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: 7, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
             <circle cx="11" cy="11" r="8" />
