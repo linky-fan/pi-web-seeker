@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Plan subagent 产品叙事图</title>
+  <desc id="desc">脱敏的 Plan subagent 产品叙事图，展示从 /plan-subagent 到子智能体计划结果的路径。</desc>
+  <defs>
+    <linearGradient id="paper" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#dbeafe"/>
+      <stop offset="1" stop-color="#eff6ff"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#111827" flood-opacity="0.13"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="720" fill="#f3f5f8"/>
+  <rect x="54" y="46" width="1172" height="628" rx="28" fill="url(#paper)" stroke="#d9e1eb" filter="url(#softShadow)"/>
+  <rect x="88" y="82" width="218" height="31" rx="15.5" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="104" y="103" font-family="Arial, 'PingFang SC', sans-serif" font-size="13" font-weight="700" fill="#1d4ed8">Plan Mode · Subagent 增强</text>
+  <text x="88" y="162" font-family="Arial, 'PingFang SC', sans-serif" font-size="42" font-weight="780" fill="#111827">让专门的计划子智能体接手探索</text>
+  <text x="90" y="198" font-family="Arial, 'PingFang SC', sans-serif" font-size="18" fill="#64748b">扩展工具可用时，主 agent 只做编排，Plan subagent 负责只读分析并返回计划。</text>
+
+  <g font-family="Arial, 'PingFang SC', sans-serif">
+    <rect x="92" y="258" width="292" height="232" rx="22" fill="#0f172a"/>
+    <rect x="114" y="282" width="248" height="44" rx="12" fill="#1e293b" stroke="#334155"/>
+    <text x="132" y="310" font-size="18" font-weight="700" fill="#f8fafc">/plan-subagent</text>
+    <rect x="114" y="348" width="148" height="34" rx="17" fill="#dbeafe"/>
+    <text x="133" y="370" font-size="13" font-weight="700" fill="#1d4ed8">Plan via Subagent</text>
+    <text x="114" y="420" font-size="15" fill="#cbd5e1">显式选择增强路径</text>
+    <text x="114" y="448" font-size="15" fill="#cbd5e1">不会改变默认 /plan 行为</text>
+    <text x="114" y="476" font-size="15" fill="#cbd5e1">缺少工具时给出安装提示</text>
+
+    <path d="M410 374h78" stroke="#cbd5e1" stroke-width="2"/>
+    <path d="M488 374l-12-7v14z" fill="#cbd5e1"/>
+
+    <rect x="510" y="236" width="214" height="274" rx="22" fill="#fbfdff" stroke="#dde5ef"/>
+    <text x="540" y="282" font-size="18" font-weight="760" fill="#1e293b">主 agent</text>
+    <text x="540" y="315" font-size="15" fill="#64748b">校验工具：</text>
+    <rect x="540" y="334" width="126" height="28" rx="14" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="558" y="353" font-size="13" font-weight="700" fill="#1d4ed8">Agent</text>
+    <rect x="540" y="372" width="154" height="28" rx="14" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="558" y="391" font-size="13" font-weight="700" fill="#1d4ed8">get_subagent_result</text>
+    <text x="540" y="446" font-size="15" fill="#64748b">启动 exactly one</text>
+    <text x="540" y="473" font-size="15" fill="#64748b">Plan subagent</text>
+
+    <path d="M748 374h78" stroke="#cbd5e1" stroke-width="2"/>
+    <path d="M826 374l-12-7v14z" fill="#cbd5e1"/>
+
+    <rect x="848" y="218" width="170" height="310" rx="85" fill="url(#blue)" stroke="#bfdbfe"/>
+    <circle cx="933" cy="308" r="42" fill="#ffffff" stroke="#bfdbfe"/>
+    <text x="933" y="319" text-anchor="middle" font-size="30" font-weight="800" fill="#1d4ed8">P</text>
+    <text x="933" y="386" text-anchor="middle" font-size="19" font-weight="780" fill="#1e293b">Plan subagent</text>
+    <text x="933" y="420" text-anchor="middle" font-size="14" fill="#475569">只读探索</text>
+    <text x="933" y="447" text-anchor="middle" font-size="14" fill="#475569">聚焦计划</text>
+    <text x="933" y="474" text-anchor="middle" font-size="14" fill="#475569">返回结果</text>
+
+    <path d="M1040 374h70" stroke="#cbd5e1" stroke-width="2"/>
+    <path d="M1110 374l-12-7v14z" fill="#cbd5e1"/>
+
+    <rect x="1128" y="252" width="76" height="244" rx="18" fill="#ffffff" stroke="#d9e1eb"/>
+    <rect x="1146" y="276" width="40" height="18" rx="9" fill="#eff6ff"/>
+    <rect x="1146" y="318" width="40" height="8" rx="4" fill="#cbd5e1"/>
+    <rect x="1146" y="340" width="40" height="8" rx="4" fill="#cbd5e1"/>
+    <rect x="1146" y="362" width="40" height="8" rx="4" fill="#cbd5e1"/>
+    <rect x="1146" y="404" width="40" height="48" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="1166" y="483" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">PlanCard</text>
+  </g>
+
+  <g font-family="Arial, 'PingFang SC', sans-serif" font-size="14" fill="#475569">
+    <rect x="90" y="594" width="234" height="36" rx="18" fill="#ffffff" stroke="#dbe3ee"/>
+    <text x="207" y="617" text-anchor="middle">需要 subagent 扩展工具</text>
+    <rect x="338" y="594" width="184" height="36" rx="18" fill="#ffffff" stroke="#dbe3ee"/>
+    <text x="430" y="617" text-anchor="middle">主 agent 不直接实施</text>
+    <rect x="536" y="594" width="214" height="36" rx="18" fill="#ffffff" stroke="#dbe3ee"/>
+    <text x="643" y="617" text-anchor="middle">最终计划基于子结果</text>
+  </g>
+</svg>

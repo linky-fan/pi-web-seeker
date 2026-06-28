@@ -43,14 +43,21 @@ Pi Web Seeker 内置多套 theme，可在左下角或顶部工具栏快速切换
 | ![AGENTS.md draft generation](docs/screenshots/agents-md-draft.jpg) | ![AGENTS.md ready state](docs/screenshots/agents-md-ready.jpg) |
 | 空项目或早期项目会显示少量待确认问题，不会编造命令，并只提供草稿预览，用户确认后才写入。 | 已有 `AGENTS.md` 的项目会显示检查入口，也可生成新的对照草稿，不自动覆盖现有文件。 |
 
-### Plan Mode 调用流
+### Plan Mode 功能展示
 
-Plan Mode 支持默认主 agent 只读计划，也支持在 subagent 扩展可用时显式使用 Plan subagent。下面是发布文档用的脱敏调用图，不包含真实 session 列表、私有路径或对话内容。
+Plan Mode 支持默认主 agent 只读计划，也支持在 subagent 扩展可用时显式使用 Plan subagent。下面是发布文档用的脱敏功能图，不包含真实 session 列表、私有路径或对话内容。
 
-| 默认 `/plan` | 可选 `/plan-subagent` |
-| --- | --- |
-| ![默认计划模式调用流](docs/screenshots/plan-mode-main-flow.zh-CN.svg) | ![Plan subagent 调用流](docs/screenshots/plan-mode-subagent-flow.zh-CN.svg) |
-| 不依赖扩展；主 agent 使用只读工具探索并输出固定计划书。 | 需要 `Agent` 和 `get_subagent_result`；主 agent 编排，Plan subagent 负责只读探索和计划。 |
+![默认 Plan Mode 功能叙事图](docs/screenshots/plan-mode-main-story.zh-CN.svg)
+
+- `/plan` 不依赖扩展，适合日常只读探索和实施方案设计。
+- Pi Web 会收窄可用工具并阻断明显写入类 bash 命令。
+- 最终计划以固定 Markdown 结构保存，并在聊天窗口中渲染为 `PlanCard`。
+
+![Plan subagent 功能叙事图](docs/screenshots/plan-mode-subagent-story.zh-CN.svg)
+
+- `/plan-subagent` 是显式增强路径，不会改变默认 `/plan` 行为。
+- 需要 `Agent` 和 `get_subagent_result` 工具；不可用时只显示安装提示。
+- 主 agent 只做编排，Plan subagent 负责只读探索和计划结果。
 
 ## 快速开始
 
@@ -255,7 +262,9 @@ Plan Mode 是产品层只读约束，不是 OS sandbox。它会收窄 Pi Web 可
 
 ## Debug Bundle 调试包
 
-普通 Markdown / JSON 导出适合阅读或备份会话；Debug Bundle 面向跨机器复现调试。它会导出 `.tar.gz`，包含规范化 session、去重后的媒体文件、工作区快照和脱敏环境诊断信息。
+普通 Markdown / JSON 导出适合阅读、归档或分享会话文本；Debug Bundle 面向跨机器复现调试。它会导出 `.tar.gz`，把会话、媒体证据、工作区快照和脱敏环境诊断信息放在同一个可检查的证据包里。
+
+![Debug Bundle 结构图](docs/screenshots/debug-bundle-structure.zh-CN.svg)
 
 导出入口在会话导出的 `Debug Bundle` 按钮，对应接口是 `GET /api/sessions/[id]/debug-bundle`。导入分两步：
 
@@ -264,7 +273,7 @@ Plan Mode 是产品层只读约束，不是 OS sandbox。它会收窄 Pi Web 可
 
 默认工作区范围是 Git tracked 文件加未忽略的 untracked 文件；`.git`、`node_modules`、`.next`、build/cache 目录、`.env*`、疑似 auth/token/key 文件、超限大文件和 symlink 不会进入 bundle。被排除的路径和数量会记录到 manifest，但不会记录内容。
 
-导入后的 session 保证可查看完整对话、工具步骤、媒体证据和工作区快照；继续运行 agent 是 best effort，取决于目标机器是否已有兼容模型凭证、依赖和系统工具。
+导入后的 session 保证可查看完整对话、工具步骤、媒体证据和工作区快照；导入不会默认恢复到原始绝对路径，而是写入新的 sandbox cwd。继续运行 agent 是 best effort，取决于目标机器是否已有兼容模型凭证、依赖和系统工具。
 
 ## AGENTS.md 项目规范
 
