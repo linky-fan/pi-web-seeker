@@ -31,6 +31,7 @@ import CohereColorIcon from "@lobehub/icons/es/Cohere/components/Color";
 import PerplexityColorIcon from "@lobehub/icons/es/Perplexity/components/Color";
 import TogetherColorIcon from "@lobehub/icons/es/Together/components/Color";
 import GrokIcon from "@lobehub/icons/es/Grok/components/Mono";
+import StepfunColorIcon from "@lobehub/icons/es/Stepfun/components/Color";
 import { useLocale } from "@/lib/i18n";
 
 type IconComponent = React.ComponentType<{ size?: number | string; style?: React.CSSProperties }>;
@@ -72,6 +73,8 @@ const PROVIDER_ICONS: Record<string, { Icon: IconComponent; hasColor: boolean }>
   "perplexity":             { Icon: PerplexityColorIcon,  hasColor: true },
   "together":               { Icon: TogetherColorIcon,    hasColor: true },
   "grok":                   { Icon: GrokIcon,             hasColor: false },
+  "stepfun":                { Icon: StepfunColorIcon,    hasColor: true },
+  "stepfun-step-plan":      { Icon: StepfunColorIcon,    hasColor: true },
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -158,6 +161,62 @@ const COST_LABEL_KEYS: Record<keyof NonNullable<ModelEntry["cost"]>, string> = {
   cacheWrite: "stats.cacheWrite",
 };
 
+const STEPFUN_REASONING_COMPAT = {
+  supportsDeveloperRole: false,
+  supportsStore: false,
+  supportsReasoningEffort: true,
+  maxTokensField: "max_tokens",
+} as const;
+
+const STEPFUN_BASE_COMPAT = {
+  supportsDeveloperRole: false,
+  supportsStore: false,
+  supportsReasoningEffort: false,
+  maxTokensField: "max_tokens",
+} as const;
+
+function stepfunModels(includeRouter: boolean): ModelEntry[] {
+  const models: ModelEntry[] = [
+    {
+      id: "step-3.7-flash",
+      name: "Step 3.7 Flash",
+      reasoning: true,
+      input: ["image"],
+      contextWindow: 256000,
+      compat: STEPFUN_REASONING_COMPAT,
+      thinkingLevelMap: { off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: "high" },
+    },
+    {
+      id: "step-3.5-flash",
+      name: "Step 3.5 Flash",
+      reasoning: true,
+      contextWindow: 256000,
+      compat: STEPFUN_BASE_COMPAT,
+      thinkingLevelMap: { off: null, minimal: null, low: null, medium: null, high: null, xhigh: null },
+    },
+    {
+      id: "step-3.5-flash-2603",
+      name: "Step 3.5 Flash 2603",
+      reasoning: true,
+      contextWindow: 256000,
+      compat: STEPFUN_REASONING_COMPAT,
+      thinkingLevelMap: { off: null, minimal: null, low: "low", medium: "high", high: "high", xhigh: "high" },
+    },
+  ];
+
+  if (includeRouter) {
+    models.push({
+      id: "step-router-v1",
+      name: "Step Router V1",
+      reasoning: true,
+      compat: STEPFUN_REASONING_COMPAT,
+      thinkingLevelMap: { off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: "high" },
+    });
+  }
+
+  return models;
+}
+
 const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   {
     id: "siliconflow",
@@ -194,6 +253,28 @@ const PROVIDER_TEMPLATES: ProviderTemplate[] = [
           name: "Nex N2 Pro",
         },
       ],
+    },
+  },
+  {
+    id: "stepfun",
+    labelKey: "models.template.stepfun",
+    descriptionKey: "models.template.stepfunDesc",
+    providerName: "stepfun",
+    provider: {
+      baseUrl: "https://api.stepfun.com/v1",
+      api: "openai-completions",
+      models: stepfunModels(false),
+    },
+  },
+  {
+    id: "stepfun-step-plan",
+    labelKey: "models.template.stepfunStepPlan",
+    descriptionKey: "models.template.stepfunStepPlanDesc",
+    providerName: "stepfun-step-plan",
+    provider: {
+      baseUrl: "https://api.stepfun.com/step_plan/v1",
+      api: "openai-completions",
+      models: stepfunModels(true),
     },
   },
 ];

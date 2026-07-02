@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent, useId } from "react";
+import { createPortal } from "react-dom";
 import { useLocale } from "@/lib/i18n";
 import { apiPath } from "@/lib/api-path";
 import { popOnce, revealChildren, revealElement } from "@/lib/motion";
@@ -1447,7 +1448,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     </svg>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{currentName}</span>
                   </button>
-                  {modelDropdownOpen && modelDropdownRect && (() => {
+                  {modelDropdownOpen && modelDropdownRect && typeof document !== "undefined" && createPortal((() => {
                     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
                     const bottom = viewportHeight - modelDropdownRect.top + 6;
                     const maxH = Math.max(120, Math.min(modelDropdownRect.top - 8, viewportHeight * 0.6));
@@ -1501,7 +1502,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       ))}
                     </div>
                     );
-                  })()}
+                  })(), document.body)}
                 </div>
             )}
           </div>
