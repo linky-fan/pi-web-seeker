@@ -853,7 +853,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           e.target.value = "";
         }}
       />
-      <div className={isFluid ? "pi-fluid-composer-inner" : "pi-composer-inner"} style={{ maxWidth: 820, margin: "0 auto" }}>
+      <div className={isFluid ? "pi-fluid-composer-inner pi-fluid-composer-panel" : "pi-composer-inner"} style={{ maxWidth: 820, margin: "0 auto" }}>
         {/* Retry banner */}
         {retryInfo && (
           <div className="pi-retry-banner" style={{
@@ -871,7 +871,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         )}
         {/* Image previews */}
         {attachedImages.length > 0 && (
-          <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+          <div className="pi-attachment-preview-strip" style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
             {attachedImages.map((img, i) => (
               <div key={i} style={{ position: "relative", flexShrink: 0 }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}

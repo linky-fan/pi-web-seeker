@@ -9,6 +9,7 @@ import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { CapabilitiesConfig } from "./CapabilitiesConfig";
 import { BranchNavigator } from "./BranchNavigator";
+import { AgentsMdStatus } from "./AgentsMdStatus";
 import { ThemeCycleButton } from "./ThemeCycleButton";
 import { UiModeToggleButton } from "./UiModeToggleButton";
 import { LocaleToggleButton } from "./LocaleToggleButton";
@@ -794,6 +795,9 @@ export function AppShell() {
                 </button>
               </div>
             </div>
+          )}
+          {fluidWorkspaceCwd && (
+            <AgentsMdStatus cwd={fluidWorkspaceCwd} variant="context" />
           )}
           <div className="pi-fluid-branch-block">
             <div className="pi-fluid-section-label">{t("session.branches")}</div>
