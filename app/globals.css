@@ -2811,29 +2811,91 @@ html[data-ui="fluid"] .pi-fluid-workspace-meta {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 5px;
   min-width: 0;
-  max-width: min(42vw, 390px);
+  max-width: min(50vw, 520px);
   overflow: hidden;
   white-space: nowrap;
 }
 
-html[data-ui="fluid"] .pi-fluid-workspace-meta span {
+html[data-ui="fluid"] .pi-fluid-metric {
+  min-width: 58px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-panel) 36%, transparent);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+html[data-ui="fluid"] .pi-fluid-metric-label {
+  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+html[data-ui="fluid"] .pi-fluid-metric-value {
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 680;
+}
+
+html[data-ui="fluid"] .pi-fluid-metric[data-kind="cache"] {
+  min-width: 76px;
+}
+
+html[data-ui="fluid"] .pi-fluid-metric[data-kind="context"] {
+  min-width: 92px;
+}
+
+html[data-ui="fluid"] .pi-fluid-metric-accent {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+html[data-ui="fluid"] .pi-fluid-metric-accent .pi-fluid-metric-label {
+  color: color-mix(in srgb, var(--accent) 76%, var(--text-muted));
+}
+
+html[data-ui="fluid"] .pi-fluid-metric-warning {
+  border-color: color-mix(in srgb, #eab308 30%, var(--border));
+  background: color-mix(in srgb, #eab308 8%, transparent);
+}
+
+html[data-ui="fluid"] .pi-fluid-metric-warning .pi-fluid-metric-value,
+html[data-ui="fluid"] .pi-fluid-metric-warning .pi-fluid-metric-label {
+  color: color-mix(in srgb, #eab308 78%, var(--text));
+}
+
+html[data-ui="fluid"] .pi-fluid-metric-danger {
+  border-color: color-mix(in srgb, #ef4444 34%, var(--border));
+  background: color-mix(in srgb, #ef4444 8%, transparent);
+}
+
+html[data-ui="fluid"] .pi-fluid-metric-danger .pi-fluid-metric-value,
+html[data-ui="fluid"] .pi-fluid-metric-danger .pi-fluid-metric-label {
+  color: color-mix(in srgb, #ef4444 82%, var(--text));
+}
+
+html[data-ui="fluid"] .pi-fluid-meta-fallback {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-html[data-ui="fluid"] .pi-fluid-meta-token {
-  flex: 1 1 auto;
-  max-width: 150px;
-}
-
-html[data-ui="fluid"] .pi-fluid-meta-cost,
-html[data-ui="fluid"] .pi-fluid-meta-context,
-html[data-ui="fluid"] .pi-fluid-meta-fallback {
-  flex: 0 0 auto;
+@media (max-width: 1180px) {
+  html[data-ui="fluid"] .pi-fluid-workspace-meta .pi-fluid-metric[data-kind="input"],
+  html[data-ui="fluid"] .pi-fluid-workspace-meta .pi-fluid-metric[data-kind="output"] {
+    display: none;
+  }
 }
 
 @media (max-width: 860px) {
@@ -3514,6 +3576,33 @@ html[data-ui="fluid"] .pi-fluid-env-row-value {
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.45;
+}
+
+html[data-ui="fluid"] .pi-fluid-env-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  white-space: normal;
+}
+
+html[data-ui="fluid"] .pi-fluid-env-row-value:has(.pi-fluid-env-metrics) {
+  overflow: visible;
+  white-space: normal;
+}
+
+html[data-ui="fluid"] .pi-fluid-env-metric {
+  height: 22px;
+  min-width: 54px;
+  padding: 0 6px;
+}
+
+html[data-ui="fluid"] .pi-fluid-env-metric .pi-fluid-metric-label {
+  font-size: 8px;
+}
+
+html[data-ui="fluid"] .pi-fluid-env-metric .pi-fluid-metric-value {
+  font-size: 10.5px;
 }
 
 html[data-ui="fluid"] .pi-fluid-env-change-line {

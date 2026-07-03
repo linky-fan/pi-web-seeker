@@ -27,6 +27,15 @@ type TaskStatus = "done" | "running" | "error";
 type FluidDrawerView = "sessions" | "explorer" | "context";
 type FluidContextTab = "session" | "system";
 type FluidInspectorTier = 1 | 2;
+type FluidMetricTone = "accent" | "warning" | "danger";
+
+interface FluidMetric {
+  key: string;
+  label: string;
+  value: string;
+  tone?: FluidMetricTone;
+  title?: string;
+}
 
 const FLUID_TITLE_MAX_CHARS = 42;
 const FLUID_RAIL_WIDTH = 44;
@@ -543,15 +552,69 @@ export function AppShell() {
   const fluidDisplayTitle = truncateFluidTitle(fluidSessionTitle);
   const fluidWorkspaceCwd = selectedSession?.cwd ?? effectiveNewSessionCwd ?? null;
   const fluidWorkspaceLabel = workspaceLabelFromCwd(fluidWorkspaceCwd);
-  const fluidContextText = contextUsage?.contextWindow
-    ? `${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(0)}%` : "?"} / ${formatCompactNumber(contextUsage.contextWindow)}`
-    : null;
-  const fluidTokenText = sessionStats?.tokens && (sessionStats.tokens.input > 0 || sessionStats.tokens.output > 0)
-    ? `${formatCompactNumber(sessionStats.tokens.input)} in · ${formatCompactNumber(sessionStats.tokens.output)} out`
-    : null;
+  const fluidTokens = sessionStats?.tokens ?? null;
   const fluidCostText = sessionStats?.cost
     ? sessionStats.cost >= 0.01 ? `$${sessionStats.cost.toFixed(2)}` : "<$0.01"
     : null;
+  const fluidContextValue = contextUsage?.contextWindow
+    ? `${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(0)}%` : "?"} / ${formatCompactNumber(contextUsage.contextWindow)}`
+    : null;
+  const fluidContextTone: FluidMetricTone | undefined = contextUsage?.percent !== null && contextUsage?.percent !== undefined
+    ? contextUsage.percent > 90
+      ? "danger"
+      : contextUsage.percent > 70
+        ? "warning"
+        : undefined
+    : undefined;
+  const fluidStatsTooltipParts: string[] = [];
+  if (fluidTokens) {
+    fluidStatsTooltipParts.push(`${t("stats.input")}: ${fluidTokens.input.toLocaleString()}`);
+    fluidStatsTooltipParts.push(`${t("stats.output")}: ${fluidTokens.output.toLocaleString()}`);
+    fluidStatsTooltipParts.push(`${t("stats.cacheRead")}: ${fluidTokens.cacheRead.toLocaleString()}`);
+    fluidStatsTooltipParts.push(`${t("stats.cacheWrite")}: ${fluidTokens.cacheWrite.toLocaleString()}`);
+  }
+  if (sessionStats?.cost) fluidStatsTooltipParts.push(`${t("stats.cost")}: $${sessionStats.cost.toFixed(4)}`);
+  if (contextUsage?.contextWindow) {
+    fluidStatsTooltipParts.push(`${t("stats.context")}: ${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : t("stats.unknown")} / ${contextUsage.contextWindow.toLocaleString()}`);
+  }
+  const fluidStatsTooltip = fluidStatsTooltipParts.length > 0 ? fluidStatsTooltipParts.join("  |  ") : undefined;
+  const fluidStatsMetricItems: Array<FluidMetric | null> = [
+    fluidTokens && fluidTokens.input > 0 ? {
+      key: "input",
+      label: "IN",
+      value: formatCompactNumber(fluidTokens.input),
+      title: `${t("stats.input")}: ${fluidTokens.input.toLocaleString()}`,
+    } : null,
+    fluidTokens && fluidTokens.output > 0 ? {
+      key: "output",
+      label: "OUT",
+      value: formatCompactNumber(fluidTokens.output),
+      title: `${t("stats.output")}: ${fluidTokens.output.toLocaleString()}`,
+    } : null,
+    fluidTokens && fluidTokens.cacheRead > 0 ? {
+      key: "cache",
+      label: "CACHE",
+      value: formatCompactNumber(fluidTokens.cacheRead),
+      tone: "accent",
+      title: `${t("stats.cacheRead")}: ${fluidTokens.cacheRead.toLocaleString()}`,
+    } : null,
+    fluidCostText ? {
+      key: "cost",
+      label: "COST",
+      value: fluidCostText,
+      title: `${t("stats.cost")}: ${sessionStats?.cost?.toFixed(4) ?? fluidCostText}`,
+    } : null,
+    fluidContextValue ? {
+      key: "context",
+      label: "CTX",
+      value: fluidContextValue,
+      tone: fluidContextTone,
+      title: contextUsage?.contextWindow
+        ? `${t("stats.context")}: ${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : t("stats.unknown")} / ${contextUsage.contextWindow.toLocaleString()}`
+        : undefined,
+    } : null,
+  ];
+  const fluidStatsMetrics = fluidStatsMetricItems.filter((metric): metric is FluidMetric => Boolean(metric));
 
   useEffect(() => {
     if (!isFluid || !activeCwd || fluidInspectorInitializedRef.current) return;
@@ -1370,11 +1433,19 @@ export function AppShell() {
                 {fluidDisplayTitle}
               </span>
             </div>
-            <div className="pi-fluid-workspace-meta" title={selectedSession?.cwd ?? effectiveNewSessionCwd ?? undefined}>
-              {fluidTokenText && <span className="pi-fluid-meta-token">{fluidTokenText}</span>}
-              {fluidCostText && <span className="pi-fluid-meta-cost">{fluidCostText}</span>}
-              {fluidContextText && <span className="pi-fluid-meta-context">{fluidContextText}</span>}
-              {!fluidTokenText && !fluidCostText && !fluidContextText && (
+            <div className="pi-fluid-workspace-meta" title={fluidStatsTooltip}>
+              {fluidStatsMetrics.map((metric) => (
+                <span
+                  key={metric.key}
+                  className={`pi-fluid-metric${metric.tone ? ` pi-fluid-metric-${metric.tone}` : ""}`}
+                  data-kind={metric.key}
+                  title={metric.title ?? fluidStatsTooltip}
+                >
+                  <span className="pi-fluid-metric-label">{metric.label}</span>
+                  <span className="pi-fluid-metric-value">{metric.value}</span>
+                </span>
+              ))}
+              {fluidStatsMetrics.length === 0 && (
                 <span className="pi-fluid-meta-fallback">{selectedSession ? `${selectedSession.messageCount} messages` : "Ready"}</span>
               )}
             </div>

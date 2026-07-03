@@ -217,19 +217,56 @@ export function FluidEnvironmentPanel({
   }, [cwd, refreshKey]);
 
   const statsSummary = useMemo(() => {
-    const parts: string[] = [];
+    const metrics: Array<{ key: string; label: string; value: string; tone?: "accent" | "warning" | "danger"; title?: string }> = [];
+    const tooltipParts: string[] = [];
     const tokens = sessionStats?.tokens;
-    if (tokens && (tokens.input > 0 || tokens.output > 0)) {
-      parts.push(`${compactNumber(tokens.input)} ${t("stats.input")} · ${compactNumber(tokens.output)} ${t("stats.output")}`);
+    if (tokens && (tokens.input > 0 || tokens.output > 0 || tokens.cacheRead > 0)) {
+      if (tokens.input > 0) metrics.push({ key: "input", label: "IN", value: compactNumber(tokens.input), title: `${t("stats.input")}: ${tokens.input.toLocaleString()}` });
+      if (tokens.output > 0) metrics.push({ key: "output", label: "OUT", value: compactNumber(tokens.output), title: `${t("stats.output")}: ${tokens.output.toLocaleString()}` });
+      if (tokens.cacheRead > 0) metrics.push({ key: "cache", label: "CACHE", value: compactNumber(tokens.cacheRead), tone: "accent", title: `${t("stats.cacheRead")}: ${tokens.cacheRead.toLocaleString()}` });
+      tooltipParts.push(`${t("stats.input")}: ${tokens.input.toLocaleString()}`);
+      tooltipParts.push(`${t("stats.output")}: ${tokens.output.toLocaleString()}`);
+      tooltipParts.push(`${t("stats.cacheRead")}: ${tokens.cacheRead.toLocaleString()}`);
+      tooltipParts.push(`${t("stats.cacheWrite")}: ${tokens.cacheWrite.toLocaleString()}`);
     }
     if (sessionStats?.cost) {
-      parts.push(sessionStats.cost >= 0.01 ? `$${sessionStats.cost.toFixed(2)}` : "<$0.01");
+      const value = sessionStats.cost >= 0.01 ? `$${sessionStats.cost.toFixed(2)}` : "<$0.01";
+      metrics.push({ key: "cost", label: "COST", value, title: `${t("stats.cost")}: $${sessionStats.cost.toFixed(4)}` });
+      tooltipParts.push(`${t("stats.cost")}: $${sessionStats.cost.toFixed(4)}`);
     }
     if (contextUsage?.contextWindow) {
       const pct = contextUsage.percent !== null ? `${contextUsage.percent.toFixed(0)}%` : "?";
-      parts.push(`${pct} / ${compactNumber(contextUsage.contextWindow)}`);
+      const tone = contextUsage.percent !== null && contextUsage.percent > 90
+        ? "danger"
+        : contextUsage.percent !== null && contextUsage.percent > 70
+          ? "warning"
+          : undefined;
+      metrics.push({
+        key: "context",
+        label: "CTX",
+        value: `${pct} / ${compactNumber(contextUsage.contextWindow)}`,
+        tone,
+        title: `${t("stats.context")}: ${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : t("stats.unknown")} / ${contextUsage.contextWindow.toLocaleString()}`,
+      });
+      tooltipParts.push(`${t("stats.context")}: ${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : t("stats.unknown")} / ${contextUsage.contextWindow.toLocaleString()}`);
     }
-    return parts.join(" · ");
+    if (metrics.length === 0) return null;
+    const tooltip = tooltipParts.join("  |  ");
+    return (
+      <span className="pi-fluid-env-metrics" title={tooltip}>
+        {metrics.map((metric) => (
+          <span
+            key={metric.key}
+            className={`pi-fluid-metric pi-fluid-env-metric${metric.tone ? ` pi-fluid-metric-${metric.tone}` : ""}`}
+            data-kind={metric.key}
+            title={metric.title}
+          >
+            <span className="pi-fluid-metric-label">{metric.label}</span>
+            <span className="pi-fluid-metric-value">{metric.value}</span>
+          </span>
+        ))}
+      </span>
+    );
   }, [contextUsage, sessionStats, t]);
 
   const git = status?.git ?? null;
