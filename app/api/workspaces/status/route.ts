@@ -9,8 +9,22 @@ export const dynamic = "force-dynamic";
 const COMMAND_TIMEOUT_MS = 1_500;
 const COMMAND_MAX_BUFFER = 1024 * 1024;
 const GH_STATUS_TTL_MS = 30_000;
+const GIT_STATUS_TTL_MS = 1_500;
+const GIT_STATUS_CACHE_LIMIT = 40;
 
 let githubCliCache: { available: boolean; expiresAt: number } | null = null;
+
+interface GitStatusSummary {
+  isRepo: boolean;
+  root: string | null;
+  branch: string | null;
+  changedFiles: number;
+  insertions: number;
+  deletions: number;
+  binaryFiles: number;
+}
+
+const gitStatusCache = new Map<string, { value: GitStatusSummary; expiresAt: number }>();
 
 function execText(command: string, args: string[], timeout = COMMAND_TIMEOUT_MS): Promise<string | null> {
   return new Promise((resolve) => {
@@ -67,10 +81,35 @@ async function githubCliAvailable(): Promise<boolean> {
   return available;
 }
 
-async function getGitStatus(cwd: string) {
+function getCachedGitStatus(key: string, now: number): GitStatusSummary | null {
+  const cached = gitStatusCache.get(key);
+  if (!cached || cached.expiresAt <= now) return null;
+  gitStatusCache.delete(key);
+  gitStatusCache.set(key, cached);
+  return cached.value;
+}
+
+function setCachedGitStatus(keys: string[], value: GitStatusSummary, now: number): void {
+  const expiresAt = now + GIT_STATUS_TTL_MS;
+  for (const key of keys) {
+    gitStatusCache.delete(key);
+    gitStatusCache.set(key, { value, expiresAt });
+  }
+  while (gitStatusCache.size > GIT_STATUS_CACHE_LIMIT) {
+    const oldestKey = gitStatusCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    gitStatusCache.delete(oldestKey);
+  }
+}
+
+async function getGitStatus(cwd: string): Promise<GitStatusSummary> {
+  const now = Date.now();
+  const cached = getCachedGitStatus(cwd, now);
+  if (cached) return cached;
+
   const root = await execText("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
   if (!root) {
-    return {
+    const value = {
       isRepo: false,
       root: null,
       branch: null,
@@ -79,23 +118,35 @@ async function getGitStatus(cwd: string) {
       deletions: 0,
       binaryFiles: 0,
     };
+    setCachedGitStatus([cwd], value, now);
+    return value;
   }
 
-  const branch =
-    await execText("git", ["-C", root, "branch", "--show-current"])
-    ?? await execText("git", ["-C", root, "rev-parse", "--short", "HEAD"]);
-  const status = await execText("git", ["-C", root, "status", "--porcelain=v1"], 2_000);
-  const diff = await execText("git", ["-C", root, "diff", "--numstat", "HEAD", "--"], 2_500);
+  const rootCached = getCachedGitStatus(root, now);
+  if (rootCached) {
+    setCachedGitStatus([cwd], rootCached, now);
+    return rootCached;
+  }
+
+  const [currentBranch, head, status, diff] = await Promise.all([
+    execText("git", ["-C", root, "branch", "--show-current"]),
+    execText("git", ["-C", root, "rev-parse", "--short", "HEAD"]),
+    execText("git", ["-C", root, "status", "--porcelain=v1"], 2_000),
+    execText("git", ["-C", root, "diff", "--numstat", "HEAD", "--"], 2_500),
+  ]);
+  const branch = currentBranch || head;
   const changedFiles = status ? status.split("\n").filter((line) => line.trim()).length : 0;
   const summary = summarizeNumstat(diff ?? "");
 
-  return {
+  const value = {
     isRepo: true,
     root,
     branch: branch || null,
     changedFiles,
     ...summary,
   };
+  setCachedGitStatus([cwd, root], value, now);
+  return value;
 }
 
 export async function GET(req: Request) {

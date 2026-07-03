@@ -25,6 +25,7 @@
     "scripts/coms-net-server.mjs",
     "scripts/model-context-test.mjs",
     "scripts/next-build.mjs",
+    "scripts/patch-pi-ai-stepfun-cache.mjs",
     "scripts/prepare-github-install.js",
     "pi-packages",
     "next.config.mjs",
@@ -41,6 +42,7 @@
     "agents:templates": "node scripts/agents-md.mjs templates",
     "coms-net:server": "node scripts/coms-net-server.mjs",
     "test:context": "node scripts/model-context-test.mjs",
+    "postinstall": "node scripts/patch-pi-ai-stepfun-cache.mjs",
     "prepare": "node scripts/prepare-github-install.js",
     "release": "npm run build && npm publish --access public"
   },

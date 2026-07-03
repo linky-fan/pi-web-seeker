@@ -189,10 +189,9 @@ function stepfunModels(includeRouter: boolean): ModelEntry[] {
     {
       id: "step-3.5-flash",
       name: "Step 3.5 Flash",
-      reasoning: true,
+      reasoning: false,
       contextWindow: 256000,
       compat: STEPFUN_BASE_COMPAT,
-      thinkingLevelMap: { off: null, minimal: null, low: null, medium: null, high: null, xhigh: null },
     },
     {
       id: "step-3.5-flash-2603",

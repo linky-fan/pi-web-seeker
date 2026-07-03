@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
+import { memo, useState, useCallback, useRef, useEffect, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
@@ -34,6 +34,7 @@ const FLUID_INSPECTOR_TIER_TWO_WIDTH = 560;
 const FLUID_INSPECTOR_TIER_TWO_MIN_WORKSPACE = 680;
 const FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT =
   FLUID_RAIL_WIDTH + FLUID_INSPECTOR_TIER_TWO_WIDTH + FLUID_INSPECTOR_TIER_TWO_MIN_WORKSPACE;
+const MemoSessionSidebar = memo(SessionSidebar);
 
 interface DebugBundleSummary {
   targetCwd: string;
@@ -566,14 +567,17 @@ export function AppShell() {
 
   useEffect(() => {
     if (!isFluid || typeof window === "undefined") return;
-    const updateTierCapability = () => {
-      const canUseTierTwo = window.innerWidth >= FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT;
-      setFluidCanUseTierTwo(canUseTierTwo);
+    const mediaQuery = window.matchMedia(`(min-width: ${FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT}px)`);
+    const applyTierCapability = (canUseTierTwo: boolean) => {
+      setFluidCanUseTierTwo((current) => current === canUseTierTwo ? current : canUseTierTwo);
       if (!canUseTierTwo) setFluidInspectorTier(1);
     };
-    updateTierCapability();
-    window.addEventListener("resize", updateTierCapability);
-    return () => window.removeEventListener("resize", updateTierCapability);
+    const handleChange = (event: MediaQueryListEvent) => {
+      applyTierCapability(event.matches);
+    };
+    applyTierCapability(mediaQuery.matches);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
   }, [isFluid]);
 
   const handleRightPanelToggleClick = useCallback(() => {
@@ -637,9 +641,9 @@ export function AppShell() {
   const railLocaleLabel = t("fluidRail.locale.label");
   const railLocaleDescription = t("fluidRail.locale.description");
 
-  const sidebarContent = (
+  const sidebarContent = (!isFluid || !fluidDrawerOpen || fluidDrawerView !== "context") ? (
     <>
-      <SessionSidebar
+      <MemoSessionSidebar
         selectedSessionId={selectedSession?.id ?? null}
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}
@@ -710,9 +714,9 @@ export function AppShell() {
         ))}
       </div>}
     </>
-  );
+  ) : null;
 
-  const fluidContextContent = (
+  const fluidContextContent = (isFluid && fluidDrawerOpen && fluidDrawerView === "context") ? (
     <div className="pi-fluid-context-drawer">
       <div className="pi-fluid-drawer-heading">
         <div>
@@ -823,7 +827,7 @@ export function AppShell() {
         </div>
       )}
     </div>
-  );
+  ) : null;
 
   return (
     <>

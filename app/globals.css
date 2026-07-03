@@ -267,6 +267,31 @@ html[data-theme="catppuccin"] {
   --bg-subtle: rgba(203,166,247,0.08);
 }
 
+.pi-file-row:hover {
+  background: var(--bg-hover);
+}
+
+.pi-file-row-action-download {
+  opacity: 0.68;
+}
+
+.pi-file-row-action-mention {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pi-file-row:hover .pi-file-row-action-download,
+.pi-file-row:focus-within .pi-file-row-action-download,
+.pi-file-row:hover .pi-file-row-action-mention,
+.pi-file-row:focus-within .pi-file-row-action-mention {
+  opacity: 1;
+}
+
+.pi-file-row:hover .pi-file-row-action-mention,
+.pi-file-row:focus-within .pi-file-row-action-mention {
+  pointer-events: auto;
+}
+
 /* Theme toggle: circular wipe via View Transitions API.
    Disable the UA cross-fade; the actual clip-path animation is driven by
    Element.animate() in hooks/useTheme.ts after transition.ready resolves. */

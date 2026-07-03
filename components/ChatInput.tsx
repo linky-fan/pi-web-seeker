@@ -236,6 +236,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const mentionPanelRef = useRef<HTMLDivElement>(null);
   const slashPanelRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const modelButtonRef = useRef<HTMLButtonElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownPanelRef = useRef<HTMLDivElement>(null);
@@ -252,6 +253,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const effectiveDraftStorageKey = draftStorageKey ? `${DRAFT_STORAGE_KEY}:${draftStorageKey}` : DRAFT_STORAGE_KEY;
   const canSend = value.trim().length > 0 || attachedImages.length > 0;
   const prevCanSendRef = useRef(canSend);
+  const updateModelDropdownRect = useCallback(() => {
+    const rect = modelButtonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
+  }, []);
   const slashCommands = [
     {
       name: "plan",
@@ -322,6 +328,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const tween = revealElement(modelDropdownPanelRef.current, { y: 5, scale: 0.99, duration: 0.16 });
     return () => { tween?.kill(); };
   }, [modelDropdownOpen]);
+
+  useEffect(() => {
+    if (!modelDropdownOpen) return;
+    updateModelDropdownRect();
+    const visualViewport = window.visualViewport;
+    window.addEventListener("resize", updateModelDropdownRect);
+    window.addEventListener("scroll", updateModelDropdownRect, true);
+    visualViewport?.addEventListener("resize", updateModelDropdownRect);
+    visualViewport?.addEventListener("scroll", updateModelDropdownRect);
+    return () => {
+      window.removeEventListener("resize", updateModelDropdownRect);
+      window.removeEventListener("scroll", updateModelDropdownRect, true);
+      visualViewport?.removeEventListener("resize", updateModelDropdownRect);
+      visualViewport?.removeEventListener("scroll", updateModelDropdownRect);
+    };
+  }, [modelDropdownOpen, updateModelDropdownRect]);
 
   useEffect(() => {
     if (!thinkingDropdownOpen) return;
@@ -1408,8 +1430,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {modelOptions.length > 0 && currentName && onModelChange && (
                 <div ref={dropdownRef} data-motion-control style={{ position: "relative" }}>
                   <button
+                    ref={modelButtonRef}
                     onClick={(e) => {
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      const rect = e.currentTarget.getBoundingClientRect();
                       setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
                       setModelDropdownOpen((v) => !v);
                     }}
@@ -1449,16 +1472,26 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{currentName}</span>
                   </button>
                   {modelDropdownOpen && modelDropdownRect && typeof document !== "undefined" && createPortal((() => {
+                    const margin = 8;
+                    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
                     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+                    const viewportMaxWidth = Math.max(120, viewportWidth - margin * 2);
+                    const initialMinWidth = Math.min(modelDropdownRect.width, viewportMaxWidth);
+                    const left = Math.min(
+                      Math.max(margin, modelDropdownRect.left),
+                      Math.max(margin, viewportWidth - initialMinWidth - margin),
+                    );
+                    const maxPanelWidth = Math.max(120, viewportWidth - left - margin);
+                    const minPanelWidth = Math.min(modelDropdownRect.width, maxPanelWidth);
                     const bottom = viewportHeight - modelDropdownRect.top + 6;
                     const maxH = Math.max(120, Math.min(modelDropdownRect.top - 8, viewportHeight * 0.6));
                     return (
                     <div ref={modelDropdownPanelRef} className="pi-popover pi-model-popover" style={{
                       position: "fixed",
-                      bottom, left: modelDropdownRect.left,
+                      bottom, left,
                       zIndex: 500, background: "var(--bg)", border: "1px solid var(--border)",
                       borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
-                      overflow: "hidden", width: "max-content", minWidth: modelDropdownRect.width, maxHeight: maxH, overflowY: "auto",
+                      overflow: "hidden", width: "max-content", minWidth: minPanelWidth, maxWidth: maxPanelWidth, maxHeight: maxH, overflowY: "auto",
                     }}>
                       {modelsByProvider.map((group, gi) => (
                         <div key={group.provider}>
