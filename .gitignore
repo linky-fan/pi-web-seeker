@@ -19,6 +19,8 @@
 
 # production
 /build
+/dist
+/.release-cache
 
 # local Docker runtime data
 /.pi-web-data

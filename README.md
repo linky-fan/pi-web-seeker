@@ -69,6 +69,16 @@ npx @agegr/pi-web
 
 已发布的 npm 包会带上 Next.js 生产产物；`pi-web` 会直接启动这些产物。本地开发目录里执行 `npm install` 不会自动构建，仍按下方开发流程使用 `npm run dev`。
 
+**GitHub Release 便携版：**
+
+如果不想安装 Node.js / npm，可以在 GitHub Release 下载对应系统的便携包：
+
+- Windows x64：`pi-web-seeker-vX.Y.Z-windows-x64.zip`
+- macOS Apple Silicon：`pi-web-seeker-vX.Y.Z-macos-arm64.zip`
+- macOS Intel：`pi-web-seeker-vX.Y.Z-macos-x64.zip`
+
+解压后运行 `start-pi-web.cmd`、`start-pi-web.ps1` 或 `start-pi-web.command`。便携包内置 Node.js 和生产依赖，默认打开 [http://localhost:30141](http://localhost:30141)。它不包含用户数据、API key、会话、`.env*` 或本地工作区文件。
+
 **或全局安装后使用：**
 
 ```bash

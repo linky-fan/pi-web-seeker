@@ -1,0 +1,92 @@
+name: Release portable packages
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            platform: win32
+            arch: x64
+          - name: macos-arm64
+            os: macos-latest
+            platform: darwin
+            arch: arm64
+          - name: macos-x64
+            os: macos-15-intel
+            platform: darwin
+            arch: x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.1
+          cache: npm
+
+      - name: Verify release tag
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            node -e "const pkg=require('./package.json'); const tag=process.env.GITHUB_REF_NAME; if (tag !== 'v' + pkg.version) { console.error('Tag ' + tag + ' does not match package.json version ' + pkg.version); process.exit(1); }"
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: node_modules/.bin/tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Prune development dependencies
+        run: npm prune --omit=dev
+
+      - name: Pack portable release
+        run: node scripts/release/pack-portable.mjs --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-web-seeker-${{ github.ref_name || github.sha }}-${{ matrix.name }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download portable artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.zip
+          prerelease: ${{ contains(github.ref_name, '-') }}

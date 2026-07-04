@@ -41,6 +41,7 @@
     "agents:templates": "node scripts/agents-md.mjs templates",
     "coms-net:server": "node scripts/coms-net-server.mjs",
     "test:context": "node scripts/model-context-test.mjs",
+    "pack:portable": "node scripts/release/pack-portable.mjs",
     "prepare": "node scripts/prepare-github-install.js",
     "release": "npm run build && npm publish --access public"
   },
