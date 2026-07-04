@@ -166,7 +166,7 @@ async function ensureNodeRuntime(options, runtimeDir) {
 function shouldCopyNextPath(source) {
   const rel = relative(projectDir, source).split(sep).join("/");
   if (rel === ".next/cache" || rel.startsWith(".next/cache/")) return false;
-  if (rel === ".next/dev" || rel.startsWith(".next/dev/")) return false;
+  if (rel === ".next/dev" || rel.startsWith(".next/dev/") || rel.startsWith(".next/dev.")) return false;
   if (rel === ".next/types" || rel.startsWith(".next/types/")) return false;
   if (rel === ".next/trace" || rel === ".next/trace-build") return false;
   if (basename(source).startsWith("_events_")) return false;
@@ -177,6 +177,7 @@ function shouldCopyNextPath(source) {
 async function copyRequired(source, destination, options = {}) {
   const absoluteSource = resolve(projectDir, source);
   if (!existsSync(absoluteSource)) throw new Error(`Required release input missing: ${source}`);
+  console.log(`Copying ${source}`);
   await cp(absoluteSource, destination, {
     recursive: true,
     force: true,
@@ -187,6 +188,7 @@ async function copyRequired(source, destination, options = {}) {
 async function copyOptional(source, destination, options = {}) {
   const absoluteSource = resolve(projectDir, source);
   if (!existsSync(absoluteSource)) return;
+  console.log(`Copying ${source}`);
   await cp(absoluteSource, destination, {
     recursive: true,
     force: true,
@@ -315,11 +317,14 @@ async function main() {
     await copyOptional(script, join(packageDir, script));
   }
 
+  console.log(`Bundling Node.js ${options.nodeVersion} for ${platformLabel(options.platform)}-${options.arch}`);
   await ensureNodeRuntime(options, join(packageDir, "runtime", "node"));
+  console.log("Writing launchers");
   await writeLaunchers(packageDir, options);
   await writePortableReadme(packageDir, pkg, options);
 
   if (options.archive) {
+    console.log(`Creating ${zipPath}`);
     await archivePackage(packageDir, zipPath);
     console.log(`wrote ${zipPath}`);
   } else {
