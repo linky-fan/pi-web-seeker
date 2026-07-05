@@ -1,11 +1,15 @@
 {
-  "name": "@agegr/pi-web",
+  "name": "@linky-fan/pi-web",
   "version": "0.6.21",
   "description": "Web UI for the pi coding agent",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/linky-fan/pi-web-seeker.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "bin": {
     "pi-web": "bin/pi-web.js"
@@ -15,7 +19,7 @@
     ".next",
     "!.next/_events_*",
     "!.next/cache",
-    "!.next/dev",
+    "!.next/dev*",
     "!.next/trace",
     "!.next/trace-build",
     "!.next/types",
@@ -27,6 +31,7 @@
     "scripts/next-build.mjs",
     "scripts/patch-pi-ai-stepfun-cache.mjs",
     "scripts/prepare-github-install.js",
+    "scripts/release/pack-portable.mjs",
     "pi-packages",
     "next.config.mjs",
     "package.json"
@@ -45,7 +50,7 @@
     "pack:portable": "node scripts/release/pack-portable.mjs",
     "postinstall": "node scripts/patch-pi-ai-stepfun-cache.mjs",
     "prepare": "node scripts/prepare-github-install.js",
-    "release": "npm run build && npm publish --access public"
+    "release": "npm run build && npm publish --access public --registry=https://registry.npmjs.org"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.80.3",
