@@ -64,7 +64,7 @@ Plan Mode 支持默认主 agent 只读计划，也支持在 subagent 扩展可�
 **无需安装，直接运行已发布版本：**
 
 ```bash
-npx @linky-fan/pi-web
+npx @linkyfan/pi-web
 ```
 
 已发布的 npm 包会带上 Next.js 生产产物；`pi-web` 会直接启动这些产物。本地开发目录里执行 `npm install` 不会自动构建，仍按下方开发流程使用 `npm run dev`。
@@ -82,7 +82,7 @@ npx @linky-fan/pi-web
 **或全局安装后使用：**
 
 ```bash
-npm install -g @linky-fan/pi-web
+npm install -g @linkyfan/pi-web
 pi-web
 ```
 
