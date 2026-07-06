@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useReducer, useMemo } from "react";
-import type { AgentMessage, SessionInfo, SessionTreeNode, TextContent, ToolExecutionStatus } from "@/lib/types";
+import type { AgentMessage, ExtensionUiRequest, ExtensionUiResponse, SessionInfo, SessionTreeNode, TextContent, ToolExecutionStatus } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { getSubagentMessageKey } from "@/lib/subagents";
 import { sendAgentCommand } from "@/lib/agent-client";
@@ -63,6 +63,36 @@ type LiveAgentState = {
 };
 
 type AgentStateResponse = { running: boolean; state?: LiveAgentState };
+
+type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
+type ExtensionUiCustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
+
+export type NoticeType = "info" | "success" | "warning" | "error";
+
+export type NoticeItem = {
+  id: string;
+  message: string;
+  type: NoticeType;
+};
+
+type NoticeState = {
+  visible: NoticeItem[];
+};
+
+type NoticeAction =
+  | { type: "add"; notice: NoticeItem }
+  | { type: "dismiss"; id: string };
+
+function noticeReducer(state: NoticeState, action: NoticeAction): NoticeState {
+  switch (action.type) {
+    case "add":
+      return { visible: [...state.visible.filter((item) => item.id !== action.notice.id), action.notice].slice(-4) };
+    case "dismiss":
+      return { visible: state.visible.filter((item) => item.id !== action.id) };
+    default:
+      return state;
+  }
+}
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 140;
 const PLAN_MODE_STORAGE_PREFIX = "pi-web.planMode";
@@ -176,6 +206,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [planMode, setPlanMode] = useState<PlanMode>("normal");
   const [planExecutionMode, setPlanExecutionMode] = useState<PlanExecutionMode>("main");
   const [planModeStatus, setPlanModeStatus] = useState<PlanModeStatus | null>(null);
+  const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [] });
+  const [extensionDialog, setExtensionDialog] = useState<ExtensionUiDialogRequest | null>(null);
+  const [extensionCustomUi, setExtensionCustomUi] = useState<ExtensionUiCustomRequest | null>(null);
+  const [extensionStatuses, setExtensionStatuses] = useState<Array<{ key: string; text: string }>>([]);
+  const [extensionWidgets, setExtensionWidgets] = useState<Array<{ key: string; lines: string[]; placement?: "aboveEditor" | "belowEditor" }>>([]);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const messagesRef = useRef<AgentMessage[]>([]);
@@ -412,8 +447,94 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunningRef.current = agentRunning;
   }, [agentRunning]);
 
+  const addNotice = useCallback((notice: { id?: string; message: string; type?: NoticeType }) => {
+    const message = notice.message.trim();
+    if (!message) return;
+    const id = notice.id ?? `notice-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    dispatchNotice({ type: "add", notice: { id, message, type: notice.type ?? "info" } });
+    window.setTimeout(() => dispatchNotice({ type: "dismiss", id }), 6000);
+  }, []);
+
+  const respondToExtensionUi = useCallback(async (request: ExtensionUiDialogRequest, response: Omit<ExtensionUiResponse, "type" | "id">) => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    setExtensionDialog((current) => current?.id === request.id ? null : current);
+    try {
+      await sendAgentCommand(sid, {
+        type: "extension_ui_response",
+        id: request.id,
+        ...response,
+      });
+    } catch (e) {
+      console.error("Failed to send extension UI response:", e);
+    }
+  }, []);
+
+  const sendExtensionCustomInput = useCallback(async (request: ExtensionUiCustomRequest, data: string) => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    try {
+      await sendAgentCommand(sid, {
+        type: "extension_ui_input",
+        id: request.id,
+        data,
+      });
+    } catch (e) {
+      console.error("Failed to send extension custom UI input:", e);
+    }
+  }, []);
+
+  const handleExtensionUiRequest = useCallback((request: ExtensionUiRequest) => {
+    switch (request.method) {
+      case "select":
+      case "confirm":
+      case "input":
+      case "editor":
+        setExtensionDialog(request);
+        break;
+      case "notify":
+        addNotice({ id: request.id, type: request.notifyType ?? "info", message: request.message });
+        break;
+      case "setStatus":
+        setExtensionStatuses((current) => {
+          const rest = current.filter((item) => item.key !== request.statusKey);
+          return request.statusText ? [...rest, { key: request.statusKey, text: request.statusText }] : rest;
+        });
+        break;
+      case "setWidget":
+        setExtensionWidgets((current) => {
+          const rest = current.filter((item) => item.key !== request.widgetKey);
+          return request.widgetLines?.length
+            ? [...rest, { key: request.widgetKey, lines: request.widgetLines, placement: request.placement }]
+            : rest;
+        });
+        break;
+      case "setTitle":
+        if (request.title) document.title = request.title;
+        break;
+      case "set_editor_text":
+        opts.chatInputRef?.current?.insertText(request.text);
+        break;
+      case "custom":
+        setExtensionCustomUi((current) => {
+          if (request.closed) return current?.id === request.id ? null : current;
+          return request;
+        });
+        break;
+    }
+  }, [addNotice, opts.chatInputRef]);
+
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     switch (event.type) {
+      case "extension_ui_request":
+        handleExtensionUiRequest(event as ExtensionUiRequest);
+        break;
+      case "extension_error":
+        addNotice({
+          type: "error",
+          message: (event.error as string | undefined) ?? "Extension command failed",
+        });
+        break;
       case "agent_start":
         setTaskError(null);
         setAgentRunning(true);
@@ -543,7 +664,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         break;
     }
-  }, [loadSession, onAgentEnd]);
+  }, [addNotice, handleExtensionUiRequest, loadSession, onAgentEnd]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]): Promise<boolean> => {
@@ -892,6 +1013,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
     taskError, agentPhase, toolExecutionStatuses, planMode, planExecutionMode, planModeStatus,
+    notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets,
     isNew,
     // Refs
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,
@@ -900,6 +1022,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
     handleThinkingLevelChange, handlePlanModeChange, setActiveLeafId, setData, setMessages,
+    respondToExtensionUi, sendExtensionCustomInput,
     dispatch, setAgentRunning, setForkingEntryId,
     // Subscriptions
     handleAgentEventRef,

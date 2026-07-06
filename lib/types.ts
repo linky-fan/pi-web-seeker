@@ -197,3 +197,90 @@ export interface ToolExecutionStatus {
   updatedAt: number;
   outputText: string;
 }
+
+export type ExtensionUiRequest =
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "select";
+      title: string;
+      options: string[];
+      timeout?: number;
+      expiresAt?: number;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "confirm";
+      title: string;
+      message: string;
+      timeout?: number;
+      expiresAt?: number;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "input";
+      title: string;
+      placeholder?: string;
+      timeout?: number;
+      expiresAt?: number;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "editor";
+      title: string;
+      prefill?: string;
+      timeout?: number;
+      expiresAt?: number;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "notify";
+      message: string;
+      notifyType?: "info" | "warning" | "error";
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "setStatus";
+      statusKey: string;
+      statusText?: string;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "setWidget";
+      widgetKey: string;
+      widgetLines?: string[];
+      placement?: "aboveEditor" | "belowEditor";
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "setTitle";
+      title: string;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "set_editor_text";
+      text: string;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "custom";
+      lines: string[];
+      closed?: boolean;
+    };
+
+export type ExtensionUiResponse = {
+  type: "extension_ui_response";
+  id: string;
+  value?: unknown;
+  confirmed?: boolean;
+  cancelled?: boolean;
+};

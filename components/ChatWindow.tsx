@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import type { AgentMessage, AssistantMessage, CustomMessage, SessionInfo, SessionTreeNode, TextContent, ToolCallContent } from "@/lib/types";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import type { AgentMessage, AssistantMessage, CustomMessage, ExtensionUiRequest, SessionInfo, SessionTreeNode, TextContent, ToolCallContent } from "@/lib/types";
 import { MessageView, type ComsNetResponseHint } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { AgentsMdStatus } from "./AgentsMdStatus";
-import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
+import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { BrandTypewriterHeader } from "./BrandTypewriter";
@@ -293,15 +293,21 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     planMode,
     planExecutionMode,
     planModeStatus,
+    notices,
+    extensionDialog,
+    extensionCustomUi,
+    extensionStatuses,
+    extensionWidgets,
     isNew,
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
     handleThinkingLevelChange, handlePlanModeChange, handleAgentEventRef,
+    respondToExtensionUi, sendExtensionCustomInput,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
-    modelsRefreshKey, onBranchDataChange, onSystemPromptChange,
+    modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange,
   });
 
   const { soundEnabled, onSoundToggle, playDoneSound } = useAudio();
@@ -618,6 +624,22 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         </div>
       )}
 
+      <ExtensionNotices notices={notices} statuses={extensionStatuses} />
+
+      {extensionDialog && (
+        <ExtensionDialog
+          request={extensionDialog}
+          onRespond={respondToExtensionUi}
+        />
+      )}
+
+      {extensionCustomUi && (
+        <ExtensionCustomPanel
+          request={extensionCustomUi}
+          onInput={sendExtensionCustomInput}
+        />
+      )}
+
       {isEmptyNew ? (
         <div
           className={`${isFluid ? "pi-fluid-empty-chat" : "pi-empty-chat"} flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8`}
@@ -637,7 +659,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               <BrandTypewriterHeader />
             </div>
             {classicAgentsMdElement}
+            <ExtensionWidgets widgets={extensionWidgets.filter((widget) => widget.placement === "aboveEditor")} />
             {chatInputElement}
+            <ExtensionWidgets widgets={extensionWidgets.filter((widget) => widget.placement !== "aboveEditor")} />
           </div>
         </div>
       ) : (
@@ -744,10 +768,429 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         } : undefined}
       >
         {classicAgentsMdElement}
+        <ExtensionWidgets widgets={extensionWidgets.filter((widget) => widget.placement === "aboveEditor")} />
         {chatInputElement}
+        <ExtensionWidgets widgets={extensionWidgets.filter((widget) => widget.placement !== "aboveEditor")} />
       </div>
       </>
       )}
+    </div>
+  );
+}
+
+type ExtensionDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
+type ExtensionCustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
+
+function ExtensionNotices({
+  notices,
+  statuses,
+}: {
+  notices: NoticeItem[];
+  statuses: Array<{ key: string; text: string }>;
+}) {
+  if (notices.length === 0 && statuses.length === 0) return null;
+  return (
+    <div className="pointer-events-none absolute right-4 top-4 z-[90] flex w-[min(360px,calc(100%-32px))] flex-col gap-2">
+      {statuses.map((status) => (
+        <div
+          key={status.key}
+          className="rounded-md border border-border bg-bg-panel px-3 py-2 text-[12px] text-text-muted shadow-lg"
+        >
+          <span className="font-mono text-[11px] text-text-dim">{status.key}</span>
+          <span className="ml-2 text-text">{status.text}</span>
+        </div>
+      ))}
+      {notices.map((notice) => (
+        <div
+          key={notice.id}
+          className="rounded-md border border-border bg-bg-panel px-3 py-2 text-[13px] shadow-lg"
+          style={{
+            color: notice.type === "error" ? "#fca5a5" : notice.type === "warning" ? "#fbbf24" : "var(--text)",
+          }}
+        >
+          {notice.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ExtensionWidgets({
+  widgets,
+}: {
+  widgets: Array<{ key: string; lines: string[]; placement?: "aboveEditor" | "belowEditor" }>;
+}) {
+  if (widgets.length === 0) return null;
+  return (
+    <div className="mx-auto mb-2 flex w-full max-w-[820px] flex-col gap-2 px-4">
+      {widgets.map((widget) => (
+        <pre
+          key={widget.key}
+          className="m-0 overflow-auto rounded-md border border-border bg-bg-panel px-3 py-2 font-mono text-[12px] leading-[1.45] text-text-muted"
+        >
+          {widget.lines.join("\n")}
+        </pre>
+      ))}
+    </div>
+  );
+}
+
+function ExtensionDialog({
+  request,
+  onRespond,
+}: {
+  request: ExtensionDialogRequest;
+  onRespond: (request: ExtensionDialogRequest, response: { value?: unknown; confirmed?: boolean; cancelled?: boolean }) => void;
+}) {
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    setValue(request.method === "editor" ? request.prefill ?? "" : "");
+  }, [request]);
+
+  const cancel = () => onRespond(request, { cancelled: true });
+  const submitValue = () => onRespond(request, { value });
+
+  return (
+    <div className="absolute inset-0 z-[94] flex items-center justify-center bg-[rgba(0,0,0,0.18)] p-5">
+      <div className="w-[min(520px,100%)] overflow-hidden rounded-lg border border-border bg-bg shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
+        <div className="border-b border-border px-4 py-3 text-[14px] font-semibold text-text">
+          {request.title}
+        </div>
+        <div className="p-4">
+          {request.method === "select" && (
+            <div className="flex flex-col gap-2">
+              {request.options.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className="rounded-md border border-border bg-bg-panel px-3 py-2 text-left text-[13px] text-text hover:border-accent"
+                  onClick={() => onRespond(request, { value: option })}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+          {request.method === "confirm" && (
+            <div className="text-[13px] leading-6 text-text-muted">{request.message}</div>
+          )}
+          {request.method === "input" && (
+            <input
+              autoFocus
+              className="w-full rounded-md border border-border bg-bg-panel px-3 py-2 text-[13px] text-text outline-none focus:border-accent"
+              placeholder={request.placeholder}
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") submitValue();
+                if (event.key === "Escape") cancel();
+              }}
+            />
+          )}
+          {request.method === "editor" && (
+            <textarea
+              autoFocus
+              className="min-h-[180px] w-full resize-y rounded-md border border-border bg-bg-panel px-3 py-2 font-mono text-[13px] text-text outline-none focus:border-accent"
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") cancel();
+              }}
+            />
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
+          <button
+            type="button"
+            className="rounded-md border border-border bg-bg-panel px-3 py-1.5 text-[12px] text-text-muted hover:text-text"
+            onClick={cancel}
+          >
+            Cancel
+          </button>
+          {request.method === "confirm" ? (
+            <>
+              <button
+                type="button"
+                className="rounded-md border border-border bg-bg-panel px-3 py-1.5 text-[12px] text-text hover:border-accent"
+                onClick={() => onRespond(request, { confirmed: false })}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-accent bg-accent px-3 py-1.5 text-[12px] text-white"
+                onClick={() => onRespond(request, { confirmed: true })}
+              >
+                Yes
+              </button>
+            </>
+          ) : request.method !== "select" ? (
+            <button
+              type="button"
+              className="rounded-md border border-accent bg-accent px-3 py-1.5 text-[12px] text-white"
+              onClick={submitValue}
+            >
+              OK
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function toTerminalKeyData(event: KeyboardEvent): string | null {
+  if (event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) {
+    const ch = event.key.toLowerCase();
+    if (ch >= "a" && ch <= "z") {
+      return String.fromCharCode(ch.charCodeAt(0) - 96);
+    }
+  }
+
+  switch (event.key) {
+    case "ArrowUp":
+      return "\x1b[A";
+    case "ArrowDown":
+      return "\x1b[B";
+    case "ArrowRight":
+      return "\x1b[C";
+    case "ArrowLeft":
+      return "\x1b[D";
+    case "Enter":
+      return "\r";
+    case "Escape":
+      return "\x1b";
+    case "Backspace":
+      return "\x7f";
+    case "Tab":
+      return "\t";
+    case " ":
+      return " ";
+    default:
+      if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) return event.key;
+      return null;
+  }
+}
+
+const ANSI_ESCAPE_RE = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g;
+const ANSI_ESCAPE_AT_START_RE = /^\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/;
+const ANSI_SGR_RE = /\x1B\[([0-9;]*)m/g;
+const ANSI_8_COLORS = ["#1f2937", "#dc2626", "#16a34a", "#d97706", "#2563eb", "#9333ea", "#0891b2", "#6b7280"];
+const ANSI_BRIGHT_COLORS = ["#9ca3af", "#ef4444", "#22c55e", "#f59e0b", "#3b82f6", "#a855f7", "#06b6d4", "#e5e7eb"];
+
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_ESCAPE_RE, "");
+}
+
+function visibleCharPositions(text: string): Array<{ start: number; end: number; char: string }> {
+  const positions: Array<{ start: number; end: number; char: string }> = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text.charCodeAt(i) === 0x1b) {
+      const match = text.slice(i).match(ANSI_ESCAPE_AT_START_RE);
+      if (match) {
+        i += match[0].length;
+        continue;
+      }
+    }
+    const codePoint = text.codePointAt(i);
+    if (codePoint === undefined) break;
+    const char = String.fromCodePoint(codePoint);
+    positions.push({ start: i, end: i + char.length, char });
+    i += char.length;
+  }
+  return positions;
+}
+
+function removeVisibleCharAt(text: string, index: number): string {
+  const pos = visibleCharPositions(text)[index];
+  if (!pos) return text;
+  return text.slice(0, pos.start) + text.slice(pos.end);
+}
+
+function firstVisibleChar(text: string): string | undefined {
+  return visibleCharPositions(text)[0]?.char;
+}
+
+function lastNonSpaceVisibleCharIndex(text: string): number {
+  const positions = visibleCharPositions(text);
+  for (let i = positions.length - 1; i >= 0; i--) {
+    if (positions[i].char.trim() !== "") return i;
+  }
+  return -1;
+}
+
+function trimEndVisibleSpaces(text: string): string {
+  let next = text;
+  while (true) {
+    const positions = visibleCharPositions(next);
+    const last = positions[positions.length - 1];
+    if (!last || last.char.trim() !== "") return next;
+    next = next.slice(0, last.start) + next.slice(last.end);
+  }
+}
+
+function normalizeCustomPanelLines(lines: string[]): string[] {
+  const horizontalFrameLine = /^[┌├└╭╰][─┬┴┼]+[┐┤┘╮╯]$/;
+  const normalized: string[] = [];
+
+  for (const rawLine of lines) {
+    const plain = stripAnsi(rawLine).trimEnd();
+    if (horizontalFrameLine.test(plain)) continue;
+    let line = rawLine;
+    const first = firstVisibleChar(line);
+    if (first === "│" || first === "┃") {
+      line = removeVisibleCharAt(line, 0);
+      if (firstVisibleChar(line) === " ") line = removeVisibleCharAt(line, 0);
+    }
+    const rightBorderIndex = lastNonSpaceVisibleCharIndex(line);
+    const rightBorder = rightBorderIndex >= 0 ? visibleCharPositions(line)[rightBorderIndex]?.char : undefined;
+    if (rightBorder === "│" || rightBorder === "┃") line = removeVisibleCharAt(line, rightBorderIndex);
+    normalized.push(trimEndVisibleSpaces(line));
+  }
+
+  while (normalized.length > 0 && stripAnsi(normalized[0]).trim() === "") normalized.shift();
+  while (normalized.length > 0 && stripAnsi(normalized[normalized.length - 1]).trim() === "") normalized.pop();
+  return normalized.length ? normalized : lines;
+}
+
+function ansi256Color(index: number): string | undefined {
+  if (index >= 0 && index < 8) return ANSI_8_COLORS[index];
+  if (index >= 8 && index < 16) return ANSI_BRIGHT_COLORS[index - 8];
+  if (index >= 16 && index <= 231) {
+    const n = index - 16;
+    const r = Math.floor(n / 36);
+    const g = Math.floor((n % 36) / 6);
+    const b = n % 6;
+    const scale = (value: number) => value === 0 ? 0 : 55 + value * 40;
+    return `rgb(${scale(r)}, ${scale(g)}, ${scale(b)})`;
+  }
+  if (index >= 232 && index <= 255) {
+    const gray = 8 + (index - 232) * 10;
+    return `rgb(${gray}, ${gray}, ${gray})`;
+  }
+  return undefined;
+}
+
+function applyAnsiCodes(style: CSSProperties, codes: number[]): CSSProperties {
+  const next: CSSProperties = { ...style };
+  for (let i = 0; i < codes.length; i++) {
+    const code = codes[i];
+    if (code === 0) {
+      for (const key of Object.keys(next) as Array<keyof CSSProperties>) delete next[key];
+    } else if (code === 1) next.fontWeight = 700;
+    else if (code === 2) next.opacity = 0.65;
+    else if (code === 3) next.fontStyle = "italic";
+    else if (code === 4) next.textDecoration = "underline";
+    else if (code === 22) {
+      delete next.fontWeight;
+      delete next.opacity;
+    } else if (code === 23) delete next.fontStyle;
+    else if (code === 24) delete next.textDecoration;
+    else if (code === 39) delete next.color;
+    else if (code === 49) delete next.backgroundColor;
+    else if (code >= 30 && code <= 37) next.color = ANSI_8_COLORS[code - 30];
+    else if (code >= 90 && code <= 97) next.color = ANSI_BRIGHT_COLORS[code - 90];
+    else if (code >= 40 && code <= 47) next.backgroundColor = ANSI_8_COLORS[code - 40];
+    else if (code >= 100 && code <= 107) next.backgroundColor = ANSI_BRIGHT_COLORS[code - 100];
+    else if ((code === 38 || code === 48) && codes[i + 1] === 2) {
+      const [r, g, b] = [codes[i + 2], codes[i + 3], codes[i + 4]];
+      if ([r, g, b].every((value) => typeof value === "number" && Number.isFinite(value))) {
+        if (code === 38) next.color = `rgb(${r}, ${g}, ${b})`;
+        else next.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+      }
+      i += 4;
+    } else if ((code === 38 || code === 48) && codes[i + 1] === 5) {
+      const color = ansi256Color(codes[i + 2]);
+      if (color) {
+        if (code === 38) next.color = color;
+        else next.backgroundColor = color;
+      }
+      i += 2;
+    }
+  }
+  return next;
+}
+
+function renderAnsiLine(line: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let style: CSSProperties = {};
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  ANSI_SGR_RE.lastIndex = 0;
+
+  while ((match = ANSI_SGR_RE.exec(line)) !== null) {
+    if (match.index > lastIndex) {
+      const text = line.slice(lastIndex, match.index);
+      nodes.push(Object.keys(style).length > 0 ? <span key={`${keyPrefix}-${nodes.length}`} style={style}>{text}</span> : text);
+    }
+    const codes = match[1] ? match[1].split(";").map((part) => Number(part || "0")) : [0];
+    style = applyAnsiCodes(style, codes);
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < line.length) {
+    const text = line.slice(lastIndex);
+    nodes.push(Object.keys(style).length > 0 ? <span key={`${keyPrefix}-${nodes.length}`} style={style}>{text}</span> : text);
+  }
+
+  return nodes;
+}
+
+function ExtensionCustomPanel({
+  request,
+  onInput,
+}: {
+  request: ExtensionCustomRequest;
+  onInput: (request: ExtensionCustomRequest, data: string) => void;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const displayLines = normalizeCustomPanelLines(request.lines);
+
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, [request.id]);
+
+  return (
+    <div className="absolute inset-0 z-[95] flex items-center justify-center bg-[rgba(0,0,0,0.18)] p-5">
+      <div
+        ref={panelRef}
+        tabIndex={0}
+        role="dialog"
+        aria-modal="true"
+        className="w-[min(920px,100%)] overflow-hidden rounded-lg border border-border bg-bg shadow-[0_20px_60px_rgba(0,0,0,0.28)] outline-none"
+        style={{ maxHeight: "min(760px, calc(100vh - 40px))" }}
+        onKeyDown={(event) => {
+          const data = toTerminalKeyData(event);
+          if (!data) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onInput(request, data);
+        }}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+          <div className="text-[13px] font-semibold text-text">Extension panel</div>
+          <button
+            type="button"
+            className="rounded-md border border-border bg-bg-panel px-2.5 py-1 text-[12px] text-text-muted hover:text-text"
+            onClick={() => onInput(request, "\x03")}
+          >
+            Close
+          </button>
+        </div>
+        <pre
+          className="m-0 overflow-auto bg-bg-panel p-3 font-mono text-[13px] leading-[1.45] text-text"
+          style={{ maxHeight: "calc(min(760px, 100vh - 40px) - 48px)", whiteSpace: "pre" }}
+        >
+          {(displayLines.length ? displayLines : [""]).map((line, index, allLines) => (
+            <Fragment key={index}>
+              {renderAnsiLine(line, `line-${index}`)}
+              {index < allLines.length - 1 ? "\n" : null}
+            </Fragment>
+          ))}
+        </pre>
+      </div>
     </div>
   );
 }
