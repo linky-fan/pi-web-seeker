@@ -1,11 +1,15 @@
 {
-  "name": "@agegr/pi-web",
+  "name": "@linkyfan/pi-web",
   "version": "0.6.20",
   "description": "Web UI for the pi coding agent",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/linky-fan/pi-web-seeker.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "bin": {
     "pi-web": "bin/pi-web.js"
@@ -43,17 +47,17 @@
     "test:context": "node scripts/model-context-test.mjs",
     "pack:portable": "node scripts/release/pack-portable.mjs",
     "prepare": "node scripts/prepare-github-install.js",
-    "release": "npm run build && npm publish --access public"
+    "release": "npm run build && npm publish --access public --registry=https://registry.npmjs.org"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.79.8",
-    "@earendil-works/pi-coding-agent": "^0.79.8",
-    "@lobehub/icons": "^5.10.0",
+    "@earendil-works/pi-ai": "^0.80.3",
+    "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@lobehub/icons": "^5.10.1",
     "gsap": "^3.15.0",
-    "katex": "^0.16.45",
-    "next": "^16.2.7",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "katex": "^0.17.0",
+    "next": "^16.2.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^16.1.1",
     "rehype-katex": "^7.0.1",
@@ -61,16 +65,16 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.2",
-    "@types/node": "^25",
-    "@types/react": "^19",
+    "@tailwindcss/postcss": "^4.3.2",
+    "@types/node": "^26.1.0",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5.13",
     "eslint": "^9",
-    "eslint-config-next": "16.2.7",
-    "postcss": "^8.5.15",
-    "tailwindcss": "^4.2.2",
-    "typescript": "^5"
+    "eslint-config-next": "16.2.10",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^4.3.2",
+    "typescript": "^6.0.3"
   },
   "overrides": {
     "js-cookie": "3.0.8",
