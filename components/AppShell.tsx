@@ -14,6 +14,7 @@ import { ThemeCycleButton } from "./ThemeCycleButton";
 import { UiModeToggleButton } from "./UiModeToggleButton";
 import { LocaleToggleButton } from "./LocaleToggleButton";
 import { FluidEnvironmentPanel } from "./FluidEnvironmentPanel";
+import { QuickChatPanel } from "./QuickChatPanel";
 import { TopBarTypewriter } from "./BrandTypewriter";
 import { useLocale } from "@/lib/i18n";
 import { useUiMode } from "@/hooks/useUiMode";
@@ -317,6 +318,9 @@ export function AppShell() {
     setActiveCwd(cwd);
     // Skip if cwd is null (initial mount) or during the initial URL restore.
     if (!cwd || suppressCwdBumpRef.current) return;
+    // External session selection may synchronize the sidebar to the session cwd.
+    // That is not a user-requested workspace change, so keep the session and URL.
+    if (selectedSession?.cwd === cwd) return;
     // Close any session that belongs to a different cwd — it no longer
     // matches the selected project directory.
     setSelectedSession((prev) => {
@@ -333,7 +337,7 @@ export function AppShell() {
     setSystemPrompt(null);
     setActiveTopPanel(null);
     router.replace("/", { scroll: false });
-  }, [router]);
+  }, [router, selectedSession?.cwd]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setNewSessionCwd(null);
@@ -1591,6 +1595,12 @@ export function AppShell() {
       </svg>
     </button>}
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
+    <QuickChatPanel
+      activeCwd={activeCwd}
+      modelsRefreshKey={modelsRefreshKey}
+      onOpenModels={() => setModelsConfigOpen(true)}
+      onPromoted={applyImportedSession}
+    />
     {capabilitiesConfigOpen && capabilitiesCwd && (
       <CapabilitiesConfig
         cwd={capabilitiesCwd}

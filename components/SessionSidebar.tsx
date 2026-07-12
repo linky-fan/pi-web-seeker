@@ -282,6 +282,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onCwdChange?.(selectedCwd);
   }, [selectedCwd, onCwdChange]);
 
+  // Session selection can originate outside the sidebar (for example, importing
+  // or promoting a quick chat). Keep the workspace selector aligned with it.
+  useEffect(() => {
+    if (!selectedSessionId || !selectedCwdProp) return;
+    setSelectedCwd((current) => current === selectedCwdProp ? current : selectedCwdProp);
+  }, [selectedCwdProp, selectedSessionId]);
+
   // Auto-select cwd and restore session from URL on first load
   useEffect(() => {
     if (selectedCwd === null) {
