@@ -155,9 +155,15 @@ flowchart LR
   AgentApi --> RpcManager["rpc-manager<br/>AgentSessionWrapper"]
   RpcManager --> PiAgent["Pi AgentSession"]
   PiAgent --> SessionFiles
+  Browser --> QuickChatApi["/api/quick-chat/stream<br/>direct model SSE · no tools"]
+  QuickChatApi --> ConfiguredModel["pi-ai<br/>configured model"]
+  Browser --> QuickChatPromote["/api/quick-chat/promote<br/>promote full history"]
+  QuickChatPromote --> SessionFiles
   Browser --> FilesApi["/api/files<br/>Explorer / Viewer"]
   FilesApi --> Workspace["workspace roots"]
 ```
+
+普通聊天通过 in-process `AgentSession` 使用完整工具能力；即时对话通过 `pi-ai` 直接流式调用已配置模型，不创建 `AgentSession` 或加载 tools。即时历史只保留在当前浏览器标签中，用户选择“转正式”后才由 `/api/quick-chat/promote` 写入标准 JSONL 会话。
 
 会话文件默认读取 `~/.pi/agent/sessions`，模型配置读取智能体数据目录下的 `models.json`。可通过 `PI_CODING_AGENT_DIR` 指定其他 pi 数据目录。
 
