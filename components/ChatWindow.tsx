@@ -293,6 +293,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     planMode,
     planExecutionMode,
     planModeStatus,
+    buddyMode,
+    buddyReviewerModel,
     notices,
     extensionDialog,
     extensionCustomUi,
@@ -303,7 +305,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     lastUserMsgRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
-    handleThinkingLevelChange, handlePlanModeChange, handleAgentEventRef,
+    handleThinkingLevelChange, handlePlanModeChange, handleBuddyModeChange, handleBuddyReviewerChange, handleAgentEventRef,
     respondToExtensionUi, sendExtensionCustomInput,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
@@ -557,6 +559,10 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       planExecutionMode={planExecutionMode}
       planModeStatus={planModeStatus}
       onPlanModeChange={handlePlanModeChange}
+      buddyMode={buddyMode}
+      buddyReviewerModel={buddyReviewerModel}
+      onBuddyModeChange={handleBuddyModeChange}
+      onBuddyReviewerChange={handleBuddyReviewerChange}
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}
       retryInfo={retryInfo}

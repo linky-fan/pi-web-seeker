@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useLocale } from "@/lib/i18n";
 import { apiPath } from "@/lib/api-path";
 import { popOnce, revealChildren, revealElement } from "@/lib/motion";
-import { getSlashCommandQuery, type PlanExecutionMode, type PlanMode, type PlanModeStatus, type SlashCommandQuery } from "@/lib/plan-mode";
+import { getSlashCommandQuery, type BuddyMode, type ModelRef, type PlanExecutionMode, type PlanMode, type PlanModeStatus, type SlashCommandQuery } from "@/lib/plan-mode";
 import { useUiMode } from "@/hooks/useUiMode";
 
 export interface AttachedImage {
@@ -60,6 +60,10 @@ interface Props {
   planExecutionMode?: PlanExecutionMode;
   planModeStatus?: PlanModeStatus | null;
   onPlanModeChange?: (mode: PlanMode, executionMode?: PlanExecutionMode) => boolean | Promise<boolean>;
+  buddyMode?: BuddyMode;
+  buddyReviewerModel?: ModelRef | null;
+  onBuddyModeChange?: (mode: BuddyMode) => boolean | Promise<boolean>;
+  onBuddyReviewerChange?: (provider: string, modelId: string) => boolean | Promise<boolean>;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
@@ -206,7 +210,8 @@ function getMentionQuery(text: string, cursor: number): MentionQuery | null {
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, modelNames, modelList, onModelChange,
   onCompact, onAbortCompaction, isCompacting, compactError, contextUsage,
-  thinkingLevel, onThinkingLevelChange, planMode = "normal", planExecutionMode = "main", planModeStatus, onPlanModeChange, availableThinkingLevels, thinkingLevelMap,
+  thinkingLevel, onThinkingLevelChange, planMode = "normal", planExecutionMode = "main", planModeStatus, onPlanModeChange,
+  buddyMode = "off", buddyReviewerModel, onBuddyModeChange, onBuddyReviewerChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
   soundEnabled, onSoundToggle,
   promptHistory = [],
@@ -219,6 +224,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [value, setValue] = useState("");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [reviewerDropdownOpen, setReviewerDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [snippetDropdownOpen, setSnippetDropdownOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
@@ -238,6 +244,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelButtonRef = useRef<HTMLButtonElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
+  const reviewerDropdownRef = useRef<HTMLDivElement>(null);
+  const reviewerDropdownPanelRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownPanelRef = useRef<HTMLDivElement>(null);
   const snippetDropdownRef = useRef<HTMLDivElement>(null);
@@ -265,7 +273,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       description: t("chat.slash.planDesc"),
       mode: "plan" as PlanMode,
       executionMode: "main" as PlanExecutionMode,
-      active: planMode === "plan" && planExecutionMode === "main",
+      active: planMode === "plan" && planExecutionMode === "main" && buddyMode === "off",
+      buddyMode: "off" as BuddyMode,
       disabled: false,
     },
     {
@@ -276,8 +285,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         : t("chat.slash.planSubagentDesc"),
       mode: "plan" as PlanMode,
       executionMode: "subagent" as PlanExecutionMode,
-      active: planMode === "plan" && planExecutionMode === "subagent",
+      active: planMode === "plan" && planExecutionMode === "subagent" && buddyMode === "off",
+      buddyMode: "off" as BuddyMode,
       disabled: Boolean(planModeStatus && !planModeStatus.subagentsAvailable),
+    },
+    {
+      name: "buddy-plan",
+      label: t("chat.slash.buddyPlan"),
+      description: t("chat.slash.buddyPlanDesc"),
+      mode: "plan" as PlanMode,
+      executionMode: "main" as PlanExecutionMode,
+      buddyMode: "plan" as BuddyMode,
+      active: buddyMode === "plan",
+      disabled: !buddyReviewerModel || Boolean(planModeStatus && !planModeStatus.subagentsAvailable),
+    },
+    {
+      name: "buddy-code",
+      label: t("chat.slash.buddyCode"),
+      description: t("chat.slash.buddyCodeDesc"),
+      mode: "normal" as PlanMode,
+      executionMode: "main" as PlanExecutionMode,
+      buddyMode: "code" as BuddyMode,
+      active: buddyMode === "code",
+      disabled: !buddyReviewerModel || Boolean(planModeStatus && !planModeStatus.subagentsAvailable),
     },
     {
       name: "normal",
@@ -285,7 +315,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       description: t("chat.slash.normalDesc"),
       mode: "normal" as PlanMode,
       executionMode: "main" as PlanExecutionMode,
-      active: planMode === "normal",
+      active: planMode === "normal" && buddyMode === "off",
+      buddyMode: "off" as BuddyMode,
       disabled: false,
     },
   ].filter((command) => !slashQuery?.query || command.name.startsWith(slashQuery.query));
@@ -328,6 +359,26 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const tween = revealElement(modelDropdownPanelRef.current, { y: 5, scale: 0.99, duration: 0.16 });
     return () => { tween?.kill(); };
   }, [modelDropdownOpen]);
+
+  useEffect(() => {
+    if (!reviewerDropdownOpen) return;
+    const tween = revealElement(reviewerDropdownPanelRef.current, { y: 5, scale: 0.99, duration: 0.16 });
+    return () => { tween?.kill(); };
+  }, [reviewerDropdownOpen]);
+
+  useEffect(() => {
+    if (!slashOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const panel = slashPanelRef.current;
+      const item = panel?.querySelector<HTMLElement>(`[data-slash-index="${slashSelectedIndex}"]`);
+      if (!panel || !item) return;
+      const itemTop = item.offsetTop;
+      const itemBottom = itemTop + item.offsetHeight;
+      if (itemTop < panel.scrollTop) panel.scrollTop = Math.max(0, itemTop - 4);
+      else if (itemBottom > panel.scrollTop + panel.clientHeight) panel.scrollTop = itemBottom - panel.clientHeight + 4;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [slashOpen, slashSelectedIndex]);
 
   useEffect(() => {
     if (!modelDropdownOpen) return;
@@ -476,18 +527,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
   }, [mentionQuery, setInputValue]);
 
-  const runSlashCommand = useCallback(async (mode: PlanMode, executionMode: PlanExecutionMode = "main", disabled = false) => {
+  const runSlashCommand = useCallback(async (mode: PlanMode, executionMode: PlanExecutionMode = "main", disabled = false, nextBuddyMode: BuddyMode = "off") => {
     if (isStreaming) {
       setSlashNotice(t("chat.slash.runningDisabled"));
       window.setTimeout(() => setSlashNotice(null), 1800);
       return;
     }
     if (disabled) {
-      setSlashNotice(planModeStatus?.installCommand ? t("chat.slash.subagentInstall", { command: planModeStatus.installCommand }) : t("chat.slash.runningDisabled"));
+      setSlashNotice(!buddyReviewerModel && nextBuddyMode !== "off"
+        ? t("chat.slash.buddyReviewerRequired")
+        : planModeStatus?.installCommand ? t("chat.slash.subagentInstall", { command: planModeStatus.installCommand }) : t("chat.slash.runningDisabled"));
       window.setTimeout(() => setSlashNotice(null), 2600);
       return;
     }
-    const ok = await Promise.resolve(onPlanModeChange?.(mode, executionMode) ?? true);
+    const ok = nextBuddyMode !== "off"
+      ? await Promise.resolve(onBuddyModeChange?.(nextBuddyMode) ?? false)
+      : await Promise.resolve(onPlanModeChange?.(mode, executionMode) ?? true);
     if (!ok) {
       setSlashNotice(executionMode === "subagent" ? t("chat.slash.subagentInstall", { command: planModeStatus?.installCommand ?? "npx --no-install pi install npm:@tintinweb/pi-subagents" }) : t("chat.slash.runningDisabled"));
       window.setTimeout(() => setSlashNotice(null), 2600);
@@ -505,7 +560,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setSlashOpen(false);
     setSlashQuery(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [isStreaming, onPlanModeChange, planModeStatus, setInputValue, slashQuery, t]);
+  }, [buddyReviewerModel, isStreaming, onBuddyModeChange, onPlanModeChange, planModeStatus, setInputValue, slashQuery, t]);
 
   const rememberHistory = useCallback((text: string) => {
     const trimmed = text.trim();
@@ -637,7 +692,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         e.preventDefault();
         const selected = slashCommands[slashSelectedIndex];
         if (selected) {
-          void runSlashCommand(selected.mode, selected.executionMode, selected.disabled);
+          void runSlashCommand(selected.mode, selected.executionMode, selected.disabled, selected.buddyMode);
           return;
         }
         return;
@@ -804,6 +859,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const currentName = model
     ? (modelOptions.find((o) => o.modelId === model.modelId && o.provider === model.provider)?.name ?? model.modelId)
     : modelOptions.length > 0 ? modelOptions[0].name : null;
+  const reviewerName = buddyReviewerModel
+    ? (modelOptions.find((option) => option.provider === buddyReviewerModel.provider && option.modelId === buddyReviewerModel.modelId)?.name ?? buddyReviewerModel.modelId)
+    : null;
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -816,6 +874,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }
       if (thinkingDropdownRef.current && !thinkingDropdownRef.current.contains(e.target as Node)) {
         setThinkingDropdownOpen(false);
+      }
+      if (reviewerDropdownRef.current && !reviewerDropdownRef.current.contains(e.target as Node)) {
+        setReviewerDropdownOpen(false);
       }
       if (snippetDropdownRef.current && !snippetDropdownRef.current.contains(e.target as Node)) {
         setSnippetDropdownOpen(false);
@@ -950,12 +1011,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               role="listbox"
               aria-label={t("chat.slash.title")}
               tabIndex={-1}
+              onWheel={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
               style={{
                 position: "absolute",
                 left: 10,
                 bottom: "calc(100% + 8px)",
                 zIndex: 320,
-                width: "min(420px, calc(100vw - 56px))",
+                width: "min(520px, calc(100vw - 56px))",
+                maxHeight: "min(420px, calc(100dvh - 180px))",
+                overflowY: "auto",
+                overscrollBehavior: "contain",
+                touchAction: "pan-y",
+                WebkitOverflowScrolling: "touch",
                 background: "var(--bg)",
                 border: "1px solid var(--border)",
                 borderRadius: 10,
@@ -963,7 +1031,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 padding: 4,
               }}
             >
-              <div style={{ padding: "7px 9px 6px", fontSize: 11, color: "var(--text-dim)", fontWeight: 650 }}>
+              <div style={{ position: "sticky", top: 0, zIndex: 1, padding: "7px 9px 6px", fontSize: 11, color: "var(--text-dim)", fontWeight: 650, background: "var(--bg)" }}>
                 {t("chat.slash.title")}
               </div>
               {slashCommands.length === 0 ? (
@@ -977,6 +1045,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   return (
                     <button
                       key={command.name}
+                      data-slash-index={idx}
                       type="button"
                       role="option"
                       aria-selected={active}
@@ -984,15 +1053,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       onMouseEnter={() => setSlashSelectedIndex(idx)}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        void runSlashCommand(command.mode, command.executionMode, command.disabled);
+                        void runSlashCommand(command.mode, command.executionMode, command.disabled, command.buddyMode);
                       }}
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "22px minmax(0, 1fr) auto",
+                        gridTemplateColumns: "18px minmax(0, 1fr) auto",
                         alignItems: "center",
-                        gap: 8,
+                        gap: 7,
                         width: "100%",
-                        padding: "8px 9px",
+                        minHeight: 34,
+                        padding: "6px 9px",
                         background: active ? "var(--bg-selected)" : "none",
                         border: "none",
                         borderRadius: 7,
@@ -1015,11 +1085,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           </svg>
                         )}
                       </span>
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: "block", color: active ? "var(--text)" : "var(--text-muted)", fontWeight: 650 }}>
+                      <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7, overflow: "hidden", whiteSpace: "nowrap" }}>
+                        <span style={{ flexShrink: 0, color: active ? "var(--text)" : "var(--text-muted)", fontWeight: 650 }}>
                           /{command.name}
                         </span>
-                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 11, marginTop: 2 }}>
+                        <span aria-hidden="true" style={{ flexShrink: 0, width: 2, height: 2, borderRadius: "50%", background: "var(--text-dim)", opacity: 0.7 }} />
+                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 11 }}>
                           {command.description}
                         </span>
                       </span>
@@ -1257,13 +1328,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           {/* LEFT: attach + snippets + model selector */}
           <div style={{ flex: "1 1 280px", minWidth: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", rowGap: 4 }}>
-            {planMode === "plan" && (
+            {(planMode === "plan" || buddyMode !== "off") && (
               <button
                 type="button"
                 data-motion-control
-                onClick={() => { if (!isStreaming) void onPlanModeChange?.("normal"); }}
+                onClick={() => {
+                  if (isStreaming) return;
+                  if (buddyMode !== "off") void onBuddyModeChange?.("off");
+                  else void onPlanModeChange?.("normal");
+                }}
                 disabled={isStreaming}
-                title={planExecutionMode === "subagent" ? t("chat.planModeSubagentHint") : t("chat.planModeExit")}
+                title={buddyMode !== "off" ? t("chat.buddyExit") : planExecutionMode === "subagent" ? t("chat.planModeSubagentHint") : t("chat.planModeExit")}
                 style={{
                   flexShrink: 0,
                   display: "flex",
@@ -1286,7 +1361,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <path d="M9 11h6" /><path d="M9 15h4" />
                   <path d="M5 4h14v16H5z" /><path d="M8 4V2" /><path d="M16 4V2" />
                 </svg>
-                <span>{planExecutionMode === "subagent" ? t("chat.planModeSubagent") : t("chat.planMode")}</span>
+                <span>{buddyMode === "plan" ? t("chat.buddyPlan") : buddyMode === "code" ? t("chat.buddyCode") : planExecutionMode === "subagent" ? t("chat.planModeSubagent") : t("chat.planMode")}</span>
               </button>
             )}
             <label
@@ -1537,6 +1612,121 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     );
                   })(), document.body)}
                 </div>
+            )}
+            {modelOptions.length > 1 && onBuddyReviewerChange && (buddyMode !== "off" || !buddyReviewerModel) && (
+              <div ref={reviewerDropdownRef} data-motion-control style={{ position: "relative", flexShrink: 0 }}>
+                <button
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={reviewerDropdownOpen}
+                  disabled={isStreaming}
+                  onClick={() => setReviewerDropdownOpen((open) => !open)}
+                  title={t("chat.buddyReviewer")}
+                  style={{
+                    height: 32,
+                    maxWidth: 210,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "0 9px",
+                    background: reviewerDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)",
+                    border: `1px solid ${buddyMode !== "off" ? "rgba(234,179,8,0.28)" : "var(--border)"}`,
+                    borderRadius: 8,
+                    color: buddyMode !== "off" ? "rgba(180,130,0,1)" : "var(--text-muted)",
+                    cursor: isStreaming ? "not-allowed" : "pointer",
+                    opacity: isStreaming ? 0.55 : 1,
+                    fontSize: 11,
+                    fontWeight: 650,
+                    whiteSpace: "nowrap",
+                    transition: "background 0.12s, color 0.12s, border-color 0.12s",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M12 3l7 3v5c0 4.6-2.8 8-7 10-4.2-2-7-5.4-7-10V6l7-3z" />
+                    <path d="M9 12l2 2 4-4" />
+                  </svg>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {reviewerName ? `${t("chat.buddyReviewerShort")} · ${reviewerName}` : t("chat.buddyReviewerSelect")}
+                  </span>
+                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ flexShrink: 0, opacity: 0.7 }}>
+                    <path d="M2 3.5L5 6.5L8 3.5" />
+                  </svg>
+                </button>
+                {reviewerDropdownOpen && (
+                  <div
+                    ref={reviewerDropdownPanelRef}
+                    className="pi-popover pi-model-popover"
+                    role="menu"
+                    style={{
+                      position: "absolute",
+                      bottom: "calc(100% + 6px)",
+                      left: 0,
+                      zIndex: 500,
+                      minWidth: 240,
+                      maxWidth: "min(340px, calc(100vw - 32px))",
+                      maxHeight: "min(420px, 60vh)",
+                      overflowY: "auto",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 9,
+                      boxShadow: "0 -6px 20px rgba(15,23,42,0.12)",
+                      padding: 4,
+                    }}
+                  >
+                    <div style={{ padding: "7px 9px 6px", color: "var(--text-dim)", fontSize: 10, fontWeight: 650, letterSpacing: "0.04em" }}>
+                      {t("chat.buddyReviewerHint")}
+                    </div>
+                    {modelsByProvider.map((group) => (
+                      <div key={group.provider}>
+                        {modelsByProvider.length > 1 && (
+                          <div style={{ padding: "6px 9px 3px", color: "var(--text-dim)", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                            {group.provider}
+                          </div>
+                        )}
+                        {group.options.map((option) => {
+                          const isActive = option.provider === buddyReviewerModel?.provider && option.modelId === buddyReviewerModel.modelId;
+                          const conflicts = option.provider === model?.provider && option.modelId === model.modelId;
+                          return (
+                            <button
+                              key={`${option.provider}:${option.modelId}`}
+                              type="button"
+                              role="menuitem"
+                              disabled={conflicts}
+                              onClick={() => {
+                                if (conflicts) return;
+                                setReviewerDropdownOpen(false);
+                                if (!isActive) void onBuddyReviewerChange(option.provider, option.modelId);
+                              }}
+                              style={{
+                                width: "100%",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                padding: "7px 9px",
+                                background: isActive ? "var(--bg-selected)" : "none",
+                                border: "none",
+                                borderRadius: 6,
+                                color: conflicts ? "var(--text-dim)" : isActive ? "var(--text)" : "var(--text-muted)",
+                                cursor: conflicts ? "not-allowed" : "pointer",
+                                opacity: conflicts ? 0.5 : 1,
+                                fontSize: 12,
+                                textAlign: "left",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {isActive
+                                ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
+                                : <span style={{ width: 10, flexShrink: 0 }} />}
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{option.name}</span>
+                              {conflicts && <span style={{ marginLeft: "auto", fontSize: 10 }}>{t("chat.buddySameModel")}</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

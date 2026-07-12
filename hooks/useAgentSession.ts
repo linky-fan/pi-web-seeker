@@ -6,7 +6,7 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { getSubagentMessageKey } from "@/lib/subagents";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { apiPath } from "@/lib/api-path";
-import type { PlanExecutionMode, PlanMode, PlanModeStatus } from "@/lib/plan-mode";
+import type { BuddyMode, ModelRef, PlanExecutionMode, PlanMode, PlanModeStatus } from "@/lib/plan-mode";
 
 export interface SessionData {
   sessionId: string;
@@ -60,6 +60,8 @@ type LiveAgentState = {
   planMode?: boolean;
   planExecutionMode?: PlanExecutionMode;
   planModeStatus?: PlanModeStatus;
+  buddyMode?: BuddyMode;
+  buddyReviewerModel?: ModelRef | null;
 };
 
 type AgentStateResponse = { running: boolean; state?: LiveAgentState };
@@ -97,6 +99,8 @@ function noticeReducer(state: NoticeState, action: NoticeAction): NoticeState {
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 140;
 const PLAN_MODE_STORAGE_PREFIX = "pi-web.planMode";
 const PLAN_EXECUTION_MODE_STORAGE_PREFIX = "pi-web.planExecutionMode";
+const BUDDY_MODE_STORAGE_PREFIX = "pi-web.buddyMode";
+const BUDDY_REVIEWER_STORAGE_PREFIX = "pi-web.buddyReviewer";
 
 function userMessageKey(message: AgentMessage): string | null {
   if (message.role !== "user") return null;
@@ -206,6 +210,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [planMode, setPlanMode] = useState<PlanMode>("normal");
   const [planExecutionMode, setPlanExecutionMode] = useState<PlanExecutionMode>("main");
   const [planModeStatus, setPlanModeStatus] = useState<PlanModeStatus | null>(null);
+  const [buddyMode, setBuddyMode] = useState<BuddyMode>("off");
+  const [buddyReviewerModel, setBuddyReviewerModel] = useState<ModelRef | null>(null);
   const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [] });
   const [extensionDialog, setExtensionDialog] = useState<ExtensionUiDialogRequest | null>(null);
   const [extensionCustomUi, setExtensionCustomUi] = useState<ExtensionUiCustomRequest | null>(null);
@@ -239,6 +245,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     : newSessionCwd
       ? `${PLAN_EXECUTION_MODE_STORAGE_PREFIX}:cwd:${newSessionCwd}`
       : null;
+  const buddyModeStorageKey = session?.id
+    ? `${BUDDY_MODE_STORAGE_PREFIX}:session:${session.id}`
+    : newSessionCwd
+      ? `${BUDDY_MODE_STORAGE_PREFIX}:cwd:${newSessionCwd}`
+      : null;
+  const buddyReviewerStorageKey = newSessionCwd || session?.cwd
+    ? `${BUDDY_REVIEWER_STORAGE_PREFIX}:cwd:${newSessionCwd ?? session?.cwd}`
+    : BUDDY_REVIEWER_STORAGE_PREFIX;
 
   const sessionStats = useMemo(() => {
     const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -281,6 +295,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setPlanExecutionMode(agentState.state.planExecutionMode);
     }
     if (agentState.state.planModeStatus !== undefined) setPlanModeStatus(agentState.state.planModeStatus ?? null);
+    if (agentState.state.buddyMode) setBuddyMode(agentState.state.buddyMode);
+    if (agentState.state.buddyReviewerModel !== undefined) setBuddyReviewerModel(agentState.state.buddyReviewerModel ?? null);
   }, []);
 
   useEffect(() => {
@@ -307,6 +323,35 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [planExecutionModeStorageKey]);
 
+  useEffect(() => {
+    if (!buddyModeStorageKey) {
+      setBuddyMode("off");
+      return;
+    }
+    try {
+      const saved = window.localStorage.getItem(buddyModeStorageKey);
+      setBuddyMode(saved === "plan" || saved === "code" ? saved : "off");
+    } catch {
+      setBuddyMode("off");
+    }
+  }, [buddyModeStorageKey]);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(buddyReviewerStorageKey);
+      if (!saved) {
+        setBuddyReviewerModel(null);
+        return;
+      }
+      const parsed = JSON.parse(saved) as Partial<ModelRef>;
+      setBuddyReviewerModel(typeof parsed.provider === "string" && typeof parsed.modelId === "string"
+        ? { provider: parsed.provider, modelId: parsed.modelId }
+        : null);
+    } catch {
+      setBuddyReviewerModel(null);
+    }
+  }, [buddyReviewerStorageKey]);
+
   const persistPlanMode = useCallback((key: string | null, mode: PlanMode) => {
     if (!key) return;
     try {
@@ -327,14 +372,31 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, []);
 
+  const persistBuddyMode = useCallback((key: string | null, mode: BuddyMode) => {
+    if (!key) return;
+    try {
+      if (mode === "off") window.localStorage.removeItem(key);
+      else window.localStorage.setItem(key, mode);
+    } catch { /* localStorage may be unavailable */ }
+  }, []);
+
+  const persistBuddyReviewer = useCallback((model: ModelRef | null) => {
+    try {
+      if (model) window.localStorage.setItem(buddyReviewerStorageKey, JSON.stringify(model));
+      else window.localStorage.removeItem(buddyReviewerStorageKey);
+    } catch { /* localStorage may be unavailable */ }
+  }, [buddyReviewerStorageKey]);
+
   const handlePlanModeChange = useCallback(async (mode: PlanMode, executionMode: PlanExecutionMode = "main"): Promise<boolean> => {
     if (agentRunningRef.current) return false;
     const previousMode = planMode;
     const previousExecutionMode = planExecutionMode;
     setPlanMode(mode);
     setPlanExecutionMode(mode === "plan" ? executionMode : "main");
+    setBuddyMode("off");
     persistPlanMode(planModeStorageKey, mode);
     persistPlanExecutionMode(planExecutionModeStorageKey, mode === "plan" ? executionMode : "main");
+    persistBuddyMode(buddyModeStorageKey, "off");
     const sid = sessionIdRef.current;
     if (!sid || isNew) return true;
     try {
@@ -342,6 +404,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         type: "set_plan_mode",
         enabled: mode === "plan",
         executionMode,
+        buddyMode: "off",
       });
       if (result?.planExecutionMode) setPlanExecutionMode(result.planExecutionMode);
       if (result?.planModeStatus) setPlanModeStatus(result.planModeStatus);
@@ -350,11 +413,72 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       console.error("Failed to set plan mode:", e);
       setPlanMode(previousMode);
       setPlanExecutionMode(previousExecutionMode);
+      setBuddyMode(buddyMode);
       persistPlanMode(planModeStorageKey, previousMode);
       persistPlanExecutionMode(planExecutionModeStorageKey, previousExecutionMode);
+      persistBuddyMode(buddyModeStorageKey, buddyMode);
       return false;
     }
-  }, [isNew, persistPlanExecutionMode, persistPlanMode, planExecutionMode, planExecutionModeStorageKey, planMode, planModeStorageKey]);
+  }, [buddyMode, buddyModeStorageKey, isNew, persistBuddyMode, persistPlanExecutionMode, persistPlanMode, planExecutionMode, planExecutionModeStorageKey, planMode, planModeStorageKey]);
+
+  const handleBuddyModeChange = useCallback(async (nextBuddyMode: BuddyMode): Promise<boolean> => {
+    if (agentRunningRef.current) return false;
+    if (nextBuddyMode !== "off") {
+      if (!buddyReviewerModel || !displayModel) return false;
+      if (buddyReviewerModel.provider === displayModel.provider && buddyReviewerModel.modelId === displayModel.modelId) return false;
+      if (planModeStatus && !planModeStatus.subagentsAvailable) return false;
+    }
+    const previous = { buddyMode, planMode, planExecutionMode };
+    const nextPlanMode: PlanMode = nextBuddyMode === "plan" ? "plan" : nextBuddyMode === "code" ? "normal" : planMode;
+    const nextExecutionMode: PlanExecutionMode = nextBuddyMode === "plan" ? "main" : planExecutionMode;
+    setBuddyMode(nextBuddyMode);
+    setPlanMode(nextPlanMode);
+    setPlanExecutionMode(nextExecutionMode);
+    persistBuddyMode(buddyModeStorageKey, nextBuddyMode);
+    persistPlanMode(planModeStorageKey, nextPlanMode);
+    persistPlanExecutionMode(planExecutionModeStorageKey, nextExecutionMode);
+    const sid = sessionIdRef.current;
+    if (!sid || isNew) return true;
+    try {
+      const result = await sendAgentCommand<LiveAgentState>(sid, {
+        type: "set_plan_mode",
+        enabled: nextPlanMode === "plan",
+        executionMode: nextExecutionMode,
+        buddyMode: nextBuddyMode,
+        buddyReviewerModel,
+      });
+      if (result.buddyMode) setBuddyMode(result.buddyMode);
+      return true;
+    } catch (e) {
+      console.error("Failed to set buddy mode:", e);
+      setBuddyMode(previous.buddyMode);
+      setPlanMode(previous.planMode);
+      setPlanExecutionMode(previous.planExecutionMode);
+      persistBuddyMode(buddyModeStorageKey, previous.buddyMode);
+      persistPlanMode(planModeStorageKey, previous.planMode);
+      persistPlanExecutionMode(planExecutionModeStorageKey, previous.planExecutionMode);
+      return false;
+    }
+  }, [buddyMode, buddyModeStorageKey, buddyReviewerModel, displayModel, isNew, persistBuddyMode, persistPlanExecutionMode, persistPlanMode, planExecutionMode, planExecutionModeStorageKey, planMode, planModeStatus, planModeStorageKey]);
+
+  const handleBuddyReviewerChange = useCallback(async (provider: string, modelId: string): Promise<boolean> => {
+    const next = { provider, modelId };
+    if (displayModel?.provider === provider && displayModel.modelId === modelId) return false;
+    const previous = buddyReviewerModel;
+    setBuddyReviewerModel(next);
+    persistBuddyReviewer(next);
+    const sid = sessionIdRef.current;
+    if (!sid || isNew) return true;
+    try {
+      await sendAgentCommand(sid, { type: "set_buddy_reviewer", buddyReviewerModel: next });
+      return true;
+    } catch (e) {
+      console.error("Failed to set buddy reviewer:", e);
+      setBuddyReviewerModel(previous);
+      persistBuddyReviewer(previous);
+      return false;
+    }
+  }, [buddyReviewerModel, displayModel, isNew, persistBuddyReviewer]);
 
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
     try {
@@ -700,6 +824,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             message,
             planMode: planMode === "plan",
             planExecutionMode,
+            buddyMode,
+            buddyReviewerModel,
             ...(piImages?.length ? { images: piImages } : {}),
             ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
             ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
@@ -714,6 +840,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           persistPlanExecutionMode(`${PLAN_EXECUTION_MODE_STORAGE_PREFIX}:session:${realId}`, planExecutionMode);
           persistPlanMode(`${PLAN_MODE_STORAGE_PREFIX}:cwd:${newSessionCwd}`, "normal");
           persistPlanExecutionMode(`${PLAN_EXECUTION_MODE_STORAGE_PREFIX}:cwd:${newSessionCwd}`, "main");
+        }
+        if (buddyMode !== "off" && newSessionCwd) {
+          persistBuddyMode(`${BUDDY_MODE_STORAGE_PREFIX}:session:${realId}`, buddyMode);
+          persistBuddyMode(`${BUDDY_MODE_STORAGE_PREFIX}:cwd:${newSessionCwd}`, "off");
         }
         connectEvents(realId, { syncOnConnect: false });
         onSessionCreated?.({
@@ -733,6 +863,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           message,
           planMode: planMode === "plan",
           planExecutionMode,
+          buddyMode,
+          buddyReviewerModel,
           ...(piImages?.length ? { images: piImages } : {}),
         });
       } else {
@@ -748,7 +880,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         dispatch({ type: "end" });
         return false;
       }
-  }, [isNew, newSessionCwd, newSessionModel, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated, persistPlanExecutionMode, persistPlanMode, planExecutionMode, planMode]);
+  }, [buddyMode, buddyReviewerModel, isNew, newSessionCwd, newSessionModel, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated, persistBuddyMode, persistPlanExecutionMode, persistPlanMode, planExecutionMode, planMode]);
 
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -799,6 +931,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [loadContext]);
 
   const handleModelChange = useCallback(async (provider: string, modelId: string) => {
+    if (buddyMode !== "off" && buddyReviewerModel?.provider === provider && buddyReviewerModel.modelId === modelId) {
+      setTaskError("Buddy writer and reviewer models must be different");
+      return;
+    }
     if (isNew) {
       setNewSessionModel({ provider, modelId });
       return;
@@ -811,7 +947,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       console.error("Failed to set model:", e);
     }
-  }, [isNew, setNewSessionModel]);
+  }, [buddyMode, buddyReviewerModel, isNew, setNewSessionModel]);
 
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -843,12 +979,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         interrupt: true,
         planMode: planMode === "plan",
         planExecutionMode,
+        buddyMode,
+        buddyReviewerModel,
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
       console.error("Failed to steer:", e);
     }
-  }, [planExecutionMode, planMode]);
+  }, [buddyMode, buddyReviewerModel, planExecutionMode, planMode]);
 
   const handleFollowUp = useCallback(async (message: string, images?: AttachedImage[]) => {
     const sid = sessionIdRef.current;
@@ -861,12 +999,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         message,
         planMode: planMode === "plan",
         planExecutionMode,
+        buddyMode,
+        buddyReviewerModel,
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
       console.error("Failed to follow up:", e);
     }
-  }, [planExecutionMode, planMode]);
+  }, [buddyMode, buddyReviewerModel, planExecutionMode, planMode]);
 
   const handleAbortCompaction = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -987,6 +1127,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (d.thinkingLevelMaps) setModelThinkingLevelMaps(d.thinkingLevelMaps);
       if (d.modelList) {
         setModelList(d.modelList);
+        setBuddyReviewerModel((current) => {
+          if (current && d.modelList?.some((m) => m.provider === current.provider && m.id === current.modelId)) return current;
+          const preferred = d.modelList?.find((m) => /deepseek.*v4.*pro/i.test(`${m.name} ${m.id}`));
+          if (!preferred) return null;
+          const next = { provider: preferred.provider, modelId: preferred.id };
+          persistBuddyReviewer(next);
+          return next;
+        });
         if (isNew && d.modelList.length > 0) {
           const def = d.defaultModel;
           const match = def && d.modelList.find((m) => m.id === def.modelId && m.provider === def.provider);
@@ -997,7 +1145,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
       }
     }).catch(() => {});
-  }, [isNew, modelsRefreshKey, setNewSessionModel]);
+  }, [isNew, modelsRefreshKey, persistBuddyReviewer, setNewSessionModel]);
 
   // Compact error auto-dismiss
   useEffect(() => {
@@ -1013,6 +1161,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
     taskError, agentPhase, toolExecutionStatuses, planMode, planExecutionMode, planModeStatus,
+    buddyMode, buddyReviewerModel,
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets,
     isNew,
     // Refs
@@ -1021,7 +1170,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Actions
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
-    handleThinkingLevelChange, handlePlanModeChange, setActiveLeafId, setData, setMessages,
+    handleThinkingLevelChange, handlePlanModeChange, handleBuddyModeChange, handleBuddyReviewerChange, setActiveLeafId, setData, setMessages,
     respondToExtensionUi, sendExtensionCustomInput,
     dispatch, setAgentRunning, setForkingEntryId,
     // Subscriptions

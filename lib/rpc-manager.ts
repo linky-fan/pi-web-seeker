@@ -16,10 +16,13 @@ import type { ExtensionUiRequest, ExtensionUiResponse } from "./types";
 import {
   getPlanModeStatus,
   isSafePlanBashCommand,
+  buildBuddySystemPrompt,
   PLAN_MODE_SUBAGENT_SYSTEM_PROMPT,
   PLAN_MODE_SYSTEM_PROMPT,
   PLAN_SUBAGENT_OPTIONAL_TOOLS,
   PLAN_SUBAGENT_REQUIRED_TOOLS,
+  type BuddyMode,
+  type ModelRef,
   type PlanExecutionMode,
   type PlanModeStatus,
 } from "./plan-mode";
@@ -266,15 +269,40 @@ function longRunningToolBlockReason(command: string, timeout?: number): string |
   return null;
 }
 
-function installToolGuards(session: AgentSessionLike, getPlanExecutionMode: () => PlanExecutionMode | null): void {
+type WorkflowGuardState = {
+  planExecutionMode: PlanExecutionMode | null;
+  buddyMode: BuddyMode;
+  reviewerModel: ModelRef | null;
+  mainModel: ModelRef | null;
+  buddyReviewCalls: number;
+};
+
+function modelRefKey(model: ModelRef): string {
+  return `${model.provider}/${model.modelId}`;
+}
+
+function modelRefsEqual(a: ModelRef | null, b: ModelRef | null): boolean {
+  if (!a || !b) return a === b;
+  return a.provider === b.provider && a.modelId === b.modelId;
+}
+
+function installToolGuards(
+  session: AgentSessionLike,
+  getWorkflowState: () => WorkflowGuardState,
+  recordBuddyReviewCall: () => void,
+): void {
   const agent = session.agent as AgentWithToolHooks;
   const existingBeforeToolCall = agent.beforeToolCall?.bind(agent);
   agent.beforeToolCall = async (context, signal) => {
     const existingResult = await existingBeforeToolCall?.(context, signal);
     if (existingResult?.block) return existingResult;
     const toolName = context.toolCall.name ?? "";
-    const planBlockReason = planModeToolBlockReason(getPlanExecutionMode(), toolName, context.args);
+    const workflow = getWorkflowState();
+    const planBlockReason = planModeToolBlockReason(workflow.planExecutionMode, workflow.buddyMode, toolName, context.args);
     if (planBlockReason) return { block: true, reason: planBlockReason };
+    const buddyBlockReason = buddyToolBlockReason(workflow, toolName, context.args);
+    if (buddyBlockReason) return { block: true, reason: buddyBlockReason };
+    if (workflow.buddyMode !== "off" && toolName === "Agent") recordBuddyReviewCall();
     if (toolName !== "bash" || !isRecord(context.args)) return existingResult;
 
     const command = typeof context.args.command === "string" ? context.args.command : "";
@@ -288,9 +316,13 @@ function installToolGuards(session: AgentSessionLike, getPlanExecutionMode: () =
   };
 }
 
-function planModeToolBlockReason(planExecutionMode: PlanExecutionMode | null, toolName: string, args: unknown): string | null {
+function planModeToolBlockReason(planExecutionMode: PlanExecutionMode | null, buddyMode: BuddyMode, toolName: string, args: unknown): string | null {
   if (!planExecutionMode) return null;
-  const allowedToolNames = planExecutionMode === "subagent" ? PLAN_MODE_SUBAGENT_TOOL_NAMES : PLAN_MODE_MAIN_TOOL_NAMES;
+  const allowedToolNames = planExecutionMode === "subagent"
+    ? PLAN_MODE_SUBAGENT_TOOL_NAMES
+    : buddyMode === "plan"
+      ? uniqueToolNames([...PLAN_MODE_MAIN_TOOL_NAMES, ...PLAN_MODE_SUBAGENT_TOOL_NAMES])
+      : PLAN_MODE_MAIN_TOOL_NAMES;
   if (!allowedToolNames.includes(toolName)) {
     return [
       "Blocked by Pi Web Plan Mode: this mode is read-only.",
@@ -313,12 +345,52 @@ function planModeToolBlockReason(planExecutionMode: PlanExecutionMode | null, to
   ].join("\n");
 }
 
+function buddyToolBlockReason(workflow: WorkflowGuardState, toolName: string, args: unknown): string | null {
+  if (workflow.buddyMode === "off" || toolName !== "Agent") return null;
+  if (!workflow.reviewerModel || !workflow.mainModel) return "Blocked by Pi Web Buddy Mode: reviewer or main model is unavailable.";
+  if (!isRecord(args)) return "Blocked by Pi Web Buddy Mode: Agent arguments were not readable.";
+  if (workflow.buddyReviewCalls >= 1) return "Blocked by Pi Web Buddy Mode: only one independent reviewer call is allowed per request.";
+
+  const expectedModel = modelRefKey(workflow.reviewerModel);
+  const requestedModel = typeof args.model === "string" ? args.model : "";
+  if (modelRefKey(workflow.mainModel) === expectedModel) {
+    return "Blocked by Pi Web Buddy Mode: the writer and reviewer models must be different.";
+  }
+  if (args.subagent_type !== "Plan") {
+    return 'Blocked by Pi Web Buddy Mode: the reviewer must use the read-only "Plan" subagent type.';
+  }
+  if (requestedModel !== expectedModel) {
+    return `Blocked by Pi Web Buddy Mode: reviewer model must be exactly "${expectedModel}".`;
+  }
+  if (args.inherit_context !== false) {
+    return "Blocked by Pi Web Buddy Mode: reviewer must set inherit_context to false for an independent review.";
+  }
+  if (args.run_in_background !== false) {
+    return "Blocked by Pi Web Buddy Mode: reviewer must set run_in_background to false so the result is reviewed before completion.";
+  }
+  if (args.isolated === true || args.isolation !== undefined) {
+    return "Blocked by Pi Web Buddy Mode: the read-only reviewer cannot use an isolated worktree.";
+  }
+  return null;
+}
+
 function includeExtensionTools(requestedToolNames: string[], extensionToolNames: string[]): string[] {
   return requestedToolNames.length === 0 ? [] : uniqueToolNames([...requestedToolNames, ...extensionToolNames]);
 }
 
 function parsePlanExecutionMode(value: unknown): PlanExecutionMode | undefined {
   return value === "subagent" || value === "main" ? value : undefined;
+}
+
+function parseBuddyMode(value: unknown): BuddyMode | undefined {
+  return value === "off" || value === "plan" || value === "code" ? value : undefined;
+}
+
+function parseModelRef(value: unknown): ModelRef | undefined {
+  if (!isRecord(value)) return undefined;
+  const provider = typeof value.provider === "string" ? value.provider.trim() : "";
+  const modelId = typeof value.modelId === "string" ? value.modelId.trim() : "";
+  return provider && modelId ? { provider, modelId } : undefined;
 }
 
 // ============================================================================
@@ -344,6 +416,9 @@ export class AgentSessionWrapper {
   private planModeEnabled = false;
   private planExecutionMode: PlanExecutionMode = "main";
   private planModeSnapshot: PlanModeSnapshot | null = null;
+  private buddyMode: BuddyMode = "off";
+  private buddyReviewerModel: ModelRef | null = null;
+  private buddyReviewCalls = 0;
   private _alive = true;
 
   constructor(public readonly inner: AgentSessionLike, private readonly extensionLoadErrors: string[] = []) {}
@@ -366,6 +441,21 @@ export class AgentSessionWrapper {
 
   getPlanExecutionMode(): PlanExecutionMode | null {
     return this.planModeEnabled ? this.planExecutionMode : null;
+  }
+
+  getWorkflowGuardState(): WorkflowGuardState {
+    const model = this.inner.model;
+    return {
+      planExecutionMode: this.planModeEnabled ? this.planExecutionMode : null,
+      buddyMode: this.buddyMode,
+      reviewerModel: this.buddyReviewerModel,
+      mainModel: model ? { provider: model.provider, modelId: model.id } : null,
+      buddyReviewCalls: this.buddyReviewCalls,
+    };
+  }
+
+  recordBuddyReviewCall(): void {
+    this.buddyReviewCalls += 1;
   }
 
   getPlanModeStatus(): PlanModeStatus {
@@ -522,18 +612,40 @@ export class AgentSessionWrapper {
     switch (type) {
       case "set_plan_mode": {
         const executionMode = parsePlanExecutionMode(command.executionMode);
-        this.setPlanMode(command.enabled === true, executionMode);
+        this.setWorkflowMode(
+          command.enabled === true,
+          executionMode,
+          parseBuddyMode(command.buddyMode),
+          parseModelRef(command.buddyReviewerModel),
+        );
         return {
           planMode: this.planModeEnabled,
           planExecutionMode: this.planExecutionMode,
           planModeStatus: this.getPlanModeStatus(),
+          buddyMode: this.buddyMode,
+          buddyReviewerModel: this.buddyReviewerModel,
         };
+      }
+
+      case "set_buddy_reviewer": {
+        const reviewer = parseModelRef(command.buddyReviewerModel);
+        if (!reviewer) throw new Error("Buddy reviewer model is required");
+        this.assertBuddyReviewer(reviewer);
+        this.buddyReviewerModel = reviewer;
+        if (this.buddyMode !== "off") this.applyWorkflowSystemPrompt();
+        return { buddyReviewerModel: reviewer };
       }
 
       case "prompt": {
         if (typeof command.planMode === "boolean") {
-          this.setPlanMode(command.planMode, parsePlanExecutionMode(command.planExecutionMode));
+          this.setWorkflowMode(
+            command.planMode,
+            parsePlanExecutionMode(command.planExecutionMode),
+            parseBuddyMode(command.buddyMode),
+            parseModelRef(command.buddyReviewerModel),
+          );
         }
+        this.buddyReviewCalls = 0;
         // Fire and forget — events come via subscribe
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         this.inner.prompt(command.message as string, promptImages?.length ? { images: promptImages } : undefined).catch(() => {});
@@ -565,6 +677,8 @@ export class AgentSessionWrapper {
           planMode: this.planModeEnabled,
           planExecutionMode: this.planExecutionMode,
           planModeStatus: this.getPlanModeStatus(),
+          buddyMode: this.buddyMode,
+          buddyReviewerModel: this.buddyReviewerModel,
         };
       }
 
@@ -573,6 +687,9 @@ export class AgentSessionWrapper {
         const registry = this.inner.modelRegistry;
         const model = registry.find(provider, modelId);
         if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
+        if (this.buddyMode !== "off" && this.buddyReviewerModel && modelRefKey(this.buddyReviewerModel) === `${provider}/${modelId}`) {
+          throw new Error("Buddy writer and reviewer models must be different");
+        }
         await this.inner.setModel(model);
         return { id: model.id, provider: model.provider };
       }
@@ -655,8 +772,9 @@ export class AgentSessionWrapper {
 
       case "steer": {
         if (typeof command.planMode === "boolean") {
-          this.setPlanMode(command.planMode, parsePlanExecutionMode(command.planExecutionMode));
+          this.setWorkflowMode(command.planMode, parsePlanExecutionMode(command.planExecutionMode), parseBuddyMode(command.buddyMode), parseModelRef(command.buddyReviewerModel));
         }
+        this.buddyReviewCalls = 0;
         const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         if (command.interrupt === true) {
           const guide = {
@@ -685,8 +803,9 @@ export class AgentSessionWrapper {
 
       case "follow_up": {
         if (typeof command.planMode === "boolean") {
-          this.setPlanMode(command.planMode, parsePlanExecutionMode(command.planExecutionMode));
+          this.setWorkflowMode(command.planMode, parsePlanExecutionMode(command.planExecutionMode), parseBuddyMode(command.buddyMode), parseModelRef(command.buddyReviewerModel));
         }
+        this.buddyReviewCalls = 0;
         const followImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         await this.inner.followUp(command.message as string, followImages?.length ? followImages : undefined);
         return null;
@@ -752,23 +871,42 @@ export class AgentSessionWrapper {
     }
   }
 
-  private setPlanMode(enabled: boolean, executionMode?: PlanExecutionMode): void {
+  private setWorkflowMode(enabled: boolean, executionMode?: PlanExecutionMode, buddyMode?: BuddyMode, reviewerModel?: ModelRef): void {
     const nextExecutionMode = executionMode ?? this.planExecutionMode;
+    const nextBuddyMode = buddyMode ?? this.buddyMode;
+    const nextReviewerModel = reviewerModel ?? this.buddyReviewerModel;
     if (enabled && nextExecutionMode === "subagent") this.assertPlanSubagentsAvailable();
-    if (enabled === this.planModeEnabled && (!enabled || nextExecutionMode === this.planExecutionMode)) return;
+    if (nextBuddyMode !== "off") {
+      this.assertPlanSubagentsAvailable();
+      if (!nextReviewerModel) throw new Error("Select a Buddy reviewer model before enabling Buddy Mode");
+      this.assertBuddyReviewer(nextReviewerModel);
+      if (nextBuddyMode === "plan" && !enabled) throw new Error("Buddy Plan requires Plan Mode");
+      if (nextBuddyMode === "code" && enabled) throw new Error("Buddy Code cannot run inside read-only Plan Mode");
+    }
+    const wasActive = this.planModeEnabled || this.buddyMode !== "off";
+    const willBeActive = enabled || nextBuddyMode !== "off";
+    if (
+      enabled === this.planModeEnabled &&
+      nextExecutionMode === this.planExecutionMode &&
+      nextBuddyMode === this.buddyMode &&
+      modelRefsEqual(nextReviewerModel, this.buddyReviewerModel)
+    ) return;
 
-    if (enabled) {
+    if (willBeActive) {
       if (!this.planModeSnapshot) this.planModeSnapshot = this.createPlanModeSnapshot();
       this.planExecutionMode = nextExecutionMode;
-      this.applyPlanModeTools();
-      this.applyPlanModeSystemPrompt();
-      this.planModeEnabled = true;
+      this.planModeEnabled = enabled;
+      this.buddyMode = nextBuddyMode;
+      this.buddyReviewerModel = nextReviewerModel;
+      this.applyWorkflowTools();
+      this.applyWorkflowSystemPrompt();
       return;
     }
 
-    this.restorePlanModeSnapshot();
+    if (wasActive) this.restorePlanModeSnapshot();
     this.planModeEnabled = false;
     this.planExecutionMode = "main";
+    this.buddyMode = "off";
     this.planModeSnapshot = null;
   }
 
@@ -781,18 +919,32 @@ export class AgentSessionWrapper {
     };
   }
 
-  private applyPlanModeTools(): void {
+  private applyWorkflowTools(): void {
     const allToolNames = this.inner.getAllTools().map((tool) => tool.name);
-    const requested = this.planExecutionMode === "subagent" ? PLAN_MODE_SUBAGENT_TOOL_NAMES : PLAN_MODE_MAIN_TOOL_NAMES;
+    let requested: string[];
+    if (this.planModeEnabled) {
+      requested = this.planExecutionMode === "subagent"
+        ? PLAN_MODE_SUBAGENT_TOOL_NAMES
+        : this.buddyMode === "plan"
+          ? uniqueToolNames([...PLAN_MODE_MAIN_TOOL_NAMES, ...PLAN_MODE_SUBAGENT_TOOL_NAMES])
+          : PLAN_MODE_MAIN_TOOL_NAMES;
+    } else {
+      requested = uniqueToolNames([
+        ...(this.planModeSnapshot?.activeToolNames ?? this.inner.getActiveToolNames()),
+        ...PLAN_MODE_SUBAGENT_TOOL_NAMES,
+      ]);
+    }
     this.inner.setActiveToolsByName(filterKnownToolNames(requested, allToolNames));
   }
 
-  private applyPlanModeSystemPrompt(): void {
+  private applyWorkflowSystemPrompt(): void {
     const inner = this.inner as AgentSessionPlanAccess;
     const snapshot = this.planModeSnapshot ?? this.createPlanModeSnapshot();
     const base = snapshot.baseSystemPrompt ?? snapshot.stateSystemPrompt ?? "";
-    const prompt = this.planExecutionMode === "subagent" ? PLAN_MODE_SUBAGENT_SYSTEM_PROMPT : PLAN_MODE_SYSTEM_PROMPT;
-    const next = `${base}\n\n${prompt}`.trim();
+    const prompts: string[] = [];
+    if (this.planModeEnabled) prompts.push(this.planExecutionMode === "subagent" ? PLAN_MODE_SUBAGENT_SYSTEM_PROMPT : PLAN_MODE_SYSTEM_PROMPT);
+    if (this.buddyMode !== "off" && this.buddyReviewerModel) prompts.push(buildBuddySystemPrompt(this.buddyMode, this.buddyReviewerModel));
+    const next = `${base}\n\n${prompts.join("\n\n")}`.trim();
     inner._baseSystemPrompt = next;
     if (this.inner.agent.state) this.inner.agent.state.systemPrompt = next;
   }
@@ -815,6 +967,22 @@ export class AgentSessionWrapper {
       status.missingTools.length ? `Missing tools: ${status.missingTools.join(", ")}` : "",
       `Install: ${status.installCommand}`,
     ].filter(Boolean).join("\n"));
+  }
+
+  private assertBuddyReviewer(reviewer: ModelRef): void {
+    const model = this.inner.modelRegistry.find(reviewer.provider, reviewer.modelId);
+    if (!model) throw new Error(`Buddy reviewer model not found: ${modelRefKey(reviewer)}`);
+    const registry = this.inner.modelRegistry as typeof this.inner.modelRegistry & {
+      getAvailable?: () => Array<{ provider: string; id: string }>;
+    };
+    const available = registry.getAvailable?.().some((candidate) => (
+      candidate.provider === reviewer.provider && candidate.id === reviewer.modelId
+    )) ?? true;
+    if (!available) throw new Error(`Buddy reviewer model is not authenticated: ${modelRefKey(reviewer)}`);
+    const main = this.inner.model;
+    if (main && main.provider === reviewer.provider && main.id === reviewer.modelId) {
+      throw new Error("Buddy writer and reviewer models must be different");
+    }
   }
 
   private respondToExtensionUi(response: ExtensionUiResponse): void {
@@ -1249,7 +1417,7 @@ export async function startRpcSession(
     if (appliedActiveToolNames?.length === 0) {
       wrapper.setForceEmptySystemPrompt(true);
     }
-    installToolGuards(inner, () => wrapper.getPlanExecutionMode());
+    installToolGuards(inner, () => wrapper.getWorkflowGuardState(), () => wrapper.recordBuddyReviewCall());
     wrapper.start();
 
     const realSessionId = inner.sessionId as string;

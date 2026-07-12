@@ -1,5 +1,11 @@
 export type PlanMode = "normal" | "plan";
 export type PlanExecutionMode = "main" | "subagent";
+export type BuddyMode = "off" | "plan" | "code";
+
+export interface ModelRef {
+  provider: string;
+  modelId: string;
+}
 
 export interface PlanModeStatus {
   subagentsAvailable: boolean;
@@ -287,3 +293,56 @@ Use 2-4 sentences to state the goal, current state, recommended path, and what i
 ## 假设与风险
 - Record assumptions, defaults, unresolved inputs, and remaining risks.
 `.trim();
+
+const BUDDY_REVIEW_FORMAT = `
+VERDICT: PASS | REVISE
+
+BLOCKING_ISSUES:
+- correctness, requirement, or safety problems that must be fixed
+
+FACT_ERRORS:
+- claims that are not supported by the repository or task context
+
+MISSING_TESTS:
+- important verification gaps
+
+NON_BLOCKING:
+- optional improvements only
+`.trim();
+
+export function buildBuddySystemPrompt(mode: Exclude<BuddyMode, "off">, reviewer: ModelRef): string {
+  const reviewerModel = `${reviewer.provider}/${reviewer.modelId}`;
+  const common = `
+Buddy review is active. The main agent is the sole author and must use exactly one independent reviewer model before its final answer.
+
+Reviewer protocol:
+- First do the work yourself and prepare a complete draft or implementation.
+- Then call the Agent tool exactly once with subagent_type "Plan", model "${reviewerModel}", inherit_context false, and run_in_background false.
+- Put the user's request, relevant verified facts, and the complete draft or git diff summary in the reviewer prompt. Do not include hidden chain-of-thought.
+- Tell the reviewer to challenge assumptions and return only this review format:
+
+${BUDDY_REVIEW_FORMAT}
+
+- Incorporate valid blocking feedback yourself. Do not let the reviewer edit files.
+- Do not expose the full internal debate. Briefly state that an independent review ran and whether blocking issues were fixed.
+- If the reviewer cannot run or fails, clearly mark the result as unverified instead of pretending review succeeded.
+- Never call a different subagent type or reviewer model while Buddy review is active.
+`.trim();
+
+  if (mode === "plan") {
+    return `${common}
+
+Buddy Plan rules:
+- Both agents are read-only. Do not edit, create, delete, rename, install, commit, push, or otherwise mutate files or external state.
+- The main agent writes the plan. The reviewer only criticizes that plan.
+- Output only the revised decision-complete plan in the required Plan Mode format.`;
+  }
+
+  return `${common}
+
+Buddy Code rules:
+- The main agent is the only writer. Implement the requested change, run proportionate checks, then request review.
+- The reviewer is read-only and must inspect the described changes for correctness, regressions, security issues, and missing tests.
+- Fix valid blocking issues and rerun the relevant checks before the final answer.
+- Do not ask the reviewer to implement, edit, commit, or push anything.`;
+}

@@ -23,6 +23,8 @@ Session browsing is read-only and reads `.jsonl` files directly through `lib/ses
 
 Plan Mode is a runtime wrapper state, not a session schema change. `components/ChatInput.tsx` sends `planMode` plus optional `planExecutionMode`, and `lib/rpc-manager.ts` applies a temporary tool/system-prompt snapshot around the active `AgentSessionWrapper`. The default execution mode is `main`; `subagent` mode is only available when extension tools such as `Agent` and `get_subagent_result` are registered.
 
+Buddy review is orthogonal to Plan Mode. `buddyMode: "plan"` keeps the main agent and its reviewer read-only, while `buddyMode: "code"` restores the main agent's normal coding tools and restricts the reviewer to a single foreground `Plan` subagent call. The reviewer model is selected separately, must resolve in the model registry, and must differ from the main model. Runtime tool guards enforce the reviewer type, exact model, independent context, foreground execution, and no-worktree policy; the main agent remains the only writer.
+
 Debug Bundle import/export is separate from normal session browsing. Export builds a `.tar.gz` from session entries, externalized media, diagnostics, and selected workspace files; import inspects first, then restores into a new sandbox cwd.
 
 ## File Map
@@ -68,7 +70,7 @@ Debug Bundle import/export is separate from normal session browsing. Export buil
 - `components/AppShell.tsx` - layout, URL state, and tab management.
 - `components/SessionSidebar.tsx` - session tree and file explorer shell.
 - `components/ChatWindow.tsx` - messages, streaming, SSE, fork, and navigation logic.
-- `components/ChatInput.tsx` - input bar, slash commands, Plan Mode chip, model, thinking, tools, and compact controls.
+- `components/ChatInput.tsx` - input bar, slash commands, Plan/Buddy chips, writer/reviewer models, thinking, tools, and compact controls.
 - `components/MessageView.tsx` - user, assistant, PlanCard, tool call, and tool result rendering.
 - `components/BranchNavigator.tsx` - in-session branch switcher.
 - `components/ChatMinimap.tsx` - scroll minimap.
