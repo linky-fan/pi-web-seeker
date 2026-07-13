@@ -6,6 +6,10 @@ import {
   parseQuickChatModel,
   QuickChatValidationError,
 } from "@/lib/quick-chat";
+import {
+  quickChatSearchSystemPrompt,
+  searchQuickChatWeb,
+} from "@/lib/quick-chat-search";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,6 +31,11 @@ export async function POST(req: Request) {
     const body = await req.json() as unknown;
     const modelRef = parseQuickChatModel(body);
     const messages = parseQuickChatMessages((body as { messages?: unknown }).messages);
+    const webSearchValue = (body as { webSearch?: unknown }).webSearch;
+    if (webSearchValue !== undefined && typeof webSearchValue !== "boolean") {
+      throw new QuickChatValidationError("webSearch must be a boolean");
+    }
+    const webSearch = webSearchValue === true;
     if (messages[messages.length - 1]?.role !== "user") {
       throw new QuickChatValidationError("The last message must be from the user");
     }
@@ -77,8 +86,18 @@ export async function POST(req: Request) {
         };
 
         void (async () => {
+          let stage: "search" | "model" = webSearch ? "search" : "model";
           try {
             send({ type: "start" });
+            let systemPrompt: string | undefined;
+            if (webSearch) {
+              const query = messages[messages.length - 1]?.text ?? "";
+              send({ type: "search_start", query });
+              const sources = await searchQuickChatWeb(query, abortController.signal);
+              send({ type: "search_results", query, sources });
+              systemPrompt = quickChatSearchSystemPrompt(sources);
+              stage = "model";
+            }
             const contextMessages: Message[] = messages.map((message) => message.role === "user"
               ? { role: "user", content: message.text, timestamp: message.timestamp }
               : {
@@ -95,7 +114,7 @@ export async function POST(req: Request) {
                   timestamp: message.timestamp,
                 });
 
-            const response = streamSimple(model, { messages: contextMessages }, {
+            const response = streamSimple(model, { messages: contextMessages, ...(systemPrompt ? { systemPrompt } : {}) }, {
               apiKey: auth.apiKey,
               headers: auth.headers,
               cacheRetention: "none",
@@ -110,6 +129,7 @@ export async function POST(req: Request) {
               if (event.type === "error") {
                 send({
                   type: "error",
+                  stage: "model",
                   error: event.error.errorMessage ?? (abortController.signal.aborted ? "Request stopped" : "Model request failed"),
                 });
               }
@@ -117,6 +137,7 @@ export async function POST(req: Request) {
           } catch (error) {
             send({
               type: "error",
+              stage,
               error: abortController.signal.aborted ? "Request stopped" : errorMessage(error),
             });
           } finally {

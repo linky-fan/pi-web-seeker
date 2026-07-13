@@ -155,8 +155,11 @@ flowchart LR
   AgentApi --> RpcManager["rpc-manager<br/>AgentSessionWrapper"]
   RpcManager --> PiAgent["Pi AgentSession"]
   PiAgent --> SessionFiles
-  Browser --> QuickChatApi["/api/quick-chat/stream<br/>direct model SSE · no tools"]
+  Browser --> QuickChatApi["/api/quick-chat/stream<br/>direct model SSE · optional web grounding"]
+  QuickChatApi --> Tavily["Tavily Search API<br/>basic search · max 5 sources"]
   QuickChatApi --> ConfiguredModel["pi-ai<br/>configured model"]
+  Browser --> QuickChatSearchConfig["/api/quick-chat/search-config<br/>server-side key status"]
+  QuickChatSearchConfig --> AuthStore["~/.pi/agent/auth.json<br/>Tavily credential"]
   Browser --> QuickChatPromote["/api/quick-chat/promote<br/>promote full history"]
   QuickChatPromote --> SessionFiles
   Browser --> BrowserApi["/api/browser/*<br/>snapshot SSE · approvals · policy"]
@@ -170,7 +173,7 @@ flowchart LR
   FilesApi --> Workspace["workspace roots"]
 ```
 
-普通聊天通过 in-process `AgentSession` 使用完整工具能力；即时对话通过 `pi-ai` 直接流式调用已配置模型，不创建 `AgentSession` 或加载 tools。即时历史只保留在当前浏览器标签中，用户选择“转正式”后才由 `/api/quick-chat/promote` 写入标准 JSONL 会话。
+普通聊天通过 in-process `AgentSession` 使用完整工具能力；即时对话通过 `pi-ai` 直接流式调用已配置模型，不创建 `AgentSession` 或加载 tools。用户可以按需开启 Tavily 预检索，服务端最多提取 5 个来源作为不可信参考上下文，再交给轻量模型作答；关闭联网时不会发起搜索或增加 system prompt。即时历史、联网开关和来源只保留在当前浏览器标签中，Tavily Key 保存在服务端认证存储或由 `TAVILY_API_KEY` 提供。用户选择“转正式”后，回答和来源才由 `/api/quick-chat/promote` 写入标准 JSONL 会话。
 
 受控浏览器是可选能力。用户先在本机安装 OpenCLI 和 Browser Bridge，再从右侧 Browser 标签为当前工作区启用内置 `pi-opencli` package。Agent 通过受约束的 extension tools 操作真实 Chrome；Pi Web 只展示临时页面快照、操作轨迹和敏感操作审批，不嵌入第三方页面，也不会保存 Chrome 登录信息。全自动权限只在当前浏览器会话中有效，可信网站按精确 origin 保存到 `~/.pi/agent/browser-policy.json`。
 

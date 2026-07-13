@@ -11,6 +11,7 @@ import {
 import {
   parseQuickChatMessages,
   parseQuickChatModel,
+  quickChatMessageTextForPromotion,
   QuickChatValidationError,
 } from "@/lib/quick-chat";
 import type { SessionInfo } from "@/lib/types";
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
       } else {
         manager.appendMessage({
           role: "assistant",
-          content: [{ type: "text", text: message.text }],
+          content: [{ type: "text", text: quickChatMessageTextForPromotion(message) }],
           api: model.api,
           provider: model.provider,
           model: model.id,

@@ -19,7 +19,13 @@ Browser                Next.js Server              AgentSession (in-process)
   |<-- data: {...} --------|                               |
   |                        |                               |
   |- quick chat ---------->| POST /api/quick-chat/stream   |
+  |                        |   optional Tavily search       |
+  |<-- search status ------|   max 5 bounded sources        |
   |<-- text SSE -----------|   streamSimple() ------------>| configured model
+  |                        |   no AgentSession or tools     |
+  |                        |                               |
+  |- search config ------->| /api/quick-chat/search-config |
+  |                        |   -> ~/.pi/agent/auth.json     |
   |                        |                               |
   |- promote quick chat -->| POST /api/quick-chat/promote  |
   |                        |   SessionManager.create()      |
@@ -38,7 +44,7 @@ Browser                Next.js Server              AgentSession (in-process)
 
 Session browsing is read-only and reads `.jsonl` files directly through `lib/session-reader.ts`. Sending a message creates or reuses an in-process `AgentSession` through `startRpcSession()` in `lib/rpc-manager.ts`.
 
-Quick Chat is a separate lightweight path. `components/QuickChatPanel.tsx` keeps temporary text history in browser `sessionStorage`, and `POST /api/quick-chat/stream` calls the configured model through `pi-ai` without creating an `AgentSession`, loading extensions, or registering tools. `POST /api/quick-chat/promote` converts the full temporary history into a standard persisted JSONL session; subsequent messages use the normal `AgentSession` path.
+Quick Chat is a separate lightweight path. `components/QuickChatPanel.tsx` keeps temporary text history, the per-tab web-search toggle, and bounded source metadata in browser `sessionStorage`. With web search disabled, `POST /api/quick-chat/stream` calls the configured model through `pi-ai` without a system prompt, `AgentSession`, extensions, or tools. With search enabled, the same route performs one bounded Tavily search, emits search status and up to five sanitized sources, then passes an untrusted-evidence system prompt to `streamSimple()`. The Tavily key remains server-side in `AuthStorage` or `TAVILY_API_KEY`; `/api/quick-chat/search-config` never returns it. `POST /api/quick-chat/promote` converts the temporary history and source links into a standard persisted JSONL session; subsequent messages use the normal `AgentSession` path.
 
 Controlled browser automation is an optional `pi-opencli` package. Its extension registers four constrained tool groups and maps each action to fixed OpenCLI argv without a shell or arbitrary `eval`. The shared runtime keys one OpenCLI browser session to each formal AgentSession, publishes snapshots/actions/approvals through `/api/browser/*`, and stores screenshots only in the system temporary directory. OpenCLI's localhost daemon and Browser Bridge extension operate the user's real logged-in Chrome tab; Pi Web never receives browser credentials. Sensitive actions use an approval gate, exact-origin allowlist entries persist in `~/.pi/agent/browser-policy.json`, and full-auto mode resets when the browser session closes. The first implementation is local-only; Docker and remote browser tunneling are diagnostics/documentation paths rather than supported runtime wiring.
 
@@ -66,7 +72,8 @@ Debug Bundle import/export is separate from normal session browsing. Export buil
 - `app/api/agent/new/route.ts` - create a session from `{ cwd, message, toolNames, provider, modelId, planMode }`.
 - `app/api/agent/[id]/route.ts` - get runtime state or POST commands.
 - `app/api/agent/[id]/events/route.ts` - SSE stream.
-- `app/api/quick-chat/stream/route.ts` - stream a text-only response directly from a configured model without an `AgentSession` or tools.
+- `app/api/quick-chat/stream/route.ts` - optionally prefetch bounded Tavily results, then stream a text-only response directly from a configured model without an `AgentSession` or tools.
+- `app/api/quick-chat/search-config/route.ts` - report, save, or remove the server-side Tavily credential without exposing it to the browser.
 - `app/api/quick-chat/promote/route.ts` - persist a temporary Quick Chat history as a standard JSONL session.
 - `app/api/browser/status/route.ts` - detect the external OpenCLI binary, doctor/profile state, and built-in package state.
 - `app/api/browser/setup/route.ts` - opt a workspace into the built-in `pi-opencli` package and reload a live AgentSession.
@@ -84,7 +91,8 @@ Debug Bundle import/export is separate from normal session browsing. Export buil
 - `lib/session-reader.ts` - parse `.jsonl`, model maps, and default model helpers.
 - `lib/session-export.ts` - ordinary Markdown / JSON export helpers.
 - `lib/debug-bundle.ts` - debug bundle manifest, tar safety checks, media externalization, workspace snapshot, inspect, and import helpers.
-- `lib/quick-chat.ts` - Quick Chat request types, size limits, and server-side validation.
+- `lib/quick-chat.ts` - Quick Chat message/source types, size limits, validation, and promotion formatting.
+- `lib/quick-chat-search.ts` - Tavily credential resolution, bounded search, source sanitization, timeouts, and the untrusted-evidence prompt.
 - `lib/browser-types.ts` - shared controlled-browser session, event, approval, policy, and status types.
 - `lib/browser-package.ts` - built-in `pi-opencli` package discovery and workspace enablement.
 - `lib/plan-mode.ts` - slash command parsing, plan document detection, Plan Mode prompts, subagent status, and read-only bash allowlist.
@@ -100,7 +108,7 @@ Debug Bundle import/export is separate from normal session browsing. Export buil
 - `components/SessionSidebar.tsx` - session tree and file explorer shell.
 - `components/ChatWindow.tsx` - messages, streaming, SSE, fork, and navigation logic.
 - `components/ChatInput.tsx` - input bar, slash commands, Plan/Buddy chips, writer/reviewer models, thinking, tools, and compact controls.
-- `components/QuickChatPanel.tsx` - floating model-direct text chat, temporary browser history, and promotion to a formal session.
+- `components/QuickChatPanel.tsx` - floating model-direct text chat, optional Tavily search controls and sources, temporary browser history, and promotion to a formal session.
 - `components/BrowserPanel.tsx` - controlled-browser snapshot, activity timeline, permissions, setup diagnostics, and manual takeover UI.
 - `components/MessageView.tsx` - user, assistant, PlanCard, tool call, and tool result rendering.
 - `components/BranchNavigator.tsx` - in-session branch switcher.
