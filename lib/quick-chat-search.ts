@@ -2,8 +2,10 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import type { QuickChatSource } from "@/lib/quick-chat";
 
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
+const TAVILY_USAGE_ENDPOINT = "https://api.tavily.com/usage";
 const TAVILY_AUTH_ID = "tavily-search";
 const TAVILY_SEARCH_TIMEOUT_MS = 8_000;
+const TAVILY_VALIDATION_TIMEOUT_MS = 6_000;
 const TAVILY_MAX_QUERY_CHARS = 1_000;
 
 interface TavilyResult {
@@ -15,14 +17,36 @@ interface TavilyResult {
 export interface QuickChatSearchConfig {
   provider: "tavily";
   configured: boolean;
-  source?: "environment" | "stored";
+  source?: QuickChatSearchCredentialSource;
+  environmentConfigured: boolean;
+  overrideActive: boolean;
 }
 
+export type QuickChatSearchCredentialSource = "environment" | "stored";
+
+export type QuickChatSearchErrorCode =
+  | "tavily_not_configured"
+  | "tavily_auth_failed"
+  | "tavily_rate_limited"
+  | "tavily_timeout"
+  | "tavily_request_failed"
+  | "request_stopped";
+
 export class QuickChatSearchError extends Error {
-  constructor(message: string, readonly status = 502) {
+  constructor(
+    message: string,
+    readonly status = 502,
+    readonly code: QuickChatSearchErrorCode = "tavily_request_failed",
+    readonly source?: QuickChatSearchCredentialSource,
+  ) {
     super(message);
     this.name = "QuickChatSearchError";
   }
+}
+
+interface ResolvedCredential {
+  apiKey: string;
+  source: QuickChatSearchCredentialSource;
 }
 
 function environmentApiKey(): string | undefined {
@@ -36,23 +60,105 @@ function storedApiKey(): string | undefined {
 }
 
 export function getQuickChatSearchConfig(): QuickChatSearchConfig {
-  if (environmentApiKey()) return { provider: "tavily", configured: true, source: "environment" };
-  if (storedApiKey()) return { provider: "tavily", configured: true, source: "stored" };
-  return { provider: "tavily", configured: false };
+  const stored = storedApiKey();
+  const environment = environmentApiKey();
+  return {
+    provider: "tavily",
+    configured: !!(stored || environment),
+    ...(stored ? { source: "stored" as const } : environment ? { source: "environment" as const } : {}),
+    environmentConfigured: !!environment,
+    overrideActive: !!stored,
+  };
 }
 
 export function saveQuickChatSearchApiKey(apiKey: string): void {
-  if (environmentApiKey()) throw new QuickChatSearchError("Tavily is managed by TAVILY_API_KEY", 409);
   AuthStorage.create().set(TAVILY_AUTH_ID, { type: "api_key", key: apiKey.trim() });
 }
 
 export function removeQuickChatSearchApiKey(): void {
-  if (environmentApiKey()) throw new QuickChatSearchError("Tavily is managed by TAVILY_API_KEY", 409);
   AuthStorage.create().remove(TAVILY_AUTH_ID);
 }
 
-function resolvedApiKey(): string | undefined {
-  return environmentApiKey() ?? storedApiKey();
+function resolvedCredential(): ResolvedCredential | undefined {
+  const stored = storedApiKey();
+  if (stored) return { apiKey: stored, source: "stored" };
+  const environment = environmentApiKey();
+  if (environment) return { apiKey: environment, source: "environment" };
+  return undefined;
+}
+
+function responseError(response: Response, source: QuickChatSearchCredentialSource): QuickChatSearchError {
+  if (response.status === 401 || response.status === 403) {
+    return new QuickChatSearchError("Tavily authentication failed", 401, "tavily_auth_failed", source);
+  }
+  if (response.status === 429 || response.status === 432 || response.status === 433) {
+    return new QuickChatSearchError("Tavily rate limit reached", 429, "tavily_rate_limited", source);
+  }
+  return new QuickChatSearchError(
+    `Tavily request failed (HTTP ${response.status})`,
+    502,
+    "tavily_request_failed",
+    source,
+  );
+}
+
+async function tavilyFetch(
+  url: string,
+  init: RequestInit,
+  credential: ResolvedCredential,
+  signal: AbortSignal,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => controller.abort();
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${credential.apiKey}`);
+    const response = await fetch(url, {
+      ...init,
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw responseError(response, credential.source);
+    return response;
+  } catch (error) {
+    if (error instanceof QuickChatSearchError) throw error;
+    if (signal.aborted) {
+      throw new QuickChatSearchError("Request stopped", 499, "request_stopped", credential.source);
+    }
+    if (controller.signal.aborted) {
+      throw new QuickChatSearchError("Tavily request timed out", 504, "tavily_timeout", credential.source);
+    }
+    throw new QuickChatSearchError("Tavily request failed", 502, "tavily_request_failed", credential.source);
+  } finally {
+    clearTimeout(timeout);
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
+export async function validateQuickChatSearchApiKey(
+  apiKey: string,
+  signal: AbortSignal,
+  source: QuickChatSearchCredentialSource = "stored",
+): Promise<QuickChatSearchCredentialSource> {
+  const credential = { apiKey: apiKey.trim(), source };
+  if (!credential.apiKey) {
+    throw new QuickChatSearchError("Tavily API key is not configured", 400, "tavily_not_configured", source);
+  }
+  await tavilyFetch(TAVILY_USAGE_ENDPOINT, { method: "GET" }, credential, signal, TAVILY_VALIDATION_TIMEOUT_MS);
+  return source;
+}
+
+export async function validateQuickChatSearchConfig(signal: AbortSignal): Promise<QuickChatSearchCredentialSource> {
+  const credential = resolvedCredential();
+  if (!credential) {
+    throw new QuickChatSearchError("Tavily API key is not configured", 400, "tavily_not_configured");
+  }
+  await tavilyFetch(TAVILY_USAGE_ENDPOINT, { method: "GET" }, credential, signal, TAVILY_VALIDATION_TIMEOUT_MS);
+  return credential.source;
 }
 
 function sanitizedSource(result: TavilyResult): QuickChatSource | null {
@@ -71,18 +177,14 @@ function sanitizedSource(result: TavilyResult): QuickChatSource | null {
 }
 
 export async function searchQuickChatWeb(query: string, signal: AbortSignal): Promise<QuickChatSource[]> {
-  const apiKey = resolvedApiKey();
-  if (!apiKey) throw new QuickChatSearchError("Tavily API key is not configured", 400);
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TAVILY_SEARCH_TIMEOUT_MS);
-  const onAbort = () => controller.abort();
-  signal.addEventListener("abort", onAbort, { once: true });
+  const credential = resolvedCredential();
+  if (!credential) {
+    throw new QuickChatSearchError("Tavily API key is not configured", 400, "tavily_not_configured");
+  }
   try {
-    const response = await fetch(TAVILY_ENDPOINT, {
+    const response = await tavilyFetch(TAVILY_ENDPOINT, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -92,16 +194,7 @@ export async function searchQuickChatWeb(query: string, signal: AbortSignal): Pr
         include_answer: false,
         include_raw_content: false,
       }),
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        throw new QuickChatSearchError("Tavily authentication failed", 401);
-      }
-      if (response.status === 429) throw new QuickChatSearchError("Tavily rate limit reached", 429);
-      throw new QuickChatSearchError(`Tavily search failed (HTTP ${response.status})`);
-    }
+    }, credential, signal, TAVILY_SEARCH_TIMEOUT_MS);
     const data = await response.json() as { results?: unknown };
     if (!Array.isArray(data.results)) return [];
     const seen = new Set<string>();
@@ -117,12 +210,10 @@ export async function searchQuickChatWeb(query: string, signal: AbortSignal): Pr
     return sources;
   } catch (error) {
     if (error instanceof QuickChatSearchError) throw error;
-    if (signal.aborted) throw new QuickChatSearchError("Request stopped", 499);
-    if (controller.signal.aborted) throw new QuickChatSearchError("Tavily search timed out", 504);
-    throw new QuickChatSearchError("Tavily search failed");
-  } finally {
-    clearTimeout(timeout);
-    signal.removeEventListener("abort", onAbort);
+    if (signal.aborted) {
+      throw new QuickChatSearchError("Request stopped", 499, "request_stopped", credential.source);
+    }
+    throw new QuickChatSearchError("Tavily response was invalid", 502, "tavily_request_failed", credential.source);
   }
 }
 

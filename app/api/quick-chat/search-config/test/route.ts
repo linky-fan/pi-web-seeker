@@ -1,9 +1,8 @@
 import {
   getQuickChatSearchConfig,
   QuickChatSearchError,
-  removeQuickChatSearchApiKey,
-  saveQuickChatSearchApiKey,
   validateQuickChatSearchApiKey,
+  validateQuickChatSearchConfig,
 } from "@/lib/quick-chat-search";
 
 export const dynamic = "force-dynamic";
@@ -13,13 +12,12 @@ const MAX_CONFIG_BYTES = 8 * 1024;
 
 function errorResponse(error: unknown): Response {
   if (error instanceof QuickChatSearchError) {
-    return Response.json({ error: error.message, code: error.code, source: error.source }, { status: error.status });
+    return Response.json({ ok: false, error: error.message, code: error.code, source: error.source }, { status: error.status });
   }
-  return Response.json({ error: "Unable to update Tavily configuration", code: "tavily_request_failed" }, { status: 500 });
-}
-
-export async function GET() {
-  return Response.json(getQuickChatSearchConfig());
+  return Response.json(
+    { ok: false, error: "Unable to test Tavily configuration", code: "tavily_request_failed" },
+    { status: 500 },
+  );
 }
 
 export async function POST(req: Request) {
@@ -27,22 +25,17 @@ export async function POST(req: Request) {
   if (contentLength > MAX_CONFIG_BYTES) return Response.json({ error: "Request is too large" }, { status: 413 });
   try {
     const body = await req.json() as { apiKey?: unknown };
-    const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
-    if (!apiKey || apiKey.length > 4_096) {
+    if (body.apiKey !== undefined && typeof body.apiKey !== "string") {
       throw new QuickChatSearchError("A valid Tavily API key is required", 400, "tavily_not_configured", "stored");
     }
-    await validateQuickChatSearchApiKey(apiKey, req.signal, "stored");
-    saveQuickChatSearchApiKey(apiKey);
-    return Response.json(getQuickChatSearchConfig());
-  } catch (error) {
-    return errorResponse(error);
-  }
-}
-
-export async function DELETE() {
-  try {
-    removeQuickChatSearchApiKey();
-    return Response.json(getQuickChatSearchConfig());
+    const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+    if (apiKey.length > 4_096) {
+      throw new QuickChatSearchError("A valid Tavily API key is required", 400, "tavily_not_configured", "stored");
+    }
+    const source = apiKey
+      ? await validateQuickChatSearchApiKey(apiKey, req.signal, "stored")
+      : await validateQuickChatSearchConfig(req.signal);
+    return Response.json({ ok: true, provider: "tavily", source, config: getQuickChatSearchConfig() });
   } catch (error) {
     return errorResponse(error);
   }

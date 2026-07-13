@@ -7,6 +7,7 @@ import {
   QuickChatValidationError,
 } from "@/lib/quick-chat";
 import {
+  QuickChatSearchError,
   quickChatSearchSystemPrompt,
   searchQuickChatWeb,
 } from "@/lib/quick-chat-search";
@@ -135,10 +136,12 @@ export async function POST(req: Request) {
               }
             }
           } catch (error) {
+            const searchError = error instanceof QuickChatSearchError ? error : null;
             send({
               type: "error",
               stage,
               error: abortController.signal.aborted ? "Request stopped" : errorMessage(error),
+              ...(searchError ? { code: searchError.code, source: searchError.source } : {}),
             });
           } finally {
             finish();

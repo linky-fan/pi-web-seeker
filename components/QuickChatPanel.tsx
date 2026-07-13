@@ -32,6 +32,16 @@ interface SearchConfig {
   provider: "tavily";
   configured: boolean;
   source?: "environment" | "stored";
+  environmentConfigured: boolean;
+  overrideActive: boolean;
+}
+
+type SearchConnectionState = "idle" | "info" | "testing" | "valid" | "invalid";
+
+interface SearchApiError {
+  error?: string;
+  code?: string;
+  source?: "environment" | "stored";
 }
 
 interface Props {
@@ -153,6 +163,9 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
   const [searchConfigOpen, setSearchConfigOpen] = useState(false);
   const [searchApiKey, setSearchApiKey] = useState("");
   const [savingSearchKey, setSavingSearchKey] = useState(false);
+  const [testingSearchKey, setTestingSearchKey] = useState(false);
+  const [searchConnectionState, setSearchConnectionState] = useState<SearchConnectionState>("idle");
+  const [searchConnectionMessage, setSearchConnectionMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchFailed, setSearchFailed] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
@@ -161,6 +174,8 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
   const [promoting, setPromoting] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
+  const retrySearchAfterSaveRef = useRef(false);
+  const sendRef = useRef<(searchOverride?: boolean) => void>(() => {});
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -170,9 +185,21 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       setSearchConfig(await response.json() as SearchConfig);
     } catch {
-      setSearchConfig({ provider: "tavily", configured: false });
+      setSearchConfig({ provider: "tavily", configured: false, environmentConfigured: false, overrideActive: false });
     }
   }, []);
+
+  const describeSearchError = useCallback((data: SearchApiError, fallback: string) => {
+    if (data.code === "tavily_auth_failed") {
+      return data.source === "environment"
+        ? t("quickChat.searchEnvironmentAuthFailed")
+        : t("quickChat.searchStoredAuthFailed");
+    }
+    if (data.code === "tavily_timeout") return t("quickChat.searchTestTimeout");
+    if (data.code === "tavily_rate_limited") return t("quickChat.searchRateLimited");
+    if (data.code === "tavily_not_configured") return t("quickChat.searchConfigureFirst");
+    return data.error ?? fallback;
+  }, [t]);
 
   useEffect(() => {
     const stored = readStoredState();
@@ -260,6 +287,7 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
     setError(null);
     setSearchFailed(false);
     setPromoteOpen(false);
+    retrySearchAfterSaveRef.current = false;
     if (resetModel) {
       const preferred = models.find((model) => /deepseek.*v4.*flash/i.test(`${model.name} ${model.id}`)) ?? models[0];
       setSelectedModel(preferred ? { provider: preferred.provider, modelId: preferred.id } : null);
@@ -272,7 +300,7 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
 
   const saveSearchKey = useCallback(async () => {
     const apiKey = searchApiKey.trim();
-    if (!apiKey || savingSearchKey) return;
+    if (!apiKey || savingSearchKey || testingSearchKey) return;
     setSavingSearchKey(true);
     setError(null);
     try {
@@ -281,39 +309,83 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apiKey }),
       });
-      const data = await response.json().catch(() => ({})) as SearchConfig & { error?: string };
-      if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
+      const data = await response.json().catch(() => ({})) as SearchConfig & SearchApiError;
+      if (!response.ok) {
+        const saveErrorMessage = data.code === "tavily_auth_failed"
+          ? t("quickChat.searchCandidateAuthFailed")
+          : describeSearchError(data, `HTTP ${response.status}`);
+        setSearchConnectionState("invalid");
+        setSearchConnectionMessage(saveErrorMessage);
+        throw new Error(saveErrorMessage);
+      }
       setSearchConfig(data);
       setSearchApiKey("");
+      setSearchConnectionState("valid");
+      setSearchConnectionMessage(t("quickChat.searchValidatedOverride"));
       setSearchConfigOpen(false);
+      const shouldRetry = retrySearchAfterSaveRef.current;
+      retrySearchAfterSaveRef.current = false;
+      if (shouldRetry) window.setTimeout(() => sendRef.current(true), 0);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     } finally {
       setSavingSearchKey(false);
     }
-  }, [savingSearchKey, searchApiKey]);
+  }, [describeSearchError, savingSearchKey, searchApiKey, t, testingSearchKey]);
 
   const removeSearchKey = useCallback(async () => {
     setSavingSearchKey(true);
     setError(null);
     try {
       const response = await fetch(apiPath("quick-chat/search-config"), { method: "DELETE" });
-      const data = await response.json().catch(() => ({})) as SearchConfig & { error?: string };
-      if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
+      const data = await response.json().catch(() => ({})) as SearchConfig & SearchApiError;
+      if (!response.ok) throw new Error(describeSearchError(data, `HTTP ${response.status}`));
       setSearchConfig(data);
-      setWebSearchEnabled(false);
-      setSearchConfigOpen(false);
+      setWebSearchEnabled(data.configured);
+      setSearchConnectionState(data.environmentConfigured ? "info" : "idle");
+      setSearchConnectionMessage(data.environmentConfigured ? t("quickChat.searchRestoredEnvironment") : null);
+      retrySearchAfterSaveRef.current = false;
     } catch (removeError) {
       setError(removeError instanceof Error ? removeError.message : String(removeError));
     } finally {
       setSavingSearchKey(false);
     }
-  }, []);
+  }, [describeSearchError, t]);
+
+  const testSearchKey = useCallback(async () => {
+    if (testingSearchKey || !searchConfig?.configured) return;
+    setTestingSearchKey(true);
+    setSearchConnectionState("testing");
+    setSearchConnectionMessage(t("quickChat.searchTesting"));
+    setError(null);
+    try {
+      const response = await fetch(apiPath("quick-chat/search-config/test"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({})) as SearchApiError & { ok?: boolean; config?: SearchConfig };
+      if (!response.ok || data.ok !== true) {
+        setSearchConnectionState("invalid");
+        setSearchConnectionMessage(describeSearchError(data, `HTTP ${response.status}`));
+        return;
+      }
+      if (data.config) setSearchConfig(data.config);
+      setSearchConnectionState("valid");
+      setSearchConnectionMessage(t("quickChat.searchValidated"));
+    } catch (testError) {
+      setSearchConnectionState("invalid");
+      setSearchConnectionMessage(testError instanceof Error ? testError.message : t("quickChat.searchTestFailed"));
+    } finally {
+      setTestingSearchKey(false);
+    }
+  }, [describeSearchError, searchConfig?.configured, t, testingSearchKey]);
 
   const toggleWebSearch = useCallback(() => {
     const next = !webSearchEnabled;
     setWebSearchEnabled(next);
     setSearchFailed(false);
+    if (!next) retrySearchAfterSaveRef.current = false;
     if (next && searchConfig?.configured !== true) {
       setPromoteOpen(false);
       setSearchConfigOpen(true);
@@ -350,6 +422,8 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
     let responseSources: QuickChatSource[] = [];
     let streamError = "";
     let streamErrorStage: "search" | "model" = useWebSearch ? "search" : "model";
+    let streamErrorCode: string | undefined;
+    let streamErrorSource: "environment" | "stored" | undefined;
 
     try {
       const response = await fetch(apiPath("quick-chat/stream"), {
@@ -383,7 +457,9 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
             type?: string;
             delta?: string;
             error?: string;
+            code?: string;
             stage?: "search" | "model";
+            source?: "environment" | "stored";
             sources?: QuickChatSource[];
           };
           if (event.type === "search_start") {
@@ -400,7 +476,9 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
             if (requestGenerationRef.current === requestGeneration) setStreamingText(assistantText);
           } else if (event.type === "error") {
             streamError = event.error ?? t("quickChat.requestFailed");
+            streamErrorCode = event.code;
             streamErrorStage = event.stage ?? streamErrorStage;
+            streamErrorSource = event.source;
           }
         }
         if (done) break;
@@ -429,7 +507,18 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
           setInput(text);
           setSearchFailed(true);
         }
-        setError(requestError instanceof Error ? requestError.message : String(requestError));
+        const searchErrorData = { code: streamErrorCode, source: streamErrorSource, error: streamError };
+        const requestErrorMessage = streamErrorStage === "search"
+          ? describeSearchError(searchErrorData, requestError instanceof Error ? requestError.message : String(requestError))
+          : requestError instanceof Error ? requestError.message : String(requestError);
+        if (streamErrorCode === "tavily_auth_failed") {
+          setPromoteOpen(false);
+          setSearchConfigOpen(true);
+          setSearchConnectionState("invalid");
+          setSearchConnectionMessage(requestErrorMessage);
+          retrySearchAfterSaveRef.current = true;
+        }
+        setError(requestErrorMessage);
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
@@ -441,7 +530,9 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
         setSearchResultCount(null);
       }
     }
-  }, [input, messages, searchConfig?.configured, selectedModel, sending, t, webSearchEnabled]);
+  }, [describeSearchError, input, messages, searchConfig?.configured, selectedModel, sending, t, webSearchEnabled]);
+
+  sendRef.current = send;
 
   const handleInputKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -605,6 +696,7 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
                   setWebSearchEnabled(false);
                   setError(null);
                   setSearchFailed(false);
+                  retrySearchAfterSaveRef.current = false;
                   void send(false);
                 }}>{t("quickChat.retryWithoutSearch")}</button>
               )}
@@ -615,33 +707,52 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
             <div className="pi-quick-chat-search-config">
               <div>
                 <strong>{t("quickChat.searchConfigTitle")}</strong>
-                <span>{searchConfig?.source === "environment" ? t("quickChat.searchManaged") : t("quickChat.searchConfigHint")}</span>
+                <span>{searchConfig?.overrideActive
+                  ? t("quickChat.searchOverrideActive")
+                  : searchConfig?.environmentConfigured
+                    ? t("quickChat.searchEnvironmentAvailable")
+                    : t("quickChat.searchConfigHint")}</span>
               </div>
-              {searchConfig?.source === "environment" ? (
-                <button type="button" onClick={() => setSearchConfigOpen(false)}>{t("common.close")}</button>
-              ) : (
-                <>
-                  <input
-                    type="password"
-                    value={searchApiKey}
-                    onChange={(event) => setSearchApiKey(event.target.value)}
-                    onKeyDown={(event) => { if (event.key === "Enter") void saveSearchKey(); }}
-                    placeholder={searchConfig?.configured ? t("quickChat.searchReplaceKey") : "tvly-…"}
-                    aria-label={t("quickChat.searchApiKey")}
-                    autoComplete="off"
-                    autoFocus
-                  />
-                  <div className="pi-quick-chat-search-config-actions">
-                    {searchConfig?.source === "stored" && (
-                      <button type="button" onClick={() => void removeSearchKey()} disabled={savingSearchKey}>{t("quickChat.searchDisconnect")}</button>
-                    )}
-                    <button type="button" onClick={() => setSearchConfigOpen(false)}>{t("common.cancel")}</button>
-                    <button className="primary" type="button" onClick={() => void saveSearchKey()} disabled={!searchApiKey.trim() || savingSearchKey}>
-                      {savingSearchKey ? t("quickChat.searchSaving") : t("quickChat.searchSave")}
-                    </button>
-                  </div>
-                </>
+              {searchConnectionState !== "idle" && searchConnectionMessage && (
+                <div className={`pi-quick-chat-search-status is-${searchConnectionState}`} role="status" aria-live="polite">
+                  <span aria-hidden="true" />
+                  {searchConnectionMessage}
+                </div>
               )}
+              <input
+                type="password"
+                value={searchApiKey}
+                onChange={(event) => setSearchApiKey(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter") void saveSearchKey(); }}
+                placeholder={searchConfig?.overrideActive
+                  ? t("quickChat.searchReplaceKey")
+                  : searchConfig?.environmentConfigured
+                    ? t("quickChat.searchOverrideKey")
+                    : "tvly-…"}
+                aria-label={t("quickChat.searchApiKey")}
+                autoComplete="off"
+                autoFocus
+              />
+              <div className="pi-quick-chat-search-config-actions">
+                {searchConfig?.overrideActive && (
+                  <button type="button" onClick={() => void removeSearchKey()} disabled={savingSearchKey || testingSearchKey}>
+                    {searchConfig.environmentConfigured ? t("quickChat.searchRestoreEnvironment") : t("quickChat.searchDisconnect")}
+                  </button>
+                )}
+                {searchConfig?.configured && (
+                  <button type="button" onClick={() => void testSearchKey()} disabled={savingSearchKey || testingSearchKey}>
+                    {testingSearchKey ? t("quickChat.searchTesting") : t("quickChat.searchTest")}
+                  </button>
+                )}
+                <button type="button" onClick={() => setSearchConfigOpen(false)}>{t("common.cancel")}</button>
+                <button className="primary" type="button" onClick={() => void saveSearchKey()} disabled={!searchApiKey.trim() || savingSearchKey || testingSearchKey}>
+                  {savingSearchKey
+                    ? t("quickChat.searchSaving")
+                    : searchConfig?.environmentConfigured
+                      ? t("quickChat.searchSaveOverride")
+                      : t("quickChat.searchSave")}
+                </button>
+              </div>
             </div>
           )}
 

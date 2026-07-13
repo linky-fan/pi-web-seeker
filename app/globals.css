@@ -4949,6 +4949,51 @@ html[data-theme="terminal"] .pi-quick-chat {
   text-align: right;
 }
 
+.pi-quick-chat-search-status {
+  min-height: 27px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+  padding: 5px 7px;
+  border: 1px solid var(--quick-border);
+  border-radius: 6px;
+  background: var(--quick-surface-raised);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+.pi-quick-chat-search-status > span {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.pi-quick-chat-search-status.is-testing > span {
+  background: var(--quick-blue);
+  animation: pi-quick-chat-search-pulse 1s ease-in-out infinite;
+}
+
+.pi-quick-chat-search-status.is-info > span { background: var(--quick-blue); }
+
+.pi-quick-chat-search-status.is-valid {
+  border-color: color-mix(in srgb, #16a34a 28%, var(--quick-border));
+  color: color-mix(in srgb, #16a34a 72%, var(--text));
+}
+
+.pi-quick-chat-search-status.is-valid > span { background: #16a34a; }
+
+.pi-quick-chat-search-status.is-invalid {
+  border-color: color-mix(in srgb, #dc2626 32%, var(--quick-border));
+  color: #dc2626;
+}
+
+.pi-quick-chat-search-status.is-invalid > span { background: #dc2626; }
+
 .pi-quick-chat-search-config input,
 .pi-quick-chat-promote input {
   width: 100%;
@@ -4974,6 +5019,10 @@ html[data-theme="terminal"] .pi-quick-chat {
 .pi-quick-chat-promote-actions {
   justify-content: flex-end;
   margin-top: 7px;
+}
+
+.pi-quick-chat-search-config-actions {
+  flex-wrap: wrap;
 }
 
 .pi-quick-chat-search-config button,

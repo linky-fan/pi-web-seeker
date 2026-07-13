@@ -25,7 +25,10 @@ Browser                Next.js Server              AgentSession (in-process)
   |                        |   no AgentSession or tools     |
   |                        |                               |
   |- search config ------->| /api/quick-chat/search-config |
-  |                        |   -> ~/.pi/agent/auth.json     |
+  |                        |   stored override -> AuthStorage
+  |                        |   fallback -> TAVILY_API_KEY  |
+  |- test search key ----->| POST .../search-config/test   |
+  |                        |   Tavily /usage; no key return|
   |                        |                               |
   |- promote quick chat -->| POST /api/quick-chat/promote  |
   |                        |   SessionManager.create()      |
@@ -44,7 +47,7 @@ Browser                Next.js Server              AgentSession (in-process)
 
 Session browsing is read-only and reads `.jsonl` files directly through `lib/session-reader.ts`. Sending a message creates or reuses an in-process `AgentSession` through `startRpcSession()` in `lib/rpc-manager.ts`.
 
-Quick Chat is a separate lightweight path. `components/QuickChatPanel.tsx` keeps temporary text history, the per-tab web-search toggle, and bounded source metadata in browser `sessionStorage`. With web search disabled, `POST /api/quick-chat/stream` calls the configured model through `pi-ai` without a system prompt, `AgentSession`, extensions, or tools. With search enabled, the same route performs one bounded Tavily search, emits search status and up to five sanitized sources, then passes an untrusted-evidence system prompt to `streamSimple()`. The Tavily key remains server-side in `AuthStorage` or `TAVILY_API_KEY`; `/api/quick-chat/search-config` never returns it. `POST /api/quick-chat/promote` converts the temporary history and source links into a standard persisted JSONL session; subsequent messages use the normal `AgentSession` path.
+Quick Chat is a separate lightweight path. `components/QuickChatPanel.tsx` keeps temporary text history, the per-tab web-search toggle, and bounded source metadata in browser `sessionStorage`. With web search disabled, `POST /api/quick-chat/stream` calls the configured model through `pi-ai` without a system prompt, `AgentSession`, extensions, or tools. With search enabled, the same route performs one bounded Tavily search, emits search status and up to five sanitized sources, then passes an untrusted-evidence system prompt to `streamSimple()`. Tavily credentials remain server-side: a `tavily-search` AuthStorage entry is an explicit Quick Chat override and takes precedence over the `TAVILY_API_KEY` fallback. The config routes return only source/status metadata, validate credentials through Tavily `/usage`, and never return keys or upstream response bodies. This lets a user recover from a stale Windows process or container environment key without restarting Pi Web. `POST /api/quick-chat/promote` converts the temporary history and source links into a standard persisted JSONL session; subsequent messages use the normal `AgentSession` path.
 
 Controlled browser automation is an optional `pi-opencli` package. Its extension registers four constrained tool groups and maps each action to fixed OpenCLI argv without a shell or arbitrary `eval`. The shared runtime keys one OpenCLI browser session to each formal AgentSession, publishes snapshots/actions/approvals through `/api/browser/*`, and stores screenshots only in the system temporary directory. OpenCLI's localhost daemon and Browser Bridge extension operate the user's real logged-in Chrome tab; Pi Web never receives browser credentials. Sensitive actions use an approval gate, exact-origin allowlist entries persist in `~/.pi/agent/browser-policy.json`, and full-auto mode resets when the browser session closes. The first implementation is local-only; Docker and remote browser tunneling are diagnostics/documentation paths rather than supported runtime wiring.
 
@@ -73,7 +76,8 @@ Debug Bundle import/export is separate from normal session browsing. Export buil
 - `app/api/agent/[id]/route.ts` - get runtime state or POST commands.
 - `app/api/agent/[id]/events/route.ts` - SSE stream.
 - `app/api/quick-chat/stream/route.ts` - optionally prefetch bounded Tavily results, then stream a text-only response directly from a configured model without an `AgentSession` or tools.
-- `app/api/quick-chat/search-config/route.ts` - report, save, or remove the server-side Tavily credential without exposing it to the browser.
+- `app/api/quick-chat/search-config/route.ts` - report credential sources, validate and save a manual override, or remove it to restore the environment fallback.
+- `app/api/quick-chat/search-config/test/route.ts` - validate the active or candidate Tavily credential without exposing the key or consuming a search credit.
 - `app/api/quick-chat/promote/route.ts` - persist a temporary Quick Chat history as a standard JSONL session.
 - `app/api/browser/status/route.ts` - detect the external OpenCLI binary, doctor/profile state, and built-in package state.
 - `app/api/browser/setup/route.ts` - opt a workspace into the built-in `pi-opencli` package and reload a live AgentSession.
@@ -92,7 +96,7 @@ Debug Bundle import/export is separate from normal session browsing. Export buil
 - `lib/session-export.ts` - ordinary Markdown / JSON export helpers.
 - `lib/debug-bundle.ts` - debug bundle manifest, tar safety checks, media externalization, workspace snapshot, inspect, and import helpers.
 - `lib/quick-chat.ts` - Quick Chat message/source types, size limits, validation, and promotion formatting.
-- `lib/quick-chat-search.ts` - Tavily credential resolution, bounded search, source sanitization, timeouts, and the untrusted-evidence prompt.
+- `lib/quick-chat-search.ts` - Tavily override/fallback resolution, safe validation and error codes, bounded search, source sanitization, timeouts, and the untrusted-evidence prompt.
 - `lib/browser-types.ts` - shared controlled-browser session, event, approval, policy, and status types.
 - `lib/browser-package.ts` - built-in `pi-opencli` package discovery and workspace enablement.
 - `lib/plan-mode.ts` - slash command parsing, plan document detection, Plan Mode prompts, subagent status, and read-only bash allowlist.
