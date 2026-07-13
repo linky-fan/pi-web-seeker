@@ -1,0 +1,17 @@
+{
+  "name": "pi-web-opencli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pi Web built-in package for controlled OpenCLI browser automation.",
+  "pi": {
+    "extensions": [
+      "extensions/opencli-browser.ts"
+    ],
+    "prompts": [],
+    "skills": []
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { AgentMessage, AssistantMessage, CustomMessage, ExtensionUiRequest, SessionInfo, SessionTreeNode, TextContent, ToolCallContent } from "@/lib/types";
 import { MessageView, type ComsNetResponseHint } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
@@ -630,7 +630,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         </div>
       )}
 
-      <ExtensionNotices notices={notices} statuses={extensionStatuses} />
+      <ExtensionStatusStrip statuses={extensionStatuses} />
+      <ExtensionNoticeStack notices={notices} hasStatuses={extensionStatuses.length > 0} />
 
       {extensionDialog && (
         <ExtensionDialog
@@ -787,25 +788,101 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 type ExtensionDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
 type ExtensionCustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
 
-function ExtensionNotices({
-  notices,
+type ExtensionStatusTone = "healthy" | "pending" | "error";
+
+function extensionStatusTone(text: string): ExtensionStatusTone {
+  if (/\b(?:offline|error|failed|disconnected)\b/i.test(text)) return "error";
+  if (/\b(?:connecting|reconnecting|loading)\b/i.test(text)) return "pending";
+  return "healthy";
+}
+
+function extensionStatusLabel(key: string): string {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (normalized === "pipi") return "Pi Pi";
+  if (normalized === "comsnet") return "coms-net";
+  return key;
+}
+
+function extensionStatusValue(key: string, text: string): string {
+  const separator = text.indexOf(":");
+  if (separator < 0) return text;
+  const prefix = text.slice(0, separator).toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return prefix === normalizedKey ? text.slice(separator + 1).trim() || text : text;
+}
+
+function ExtensionStatusStrip({
   statuses,
 }: {
-  notices: NoticeItem[];
   statuses: Array<{ key: string; text: string }>;
 }) {
-  if (notices.length === 0 && statuses.length === 0) return null;
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const detailId = useId();
+  const expandedStatus = expandedKey === null ? undefined : statuses.find((status) => status.key === expandedKey);
+
+  useEffect(() => {
+    if (expandedKey !== null && !expandedStatus) setExpandedKey(null);
+  }, [expandedKey, expandedStatus]);
+
+  useEffect(() => {
+    if (expandedKey === null) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setExpandedKey(null);
+    };
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setExpandedKey(null);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [expandedKey]);
+
+  if (statuses.length === 0) return null;
   return (
-    <div className="pointer-events-none absolute right-4 top-4 z-[90] flex w-[min(360px,calc(100%-32px))] flex-col gap-2">
-      {statuses.map((status) => (
-        <div
-          key={status.key}
-          className="rounded-md border border-border bg-bg-panel px-3 py-2 text-[12px] text-text-muted shadow-lg"
-        >
-          <span className="font-mono text-[11px] text-text-dim">{status.key}</span>
-          <span className="ml-2 text-text">{status.text}</span>
+    <div ref={rootRef} className="pi-extension-status-strip" aria-label="Extension status" aria-live="polite">
+      <div className="pi-extension-status-items">
+        {statuses.map((status) => (
+          <button
+            type="button"
+            key={status.key}
+            className={`pi-extension-status-chip pi-extension-status-${extensionStatusTone(status.text)}`}
+            aria-expanded={expandedKey === status.key}
+            aria-controls={expandedKey === status.key ? detailId : undefined}
+            title={`${extensionStatusLabel(status.key)}: ${status.text}`}
+            onClick={() => setExpandedKey((current) => current === status.key ? null : status.key)}
+          >
+            <span className="pi-extension-status-dot" aria-hidden="true" />
+            <span className="pi-extension-status-label">{extensionStatusLabel(status.key)}</span>
+            <span className="pi-extension-status-separator" aria-hidden="true">·</span>
+            <span className="pi-extension-status-value">{extensionStatusValue(status.key, status.text)}</span>
+          </button>
+        ))}
+      </div>
+
+      {expandedStatus && (
+        <div id={detailId} className="pi-extension-status-detail" role="status">
+          <span>{extensionStatusLabel(expandedStatus.key)}</span>
+          <strong>{expandedStatus.text}</strong>
         </div>
-      ))}
+      )}
+    </div>
+  );
+}
+
+function ExtensionNoticeStack({
+  notices,
+  hasStatuses,
+}: {
+  notices: NoticeItem[];
+  hasStatuses: boolean;
+}) {
+  if (notices.length === 0) return null;
+  return (
+    <div className={`pi-extension-notice-stack${hasStatuses ? " pi-extension-notice-stack-offset" : ""}`}>
       {notices.map((notice) => (
         <div
           key={notice.id}

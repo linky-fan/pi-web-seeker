@@ -159,11 +159,22 @@ flowchart LR
   QuickChatApi --> ConfiguredModel["pi-ai<br/>configured model"]
   Browser --> QuickChatPromote["/api/quick-chat/promote<br/>promote full history"]
   QuickChatPromote --> SessionFiles
+  Browser --> BrowserApi["/api/browser/*<br/>snapshot SSE · approvals · policy"]
+  BrowserApi --> OpenCliRuntime["pi-opencli runtime<br/>fixed command mapping"]
+  PiAgent --> BrowserTools["pi-opencli extension tools"]
+  BrowserTools --> OpenCliRuntime
+  OpenCliRuntime --> OpenCli["OpenCLI CLI + localhost daemon"]
+  OpenCli --> ChromeBridge["Browser Bridge extension"]
+  ChromeBridge --> ControlledChrome["logged-in Chrome tab"]
   Browser --> FilesApi["/api/files<br/>Explorer / Viewer"]
   FilesApi --> Workspace["workspace roots"]
 ```
 
 普通聊天通过 in-process `AgentSession` 使用完整工具能力；即时对话通过 `pi-ai` 直接流式调用已配置模型，不创建 `AgentSession` 或加载 tools。即时历史只保留在当前浏览器标签中，用户选择“转正式”后才由 `/api/quick-chat/promote` 写入标准 JSONL 会话。
+
+受控浏览器是可选能力。用户先在本机安装 OpenCLI 和 Browser Bridge，再从右侧 Browser 标签为当前工作区启用内置 `pi-opencli` package。Agent 通过受约束的 extension tools 操作真实 Chrome；Pi Web 只展示临时页面快照、操作轨迹和敏感操作审批，不嵌入第三方页面，也不会保存 Chrome 登录信息。全自动权限只在当前浏览器会话中有效，可信网站按精确 origin 保存到 `~/.pi/agent/browser-policy.json`。
+
+首版受控浏览器只支持 Pi Web 服务与 Chrome 位于同一台机器。Docker/远程部署不会自动连接宿主机的 OpenCLI daemon，且现有 Dockerfile、Compose、端口和数据卷不因此改变。
 
 会话文件默认读取 `~/.pi/agent/sessions`，模型配置读取智能体数据目录下的 `models.json`。可通过 `PI_CODING_AGENT_DIR` 指定其他 pi 数据目录。
 

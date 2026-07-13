@@ -15,6 +15,7 @@ import { UiModeToggleButton } from "./UiModeToggleButton";
 import { LocaleToggleButton } from "./LocaleToggleButton";
 import { FluidEnvironmentPanel } from "./FluidEnvironmentPanel";
 import { QuickChatPanel } from "./QuickChatPanel";
+import { BrowserPanel } from "./BrowserPanel";
 import { TopBarTypewriter } from "./BrandTypewriter";
 import { useLocale } from "@/lib/i18n";
 import { useUiMode } from "@/hooks/useUiMode";
@@ -292,10 +293,11 @@ export function AppShell() {
     return () => { tween?.kill(); };
   }, [activeTopPanel]);
 
-  // Right panel — file tabs only
+  // Right panel — file and controlled-browser tabs
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [browserPanelMaximized, setBrowserPanelMaximized] = useState(false);
   const [fluidInspectorTier, setFluidInspectorTier] = useState<FluidInspectorTier>(1);
   const [fluidCanUseTierTwo, setFluidCanUseTierTwo] = useState(() => (
     typeof window === "undefined" ? true : window.innerWidth >= FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT
@@ -506,12 +508,24 @@ export function AppShell() {
     const tabId = `file:${filePath}`;
     setFileTabs((prev) => {
       if (prev.find((t) => t.id === tabId)) return prev;
-      return [...prev, { id: tabId, label: fileName, filePath }];
+      return [...prev, { id: tabId, label: fileName, kind: "file", filePath }];
     });
     setActiveFileTabId(tabId);
     if (isFluid && !rightPanelOpen) setFluidInspectorTier(1);
     setRightPanelOpen(true);
   }, [isFluid, rightPanelOpen]);
+
+  const handleOpenBrowser = useCallback((agentSessionId = selectedSession?.id) => {
+    if (!agentSessionId) return;
+    const tabId = `browser:${agentSessionId}`;
+    setFileTabs((prev) => {
+      if (prev.some((tab) => tab.id === tabId)) return prev;
+      return [...prev, { id: tabId, label: t("browser.tab"), kind: "browser", agentSessionId, cwd: selectedSession?.cwd || activeCwd || "" }];
+    });
+    setActiveFileTabId(tabId);
+    setRightPanelOpen(true);
+    if (isFluid) setFluidInspectorTier(2);
+  }, [activeCwd, isFluid, selectedSession?.cwd, selectedSession?.id, t]);
 
   const handleOpenFileFromSidebar = useCallback((filePath: string, fileName: string) => {
     handleOpenFile(filePath, fileName);
@@ -529,6 +543,7 @@ export function AppShell() {
       const remaining = fileTabs.filter((t) => t.id !== tabId);
       return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
     });
+    if (tabId.startsWith("browser:")) setBrowserPanelMaximized(false);
   }, [fileTabs]);
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
@@ -539,6 +554,24 @@ export function AppShell() {
   const showPlaceholder = initialSessionRestored && !showChat;
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
+
+  useEffect(() => {
+    if (!selectedSession?.id) return;
+    const source = new EventSource(apiPath(`/api/browser/sessions/${encodeURIComponent(selectedSession.id)}/events`));
+    source.onmessage = (message) => {
+      try {
+        const event = JSON.parse(message.data) as { type?: string };
+        if (event.type && event.type !== "ready") handleOpenBrowser(selectedSession.id);
+      } catch {
+        // Ignore malformed/transient SSE messages.
+      }
+    };
+    return () => source.close();
+  }, [handleOpenBrowser, selectedSession?.id]);
+
+  useEffect(() => {
+    if (activeFileTab?.kind !== "browser") setBrowserPanelMaximized(false);
+  }, [activeFileTab?.kind]);
   const effectiveSidebarOpen = isFluid ? fluidDrawerOpen : sidebarOpen;
   const openFluidDrawer = useCallback((view: FluidDrawerView) => {
     setFluidDrawerView(view);
@@ -1512,7 +1545,7 @@ export function AppShell() {
 
       {/* Right panel: file viewer — always mounted, width animated via CSS */}
       <div
-        className={`right-panel-container ${isFluid ? `pi-fluid-inspector pi-fluid-inspector-tier-${fluidInspectorTier}` : "pi-right-panel"}${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}`}
+        className={`right-panel-container ${isFluid ? `pi-fluid-inspector pi-fluid-inspector-tier-${fluidInspectorTier}` : "pi-right-panel"}${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${activeFileTab?.kind === "browser" ? " pi-browser-panel-active" : ""}${browserPanelMaximized ? " pi-browser-panel-maximized" : ""}`}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -1526,17 +1559,40 @@ export function AppShell() {
             <TabBar
               tabs={fileTabs}
               activeTabId={activeFileTabId ?? ""}
-              onSelectTab={setActiveFileTabId}
+              onSelectTab={(tabId) => {
+                setActiveFileTabId(tabId);
+                const tab = fileTabs.find((candidate) => candidate.id === tabId);
+                if (isFluid && tab?.kind === "browser") setFluidInspectorTier(2);
+              }}
               onCloseTab={handleCloseFileTab}
             />
           </div>
-
+          <button
+            className="pi-browser-open-tab"
+            onClick={() => handleOpenBrowser()}
+            disabled={!selectedSession}
+            title={selectedSession ? t("browser.openTab") : t("browser.requiresSession")}
+            aria-label={selectedSession ? t("browser.openTab") : t("browser.requiresSession")}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+            </svg>
+          </button>
         </div>
 
-        {/* File content */}
+        {/* File or controlled-browser content */}
         <div style={{ flex: 1, overflow: "hidden" }}>
-          {activeFileTab?.filePath ? (
+          {activeFileTab?.kind === "file" ? (
             <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} />
+          ) : activeFileTab?.kind === "browser" ? (
+            <BrowserPanel
+              agentSessionId={activeFileTab.agentSessionId}
+              cwd={activeFileTab.cwd}
+              maximized={browserPanelMaximized}
+              onToggleMaximize={() => setBrowserPanelMaximized((value) => !value)}
+              onCloseTab={() => handleCloseFileTab(activeFileTab.id)}
+            />
           ) : isFluid ? (
             <div className="pi-fluid-inspector-empty">
               <div className="pi-fluid-inspector-empty-icon">
