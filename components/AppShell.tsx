@@ -31,6 +31,11 @@ type FluidContextTab = "session" | "system";
 type FluidInspectorTier = 1 | 2;
 type FluidMetricTone = "accent" | "warning" | "danger";
 
+interface BrowserMaxNavigationSnapshot {
+  sidebarOpen: boolean;
+  fluidDrawerOpen: boolean;
+}
+
 interface FluidMetric {
   key: string;
   label: string;
@@ -298,6 +303,7 @@ export function AppShell() {
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [browserPanelMaximized, setBrowserPanelMaximized] = useState(false);
+  const browserMaxNavigationSnapshotRef = useRef<BrowserMaxNavigationSnapshot | null>(null);
   const [fluidInspectorTier, setFluidInspectorTier] = useState<FluidInspectorTier>(1);
   const [fluidCanUseTierTwo, setFluidCanUseTierTwo] = useState(() => (
     typeof window === "undefined" ? true : window.innerWidth >= FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT
@@ -543,8 +549,8 @@ export function AppShell() {
       const remaining = fileTabs.filter((t) => t.id !== tabId);
       return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
     });
-    if (tabId.startsWith("browser:")) setBrowserPanelMaximized(false);
-  }, [fileTabs]);
+    if (tabId === activeFileTabId && tabId.startsWith("browser:")) setBrowserPanelMaximized(false);
+  }, [activeFileTabId, fileTabs]);
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
@@ -554,6 +560,19 @@ export function AppShell() {
   const showPlaceholder = initialSessionRestored && !showChat;
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
+  const browserPanelIsMaximized = browserPanelMaximized && activeFileTab?.kind === "browser";
+
+  const handleToggleBrowserMaximize = useCallback(() => {
+    if (browserPanelMaximized) {
+      setBrowserPanelMaximized(false);
+      return;
+    }
+    browserMaxNavigationSnapshotRef.current = { sidebarOpen, fluidDrawerOpen };
+    setSidebarOpen(false);
+    setFluidDrawerOpen(false);
+    setActiveTopPanel(null);
+    setBrowserPanelMaximized(true);
+  }, [browserPanelMaximized, fluidDrawerOpen, sidebarOpen]);
 
   useEffect(() => {
     if (!selectedSession?.id) return;
@@ -572,12 +591,27 @@ export function AppShell() {
   useEffect(() => {
     if (activeFileTab?.kind !== "browser") setBrowserPanelMaximized(false);
   }, [activeFileTab?.kind]);
+
+  useEffect(() => {
+    setBrowserPanelMaximized(false);
+  }, [isFluid, selectedSession?.id]);
+
+  useEffect(() => {
+    if (browserPanelMaximized) return;
+    const snapshot = browserMaxNavigationSnapshotRef.current;
+    if (!snapshot) return;
+    browserMaxNavigationSnapshotRef.current = null;
+    setSidebarOpen(snapshot.sidebarOpen);
+    setFluidDrawerOpen(snapshot.fluidDrawerOpen);
+  }, [browserPanelMaximized]);
+
   const effectiveSidebarOpen = isFluid ? fluidDrawerOpen : sidebarOpen;
   const openFluidDrawer = useCallback((view: FluidDrawerView) => {
+    if (browserPanelMaximized) return;
     setFluidDrawerView(view);
     setFluidDrawerOpen((open) => !(open && fluidDrawerView === view));
     setActiveTopPanel(null);
-  }, [fluidDrawerView]);
+  }, [browserPanelMaximized, fluidDrawerView]);
 
   const formatCompactNumber = useCallback((n: number) => {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -939,7 +973,7 @@ export function AppShell() {
       style={{ display: "none" }}
     />
     <div
-      className={`pi-app-shell${isFluid ? " pi-fluid-shell" : " pi-classic-shell"}`}
+      className={`pi-app-shell${isFluid ? " pi-fluid-shell" : " pi-classic-shell"}${browserPanelIsMaximized ? " pi-browser-focus-mode" : ""}`}
       style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}
     >
       {/* Mobile overlay backdrop */}
@@ -1545,7 +1579,7 @@ export function AppShell() {
 
       {/* Right panel: file viewer — always mounted, width animated via CSS */}
       <div
-        className={`right-panel-container ${isFluid ? `pi-fluid-inspector pi-fluid-inspector-tier-${fluidInspectorTier}` : "pi-right-panel"}${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${activeFileTab?.kind === "browser" ? " pi-browser-panel-active" : ""}${browserPanelMaximized ? " pi-browser-panel-maximized" : ""}`}
+        className={`right-panel-container ${isFluid ? `pi-fluid-inspector pi-fluid-inspector-tier-${fluidInspectorTier}` : "pi-right-panel"}${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${activeFileTab?.kind === "browser" ? " pi-browser-panel-active" : ""}${browserPanelIsMaximized ? " pi-browser-panel-maximized" : ""}`}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -1589,8 +1623,8 @@ export function AppShell() {
             <BrowserPanel
               agentSessionId={activeFileTab.agentSessionId}
               cwd={activeFileTab.cwd}
-              maximized={browserPanelMaximized}
-              onToggleMaximize={() => setBrowserPanelMaximized((value) => !value)}
+              maximized={browserPanelIsMaximized}
+              onToggleMaximize={handleToggleBrowserMaximize}
               onCloseTab={() => handleCloseFileTab(activeFileTab.id)}
             />
           ) : isFluid ? (
@@ -1613,7 +1647,7 @@ export function AppShell() {
           )}
         </div>
       </div>
-      {isFluid && (
+      {isFluid && !browserPanelIsMaximized && (
         <button
           className="pi-fluid-dock-handle"
           onClick={handleRightPanelToggleClick}
@@ -1629,7 +1663,7 @@ export function AppShell() {
       )}
     </div>
     {/* File panel toggle — always visible at top-right */}
-    {!isFluid && <button
+    {!isFluid && !browserPanelIsMaximized && <button
       className="pi-right-panel-toggle"
       onClick={handleRightPanelToggleClick}
       title={rightPanelToggleTitle}
