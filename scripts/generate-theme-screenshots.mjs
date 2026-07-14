@@ -30,19 +30,25 @@ const themes = [
     id: "solarized",
     label: "Solarized",
     note: "Low-contrast warm code",
-    vars: { bg: "#fdf6e3", bgPanel: "#eee8d5", bgHover: "#e4dac0", bgSelected: "#d8cfb5", border: "#c8bea6", text: "#073642", textMuted: "#657b83", textDim: "#93a1a1", accent: "#268bd2", userBg: "#e5f2f2", assistantBg: "#fdf6e3", toolBg: "#f7efd9" },
+    vars: { bg: "#fdf6e3", bgPanel: "#eee8d5", bgHover: "#e4dac0", bgSelected: "#d8cfb5", border: "#c8bea6", text: "#073642", textMuted: "#586e75", textDim: "#839496", accent: "#006cb4", userBg: "#e5f2f2", assistantBg: "#fdf6e3", toolBg: "#f7efd9" },
   },
   {
-    id: "tokyo",
-    label: "Tokyo Night",
-    note: "Dark focused session",
-    vars: { bg: "#14151f", bgPanel: "#1a1b26", bgHover: "#24283b", bgSelected: "#2f354d", border: "#3b4261", text: "#c0caf5", textMuted: "#9aa5ce", textDim: "#565f89", accent: "#7aa2f7", userBg: "#1c2743", assistantBg: "#14151f", toolBg: "#191c2a" },
+    id: "lavender",
+    label: "Lavender",
+    note: "Soft violet reading workspace",
+    vars: { bg: "#fcfaff", bgPanel: "#f3eefa", bgHover: "#eae2f5", bgSelected: "#ded2ed", border: "#d7cbe3", text: "#241b2e", textMuted: "#6e617a", textDim: "#a395af", accent: "#7c3aed", userBg: "#f0e7ff", assistantBg: "#fcfaff", toolBg: "#f7f2fb" },
   },
   {
     id: "gruvbox",
     label: "Gruvbox",
     note: "Warm terminal palette",
     vars: { bg: "#1d2021", bgPanel: "#282828", bgHover: "#32302f", bgSelected: "#3c3836", border: "#504945", text: "#ebdbb2", textMuted: "#c7b99a", textDim: "#928374", accent: "#fabd2f", userBg: "#332b1d", assistantBg: "#1d2021", toolBg: "#262421" },
+  },
+  {
+    id: "cobalt",
+    label: "Cobalt",
+    note: "High-contrast cobalt workspace",
+    vars: { bg: "#081a3a", bgPanel: "#0d2855", bgHover: "#15366e", bgSelected: "#204581", border: "#2d5590", text: "#f3f7ff", textMuted: "#a9bde0", textDim: "#6f89b5", accent: "#ff9f6e", userBg: "#173664", assistantBg: "#081a3a", toolBg: "#0b2249" },
   },
 ];
 
@@ -285,8 +291,12 @@ const chrome = findChrome();
 const outputDir = resolve("docs/screenshots");
 mkdirSync(outputDir, { recursive: true });
 const tempDir = mkdtempSync(join(tmpdir(), "pi-web-readme-shots-"));
+const requested = new Set(process.argv.slice(2));
+const selectedThemes = requested.size > 0
+  ? themes.filter((theme) => requested.has(theme.id))
+  : themes;
 
-for (const theme of themes) {
+for (const theme of selectedThemes) {
   capture(chrome, tempDir, {
     id: `theme-${theme.id}`,
     html: themeHtml(theme),
@@ -296,20 +306,22 @@ for (const theme of themes) {
   });
 }
 
-capture(chrome, tempDir, {
-  id: "agents-md-draft",
-  html: agentsHtml("draft"),
-  outputPath: join(outputDir, "agents-md-draft.jpg"),
-  width: 1020,
-  height: 720,
-  jpeg: true,
-});
+if (requested.size === 0 || requested.has("agents")) {
+  capture(chrome, tempDir, {
+    id: "agents-md-draft",
+    html: agentsHtml("draft"),
+    outputPath: join(outputDir, "agents-md-draft.jpg"),
+    width: 1020,
+    height: 720,
+    jpeg: true,
+  });
 
-capture(chrome, tempDir, {
-  id: "agents-md-ready",
-  html: agentsHtml("ready"),
-  outputPath: join(outputDir, "agents-md-ready.jpg"),
-  width: 1020,
-  height: 720,
-  jpeg: true,
-});
+  capture(chrome, tempDir, {
+    id: "agents-md-ready",
+    html: agentsHtml("ready"),
+    outputPath: join(outputDir, "agents-md-ready.jpg"),
+    width: 1020,
+    height: 720,
+    jpeg: true,
+  });
+}

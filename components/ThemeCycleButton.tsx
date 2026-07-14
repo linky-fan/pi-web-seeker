@@ -5,6 +5,9 @@ import { THEME_OPTIONS, type ThemeId } from "@/lib/themes";
 import { useTheme } from "@/hooks/useTheme";
 import { useLocale } from "@/lib/i18n";
 
+const LIGHT_THEMES = THEME_OPTIONS.filter((option) => !option.isDark);
+const DARK_THEMES = THEME_OPTIONS.filter((option) => option.isDark);
+
 interface Props {
   variant?: "topbar" | "footer" | "rail";
 }
@@ -23,8 +26,15 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
     const close = (event: MouseEvent) => {
       if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
     };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
   }, [open]);
 
   const chooseTheme = useCallback((next: ThemeId, origin: { x: number; y: number }) => {
@@ -137,8 +147,8 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
           left: isRail ? "calc(100% + 8px)" : isTopbar ? 2 : 0,
           top: isTopbar ? "calc(100% + 6px)" : undefined,
           bottom: isRail ? 0 : isFooter ? "calc(100% + 8px)" : undefined,
-          width: isRail ? 210 : 190,
-          maxHeight: isRail ? "min(326px, calc(100dvh - 24px))" : 326,
+          width: 218,
+          maxHeight: isRail ? "min(396px, calc(100dvh - 24px))" : 396,
           overflowY: "auto",
           padding: 6,
           border: "1px solid var(--border)",
@@ -148,67 +158,122 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
           zIndex: 700,
         }}
       >
-        {THEME_OPTIONS.map((option) => {
-          const selected = option.id === theme;
-          return (
-            <button
-              key={option.id}
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                chooseTheme(option.id, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-              }}
+        {([
+          [t("theme.light"), LIGHT_THEMES],
+          [t("theme.dark"), DARK_THEMES],
+        ] as const).map(([groupLabel, options], groupIndex) => (
+          <div key={groupLabel} style={{ marginTop: groupIndex === 0 ? 0 : 5 }}>
+            <div
               style={{
-                width: "100%",
-                height: 34,
+                height: 22,
                 display: "flex",
                 alignItems: "center",
-                gap: 9,
                 padding: "0 8px",
-                border: "none",
-                borderRadius: 6,
-                background: selected ? "var(--bg-selected)" : "transparent",
-                color: selected ? "var(--text)" : "var(--text-muted)",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: selected ? 650 : 500,
-                textAlign: "left",
+                color: "var(--text-dim)",
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
               }}
-              onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = "var(--bg-hover)"; }}
-              onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = "transparent"; }}
             >
-              <span
-                aria-hidden="true"
-                style={{
-                  width: 34,
-                  height: 18,
-                  borderRadius: 5,
-                  background: option.surface,
-                  border: "1px solid var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  paddingLeft: 4,
-                  flexShrink: 0,
-                }}
-              >
-                <span
-                  style={{
-                    width: 9,
-                    height: 9,
-                    borderRadius: "50%",
-                    background: option.accent,
-                    boxShadow: "0 0 0 2px rgba(255,255,255,0.6)",
+              {groupLabel}
+            </div>
+            {options.map((option) => {
+              const selected = option.id === theme;
+              return (
+                <button
+                  key={option.id}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    chooseTheme(option.id, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
                   }}
-                />
-              </span>
-              <span style={{ flex: 1 }}>{option.label}</span>
-              {selected && (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-            </button>
-          );
-        })}
+                  style={{
+                    width: "100%",
+                    height: 34,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    padding: "0 8px",
+                    border: "none",
+                    borderRadius: 6,
+                    background: selected ? "var(--bg-selected)" : "transparent",
+                    color: selected ? "var(--text)" : "var(--text-muted)",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: selected ? 650 : 500,
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = "transparent"; }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 44,
+                      height: 20,
+                      position: "relative",
+                      overflow: "hidden",
+                      borderRadius: 5,
+                      background: option.vars.bg,
+                      border: `1px solid ${option.vars.border}`,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        inset: "3px 3px 3px 15px",
+                        borderRadius: 3,
+                        background: option.vars.bgPanel,
+                      }}
+                    />
+                    <span
+                      style={{
+                        position: "absolute",
+                        left: 4,
+                        top: 5,
+                        width: 7,
+                        height: 7,
+                        borderRadius: 2,
+                        background: option.vars.accent,
+                      }}
+                    />
+                    <span
+                      style={{
+                        position: "absolute",
+                        left: 19,
+                        top: 7,
+                        width: 14,
+                        height: 2,
+                        borderRadius: 2,
+                        background: option.vars.text,
+                        opacity: 0.88,
+                      }}
+                    />
+                    <span
+                      style={{
+                        position: "absolute",
+                        left: 19,
+                        top: 11,
+                        width: 9,
+                        height: 2,
+                        borderRadius: 2,
+                        background: option.vars.textMuted,
+                        opacity: 0.72,
+                      }}
+                    />
+                  </span>
+                  <span style={{ flex: 1 }}>{option.label}</span>
+                  {selected && (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
     )}
     </span>

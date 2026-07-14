@@ -114,57 +114,6 @@ html[data-theme="midnight"] {
   --bg-subtle: rgba(52,211,153,0.08);
 }
 
-html[data-theme="papermod"] {
-  --bg: #fffaf0;
-  --bg-panel: #f3ead7;
-  --bg-hover: #ead9b8;
-  --bg-selected: #dec89c;
-  --border: #d2be98;
-  --text: #2f281f;
-  --text-muted: #76664f;
-  --text-dim: #a79271;
-  --accent: #b45309;
-  --accent-hover: #92400e;
-  --user-bg: #fff4d6;
-  --assistant-bg: #fffaf0;
-  --tool-bg: #f7efd9;
-  --bg-subtle: rgba(180,83,9,0.07);
-}
-
-html[data-theme="ananke"] {
-  --bg: #f7fcfd;
-  --bg-panel: #e7f3f4;
-  --bg-hover: #d2e9eb;
-  --bg-selected: #bfdee1;
-  --border: #aacfd3;
-  --text: #102629;
-  --text-muted: #4f6970;
-  --text-dim: #7f999f;
-  --accent: #007c89;
-  --accent-hover: #00656f;
-  --user-bg: #e4f7f8;
-  --assistant-bg: #f7fcfd;
-  --tool-bg: #edf7f0;
-  --bg-subtle: rgba(0,124,137,0.07);
-}
-
-html[data-theme="terminal"] {
-  --bg: #0f1317;
-  --bg-panel: #15191d;
-  --bg-hover: #222831;
-  --bg-selected: #313944;
-  --border: #374151;
-  --text: #f3f4f6;
-  --text-muted: #b8c0cc;
-  --text-dim: #7f8997;
-  --accent: #ffb454;
-  --accent-hover: #ffd18a;
-  --user-bg: #2a2116;
-  --assistant-bg: #0f1317;
-  --tool-bg: #171d23;
-  --bg-subtle: rgba(255,180,84,0.08);
-}
-
 html[data-theme="solarized"] {
   --bg: #fdf6e3;
   --bg-panel: #eee8d5;
@@ -172,48 +121,31 @@ html[data-theme="solarized"] {
   --bg-selected: #d8cfb5;
   --border: #c8bea6;
   --text: #073642;
-  --text-muted: #657b83;
-  --text-dim: #93a1a1;
-  --accent: #268bd2;
-  --accent-hover: #006cb4;
+  --text-muted: #586e75;
+  --text-dim: #839496;
+  --accent: #006cb4;
+  --accent-hover: #005a96;
   --user-bg: #e5f2f2;
   --assistant-bg: #fdf6e3;
   --tool-bg: #f7efd9;
-  --bg-subtle: rgba(38,139,210,0.07);
+  --bg-subtle: rgba(0,108,180,0.07);
 }
 
-html[data-theme="dracula"] {
-  --bg: #1e1f29;
-  --bg-panel: #282a36;
-  --bg-hover: #343746;
-  --bg-selected: #44475a;
-  --border: #4b4f63;
-  --text: #f8f8f2;
-  --text-muted: #b8b8c8;
-  --text-dim: #777a8f;
-  --accent: #bd93f9;
-  --accent-hover: #d6b6ff;
-  --user-bg: #302547;
-  --assistant-bg: #1e1f29;
-  --tool-bg: #242631;
-  --bg-subtle: rgba(189,147,249,0.08);
-}
-
-html[data-theme="nord"] {
-  --bg: #242933;
-  --bg-panel: #2e3440;
-  --bg-hover: #3b4252;
-  --bg-selected: #434c5e;
-  --border: #4c566a;
-  --text: #eceff4;
-  --text-muted: #d8dee9;
-  --text-dim: #8792a3;
-  --accent: #88c0d0;
-  --accent-hover: #9fceda;
-  --user-bg: #263947;
-  --assistant-bg: #242933;
-  --tool-bg: #2a303b;
-  --bg-subtle: rgba(136,192,208,0.08);
+html[data-theme="lavender"] {
+  --bg: #fcfaff;
+  --bg-panel: #f3eefa;
+  --bg-hover: #eae2f5;
+  --bg-selected: #ded2ed;
+  --border: #d7cbe3;
+  --text: #241b2e;
+  --text-muted: #6e617a;
+  --text-dim: #a395af;
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --user-bg: #f0e7ff;
+  --assistant-bg: #fcfaff;
+  --tool-bg: #f7f2fb;
+  --bg-subtle: rgba(124,58,237,0.055);
 }
 
 html[data-theme="gruvbox"] {
@@ -233,23 +165,6 @@ html[data-theme="gruvbox"] {
   --bg-subtle: rgba(250,189,47,0.08);
 }
 
-html[data-theme="tokyo"] {
-  --bg: #14151f;
-  --bg-panel: #1a1b26;
-  --bg-hover: #24283b;
-  --bg-selected: #2f354d;
-  --border: #3b4261;
-  --text: #c0caf5;
-  --text-muted: #9aa5ce;
-  --text-dim: #565f89;
-  --accent: #7aa2f7;
-  --accent-hover: #9ab8ff;
-  --user-bg: #1c2743;
-  --assistant-bg: #14151f;
-  --tool-bg: #191c2a;
-  --bg-subtle: rgba(122,162,247,0.08);
-}
-
 html[data-theme="catppuccin"] {
   --bg: #181825;
   --bg-panel: #1e1e2e;
@@ -265,6 +180,23 @@ html[data-theme="catppuccin"] {
   --assistant-bg: #181825;
   --tool-bg: #1d1d2b;
   --bg-subtle: rgba(203,166,247,0.08);
+}
+
+html[data-theme="cobalt"] {
+  --bg: #081a3a;
+  --bg-panel: #0d2855;
+  --bg-hover: #15366e;
+  --bg-selected: #204581;
+  --border: #2d5590;
+  --text: #f3f7ff;
+  --text-muted: #a9bde0;
+  --text-dim: #6f89b5;
+  --accent: #ff9f6e;
+  --accent-hover: #ffb48e;
+  --user-bg: #173664;
+  --assistant-bg: #081a3a;
+  --tool-bg: #0b2249;
+  --bg-subtle: rgba(255,159,110,0.09);
 }
 
 .pi-file-row:hover {
@@ -3734,12 +3666,9 @@ html[data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-c
 
 html[data-theme="ink"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel,
 html[data-theme="midnight"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel,
-html[data-theme="terminal"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel,
-html[data-theme="dracula"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel,
-html[data-theme="nord"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel,
 html[data-theme="gruvbox"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel,
-html[data-theme="tokyo"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel,
-html[data-theme="catppuccin"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel {
+html[data-theme="catppuccin"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel,
+html[data-theme="cobalt"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel {
   border-color: color-mix(in srgb, white 18%, var(--border));
   background:
     linear-gradient(135deg, color-mix(in srgb, white 18%, transparent), color-mix(in srgb, white 6%, transparent) 46%, color-mix(in srgb, var(--accent) 10%, transparent)),
@@ -3756,12 +3685,9 @@ html[data-theme="catppuccin"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid
 
 html[data-theme="ink"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-command-surface:focus-within),
 html[data-theme="midnight"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-command-surface:focus-within),
-html[data-theme="terminal"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-command-surface:focus-within),
-html[data-theme="dracula"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-command-surface:focus-within),
-html[data-theme="nord"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-command-surface:focus-within),
 html[data-theme="gruvbox"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-command-surface:focus-within),
-html[data-theme="tokyo"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-command-surface:focus-within),
-html[data-theme="catppuccin"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-command-surface:focus-within) {
+html[data-theme="catppuccin"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-command-surface:focus-within),
+html[data-theme="cobalt"][data-ui="fluid"] .pi-fluid-composer-inner.pi-fluid-composer-panel:has(.pi-command-surface:focus-within) {
   box-shadow:
     0 1px 0 color-mix(in srgb, white 24%, transparent) inset,
     0 -1px 0 color-mix(in srgb, var(--accent) 12%, transparent) inset,
@@ -4515,10 +4441,7 @@ html[data-ui="fluid"] .pi-fluid-env-delta-del {
   font-size: 13px;
 }
 
-html.dark .pi-quick-chat,
-html[data-theme="ink"] .pi-quick-chat,
-html[data-theme="midnight"] .pi-quick-chat,
-html[data-theme="terminal"] .pi-quick-chat {
+html.dark .pi-quick-chat {
   --quick-blue: #3b82f6;
   --quick-blue-hover: #60a5fa;
   --quick-canvas: color-mix(in srgb, var(--bg) 94%, var(--bg-panel));

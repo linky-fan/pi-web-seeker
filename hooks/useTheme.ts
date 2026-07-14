@@ -35,8 +35,16 @@ function applyTheme(theme: ThemeId): void {
 
 function getSnapshot(): ThemeId {
   if (typeof document === "undefined") return DEFAULT_THEME;
-  const theme = normalizeTheme(document.documentElement.dataset.theme);
+  const storedTheme = document.documentElement.dataset.theme;
+  const theme = normalizeTheme(storedTheme);
   applyTheme(theme);
+  if (storedTheme !== theme) {
+    try {
+      localStorage.setItem("pi-theme", theme);
+    } catch {
+      // ignore storage errors (private mode, quota, etc.)
+    }
+  }
   return theme;
 }
 

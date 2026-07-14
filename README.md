@@ -61,13 +61,13 @@ PI_WEB_ACCESS_TOKEN=your-long-random-token pi-web
 
 ## 界面预览
 
-| Rose | Solarized |
+| Lavender | Cobalt |
 | --- | --- |
-| ![Rose theme preview](docs/screenshots/theme-rose.png) | ![Solarized theme preview](docs/screenshots/theme-solarized.png) |
+| ![Lavender theme preview](docs/screenshots/theme-lavender.png) | ![Cobalt theme preview](docs/screenshots/theme-cobalt.png) |
 
-| Tokyo Night | Gruvbox |
+| Rose | Gruvbox |
 | --- | --- |
-| ![Tokyo Night theme preview](docs/screenshots/theme-tokyo.png) | ![Gruvbox theme preview](docs/screenshots/theme-gruvbox.png) |
+| ![Rose theme preview](docs/screenshots/theme-rose.png) | ![Gruvbox theme preview](docs/screenshots/theme-gruvbox.png) |
 
 ### Plan Mode
 
