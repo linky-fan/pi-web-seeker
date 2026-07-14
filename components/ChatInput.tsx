@@ -72,6 +72,12 @@ interface Props {
   promptHistory?: string[];
   draftStorageKey?: string;
   cwd?: string | null;
+  onActivityChange?: (activity: ComposerActivity) => void;
+}
+
+export interface ComposerActivity {
+  focused: boolean;
+  hasDraft: boolean;
 }
 
 export interface ChatInputHandle {
@@ -217,6 +223,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   promptHistory = [],
   draftStorageKey,
   cwd,
+  onActivityChange,
 }: Props, ref) {
   const { t } = useLocale();
   const { isFluid } = useUiMode();
@@ -237,6 +244,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
   const [slashNotice, setSlashNotice] = useState<string | null>(null);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const hasDraft = value.trim().length > 0 || attachedImages.length > 0;
+
+  useEffect(() => {
+    onActivityChange?.({ focused: composerFocused, hasDraft });
+  }, [composerFocused, hasDraft, onActivityChange]);
+
+  useEffect(() => () => {
+    onActivityChange?.({ focused: false, hasDraft: false });
+  }, [onActivityChange]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionPanelRef = useRef<HTMLDivElement>(null);
@@ -1201,6 +1218,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             className="pi-command-textarea"
             ref={textareaRef}
             value={value}
+            onFocus={() => setComposerFocused(true)}
+            onBlur={() => setComposerFocused(false)}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onInput={handleInput}

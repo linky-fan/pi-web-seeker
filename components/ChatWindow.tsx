@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { AgentMessage, AssistantMessage, CustomMessage, ExtensionUiRequest, SessionInfo, SessionTreeNode, TextContent, ToolCallContent } from "@/lib/types";
 import { MessageView, type ComsNetResponseHint } from "./MessageView";
-import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { ChatInput, type ChatInputHandle, type ComposerActivity } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { AgentsMdStatus } from "./AgentsMdStatus";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
@@ -25,6 +25,7 @@ interface Props {
   onSessionStatsChange?: (stats: { tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }; cost?: number } | null) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
   onTaskStatusChange?: (status: "done" | "running" | "error", message?: string | null) => void;
+  onComposerActivityChange?: (activity: ComposerActivity) => void;
 }
 
 const LAZY_RECENT_MESSAGE_COUNT = 24;
@@ -280,7 +281,7 @@ function LazyMessageSlot({
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange, onTaskStatusChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange, onTaskStatusChange, onComposerActivityChange }: Props) {
   const { isFluid } = useUiMode();
   const {
     loading, error, messages, entryIds, streamState,
@@ -571,6 +572,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       promptHistory={promptHistory}
       draftStorageKey={draftStorageKey}
       cwd={activeCwd}
+      onActivityChange={onComposerActivityChange}
     />
   );
 

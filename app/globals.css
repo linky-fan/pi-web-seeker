@@ -3364,16 +3364,58 @@ html[data-ui="fluid"] .pi-fluid-workspace-title {
   overflow: hidden;
 }
 
+html[data-ui="fluid"] .pi-fluid-workspace-title-line {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
 html[data-ui="fluid"] .pi-fluid-workspace-name {
   display: block;
   min-width: 0;
   max-width: 100%;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
   font-size: 12.5px;
   font-weight: 650;
+}
+
+html[data-ui="fluid"] .pi-fluid-session-typewriter {
+  width: 200px;
+  min-width: 200px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+html[data-ui="fluid"] .pi-fluid-session-typewriter[data-active="false"] {
+  display: none;
+}
+
+html[data-ui="fluid"] .pi-fluid-session-typewriter-separator {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+html[data-ui="fluid"] .pi-fluid-session-typewriter-copy {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: clip;
 }
 
 html[data-ui="fluid"] .pi-fluid-workspace-meta {
@@ -3490,6 +3532,10 @@ html[data-ui="fluid"] .pi-fluid-meta-fallback {
   }
 
   html[data-ui="fluid"] .pi-fluid-workspace-meta {
+    display: none;
+  }
+
+  html[data-ui="fluid"] .pi-fluid-session-typewriter {
     display: none;
   }
 

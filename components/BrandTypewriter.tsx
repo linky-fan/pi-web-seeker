@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { APP_NAME } from "@/lib/branding";
 
 const TYPEWRITER_PHRASES = [
@@ -43,22 +43,62 @@ const TYPEWRITER_PHRASES = [
   "dodge this regression.",
 ];
 
-function Typewriter() {
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+
+  return matches;
+}
+
+function useDocumentVisible(): boolean {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState === "visible");
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+
+  return visible;
+}
+
+interface TypewriterProps {
+  active?: boolean;
+  resetKey?: string | number | null;
+}
+
+export function Typewriter({ active = true, resetKey = null }: TypewriterProps) {
   const [phraseIdx, setPhraseIdx] = useState(0);
   const [text, setText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [caretOn, setCaretOn] = useState(true);
+  const pageVisible = useDocumentVisible();
+  const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const enabled = active && pageVisible;
 
   useEffect(() => {
     setPhraseIdx(Math.floor(Math.random() * TYPEWRITER_PHRASES.length));
-  }, []);
+    setText("");
+    setDeleting(false);
+    setCaretOn(true);
+  }, [enabled, reduceMotion, resetKey]);
 
   useEffect(() => {
+    if (!enabled || reduceMotion) return undefined;
     const blink = setInterval(() => setCaretOn((v) => !v), 530);
     return () => clearInterval(blink);
-  }, []);
+  }, [enabled, reduceMotion]);
 
   useEffect(() => {
+    if (!enabled || reduceMotion) return undefined;
     const current = TYPEWRITER_PHRASES[phraseIdx];
     let timeout: ReturnType<typeof setTimeout>;
     if (!deleting && text === current) {
@@ -71,12 +111,63 @@ function Typewriter() {
       timeout = setTimeout(() => setText(next), deleting ? 28 : 55);
     }
     return () => clearTimeout(timeout);
-  }, [text, deleting, phraseIdx]);
+  }, [deleting, enabled, phraseIdx, reduceMotion, text]);
+
+  if (!enabled) return null;
+
+  const displayText = reduceMotion ? TYPEWRITER_PHRASES[phraseIdx] : text;
 
   return (
-    <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
-      {text}
-      <span style={{ opacity: caretOn ? 1 : 0, color: "var(--accent)", marginLeft: 1 }}>▍</span>
+    <span aria-hidden="true" style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+      {displayText}
+      <span style={{ opacity: reduceMotion || caretOn ? 1 : 0, color: "var(--accent)", marginLeft: 1 }}>▍</span>
+    </span>
+  );
+}
+
+interface FluidSessionTypewriterProps {
+  active: boolean;
+  resetKey: string;
+}
+
+export function FluidSessionTypewriter({ active, resetKey }: FluidSessionTypewriterProps) {
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const [hasRoom, setHasRoom] = useState(false);
+  const pageVisible = useDocumentVisible();
+  const wideViewport = useMediaQuery("(min-width: 861px)");
+
+  useEffect(() => {
+    const title = wrapRef.current?.parentElement;
+    if (!title) return undefined;
+    const update = () => {
+      const sessionName = title.querySelector<HTMLElement>(".pi-fluid-workspace-name");
+      const titleWidth = sessionName?.scrollWidth ?? 0;
+      const reservedTypewriterWidth = 208;
+      setHasRoom(title.clientWidth >= 310 && titleWidth <= title.clientWidth - reservedTypewriterWidth);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(title);
+    return () => observer.disconnect();
+  }, [resetKey]);
+
+  const enabled = active && pageVisible && wideViewport && hasRoom;
+
+  return (
+    <span
+      ref={wrapRef}
+      className="pi-fluid-session-typewriter"
+      data-active={enabled ? "true" : "false"}
+      aria-hidden="true"
+    >
+      {enabled && (
+        <>
+          <span className="pi-fluid-session-typewriter-separator">·</span>
+          <span className="pi-fluid-session-typewriter-copy">
+            <Typewriter active resetKey={resetKey} />
+          </span>
+        </>
+      )}
     </span>
   );
 }

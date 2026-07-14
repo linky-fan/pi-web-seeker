@@ -16,14 +16,14 @@ import { LocaleToggleButton } from "./LocaleToggleButton";
 import { FluidEnvironmentPanel } from "./FluidEnvironmentPanel";
 import { QuickChatPanel } from "./QuickChatPanel";
 import { BrowserPanel } from "./BrowserPanel";
-import { TopBarTypewriter } from "./BrandTypewriter";
+import { FluidSessionTypewriter, TopBarTypewriter } from "./BrandTypewriter";
 import { useLocale } from "@/lib/i18n";
 import { useUiMode } from "@/hooks/useUiMode";
 import { APP_NAME } from "@/lib/branding";
 import { revealElement } from "@/lib/motion";
 import { apiPath } from "@/lib/api-path";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
-import type { ChatInputHandle } from "./ChatInput";
+import type { ChatInputHandle, ComposerActivity } from "./ChatInput";
 
 type TaskStatus = "done" | "running" | "error";
 type FluidDrawerView = "sessions" | "explorer" | "context";
@@ -221,6 +221,7 @@ export function AppShell() {
   const [fluidDrawerView, setFluidDrawerView] = useState<FluidDrawerView>("sessions");
   const [fluidContextTab, setFluidContextTab] = useState<FluidContextTab>("session");
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("done");
+  const [composerActivity, setComposerActivity] = useState<ComposerActivity>({ focused: false, hasDraft: false });
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
   const topPanelDropdownRef = useRef<HTMLDivElement>(null);
@@ -261,6 +262,10 @@ export function AppShell() {
 
   const handleTaskStatusChange = useCallback((status: TaskStatus) => {
     setTaskStatus(status);
+  }, []);
+
+  const handleComposerActivityChange = useCallback((activity: ComposerActivity) => {
+    setComposerActivity(activity);
   }, []);
 
   useEffect(() => {
@@ -1496,13 +1501,21 @@ export function AppShell() {
               </span>
             </div>
             <div className="pi-fluid-workspace-title">
-              <span
-                className="pi-fluid-workspace-name"
-                title={fluidSessionTitle}
-                aria-label={`Session: ${fluidSessionTitle}`}
-              >
-                {fluidDisplayTitle}
-              </span>
+              <div className="pi-fluid-workspace-title-line">
+                <span
+                  className="pi-fluid-workspace-name"
+                  title={fluidSessionTitle}
+                  aria-label={`Session: ${fluidSessionTitle}`}
+                >
+                  {fluidDisplayTitle}
+                </span>
+                {selectedSession && (
+                  <FluidSessionTypewriter
+                    active={taskStatus === "done" && !composerActivity.focused && !composerActivity.hasDraft}
+                    resetKey={selectedSession.id}
+                  />
+                )}
+              </div>
             </div>
             <div className="pi-fluid-workspace-meta" title={fluidStatsTooltip}>
               {fluidStatsMetrics.map((metric) => (
@@ -1540,6 +1553,7 @@ export function AppShell() {
               onSessionStatsChange={handleSessionStatsChange}
               onContextUsageChange={handleContextUsageChange}
               onTaskStatusChange={handleTaskStatusChange}
+              onComposerActivityChange={handleComposerActivityChange}
             />
           ) : showPlaceholder ? (
             activeCwd ? (
