@@ -70,12 +70,19 @@ export interface BrowserSessionState {
 export interface BrowserRuntimeStatus {
   available: boolean;
   binary: string;
+  binarySource?: "override" | "path-native" | "npm-entry" | "system-path";
   version?: string;
   doctorOk: boolean;
   doctorOutput?: string;
   profileOk?: boolean;
   profileOutput?: string;
   error?: string;
+  errorCode?:
+    | "opencli_not_found"
+    | "opencli_windows_shim_unresolved"
+    | "opencli_launch_failed"
+    | "opencli_doctor_failed"
+    | "opencli_profile_failed";
   docker: boolean;
   localOnly: boolean;
   packageConfigured?: boolean;

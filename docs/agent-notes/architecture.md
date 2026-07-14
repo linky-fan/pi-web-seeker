@@ -51,6 +51,8 @@ Quick Chat is a separate lightweight path. `components/QuickChatPanel.tsx` keeps
 
 Controlled browser automation is an optional `pi-opencli` package. Its extension registers four constrained tool groups and maps each action to fixed OpenCLI argv without a shell or arbitrary `eval`. The shared runtime keys one OpenCLI browser session to each formal AgentSession, publishes snapshots/actions/approvals through `/api/browser/*`, and stores screenshots only in the system temporary directory. OpenCLI's localhost daemon and Browser Bridge extension operate the user's real logged-in Chrome tab; Pi Web never receives browser credentials. Sensitive actions use an approval gate, exact-origin allowlist entries persist in `~/.pi/agent/browser-policy.json`, and full-auto mode resets when the browser session closes. The first implementation is local-only; Docker and remote browser tunneling are diagnostics/documentation paths rather than supported runtime wiring.
 
+On Windows, the runtime never executes an npm `.cmd`/`.bat` shim through a shell. It resolves `PI_WEB_OPENCLI_BIN` first, then PATH and the standard npm global roots, reads the adjacent `@jackwener/opencli` package's `bin.opencli` declaration, validates that the JavaScript entry remains inside the package, and launches it with the current Node executable. Forced browser status refreshes repeat resolution so a newly installed or repaired CLI is detected without restarting Pi Web.
+
 Plan Mode is a runtime wrapper state, not a session schema change. `components/ChatInput.tsx` sends `planMode` plus optional `planExecutionMode`, and `lib/rpc-manager.ts` applies a temporary tool/system-prompt snapshot around the active `AgentSessionWrapper`. The default execution mode is `main`; `subagent` mode is only available when extension tools such as `Agent` and `get_subagent_result` are registered.
 
 Buddy review is orthogonal to Plan Mode. `buddyMode: "plan"` keeps the main agent and its reviewer read-only, while `buddyMode: "code"` restores the main agent's normal coding tools and restricts the reviewer to a single foreground `Plan` subagent call. The reviewer model is selected separately, must resolve in the model registry, and must differ from the main model. Runtime tool guards enforce the reviewer type, exact model, independent context, foreground execution, and no-worktree policy; the main agent remains the only writer.
@@ -123,7 +125,7 @@ Debug Bundle import/export is separate from normal session browsing. Export buil
 - `components/FileExplorer.tsx` - sidebar file tree.
 - `components/FileViewer.tsx` - file content tabs.
 - `components/TabBar.tsx` - right-side file and controlled-browser tabs.
-- `pi-packages/pi-opencli` - built-in optional OpenCLI extension tools plus the shared process/session runtime.
+- `pi-packages/pi-opencli` - built-in optional OpenCLI extension tools, cross-platform launch-target resolution, and the shared process/session runtime.
 
 ## CSS Variables
 

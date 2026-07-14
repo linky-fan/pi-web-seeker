@@ -3,6 +3,11 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import {
+  OpenCliResolutionError,
+  resolveOpenCliLaunchTarget,
+  type OpenCliLaunchTarget,
+} from "./launch-target.mjs";
 import type {
   BrowserActionResult,
   BrowserApproval,
@@ -44,6 +49,7 @@ interface RunOptions {
   foreground?: boolean;
   maxOutputBytes?: number;
   onSpawn?: (child: ChildProcess) => void;
+  launchTarget?: OpenCliLaunchTarget;
 }
 
 interface RunResult {
@@ -130,10 +136,6 @@ function persistTrustedOrigins(values: Set<string>): void {
   renameSync(temp, file);
 }
 
-function opencliBinary(): string {
-  return process.env.PI_WEB_OPENCLI_BIN?.trim() || "opencli";
-}
-
 function opencliSessionName(agentSessionId: string): string {
   return `pi-web-${createHash("sha256").update(agentSessionId).digest("hex").slice(0, 16)}`;
 }
@@ -180,14 +182,16 @@ async function runOpenCli(args: string[], options: RunOptions = {}): Promise<Run
   const startedAt = Date.now();
   const timeoutMs = Math.min(Math.max(options.timeoutMs ?? COMMAND_TIMEOUT_MS, 500), 5 * 60_000);
   const maxOutputBytes = options.maxOutputBytes ?? MAX_OUTPUT_BYTES;
+  const launchTarget = options.launchTarget ?? resolveOpenCliLaunchTarget();
 
   return new Promise<RunResult>((resolve, reject) => {
     let settled = false;
     let stdout = "";
     let stderr = "";
     let outputBytes = 0;
-    const child = spawn(opencliBinary(), args, {
+    const child = spawn(launchTarget.command, [...launchTarget.prefixArgs, ...args], {
       shell: false,
+      windowsHide: process.platform === "win32",
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
@@ -238,6 +242,44 @@ async function runOpenCli(args: string[], options: RunOptions = {}): Promise<Run
     }, timeoutMs);
     timeout.unref?.();
   });
+}
+
+function publicDiagnostic(value: unknown): string {
+  const message = value instanceof Error ? value.message : String(value ?? "");
+  const home = homedir();
+  const withoutHome = home ? message.split(home).join("~") : message;
+  const withoutUserPath = withoutHome
+    .replace(/[A-Za-z]:\\Users\\[^\\/\s]+/gi, "%USERPROFILE%")
+    .replace(/\/(?:Users|home)\/[^/\s]+/g, "~");
+  return safeText(withoutUserPath, 2000);
+}
+
+function unavailableStatus(
+  error: unknown,
+  docker: boolean,
+  target?: OpenCliLaunchTarget,
+): BrowserRuntimeStatus {
+  const resolutionCode = error instanceof OpenCliResolutionError ? error.code : undefined;
+  const spawnCode = error && typeof error === "object" && "code" in error
+    ? String((error as { code?: unknown }).code || "")
+    : "";
+  const errorCode = resolutionCode
+    ?? (spawnCode === "ENOENT" && target?.source === "system-path" ? "opencli_not_found" : "opencli_launch_failed");
+  return {
+    available: false,
+    binary: target?.displayName || "OpenCLI",
+    binarySource: target?.source,
+    doctorOk: false,
+    errorCode,
+    error: errorCode === "opencli_not_found"
+      ? "OpenCLI was not found"
+      : errorCode === "opencli_windows_shim_unresolved"
+        ? "The OpenCLI npm command was found, but its package entry could not be resolved"
+        : "OpenCLI was found, but Pi Web could not start it",
+    docker,
+    localOnly: true,
+    installCommand: "npm install -g @jackwener/opencli",
+  };
 }
 
 function publicPolicy(session: InternalSession): BrowserPolicy {
@@ -535,30 +577,33 @@ export class OpenCliRuntime {
   async status(force = false): Promise<BrowserRuntimeStatus> {
     const global = runtimeGlobal();
     if (!force && global.statusCache && Date.now() - global.statusCache.at < STATUS_CACHE_MS) return global.statusCache.value;
-    const binary = opencliBinary();
     const docker = existsSync("/.dockerenv") || process.env.PI_WEB_SINGLE_WORKSPACE === "1";
     let value: BrowserRuntimeStatus;
+    let target: OpenCliLaunchTarget | undefined;
     try {
-      const version = await runOpenCli(["--version"], { timeoutMs: 5_000, maxOutputBytes: 32 * 1024 });
+      target = resolveOpenCliLaunchTarget();
+      const version = await runOpenCli(["--version"], { timeoutMs: 5_000, maxOutputBytes: 32 * 1024, launchTarget: target });
       try {
-        const doctor = await runOpenCli(["doctor"], { timeoutMs: 15_000, maxOutputBytes: 256 * 1024 });
+        const doctor = await runOpenCli(["doctor"], { timeoutMs: 15_000, maxOutputBytes: 256 * 1024, launchTarget: target });
         let profileOk = true;
         let profileOutput = "";
         try {
-          const profile = await runOpenCli(["profile", "list"], { timeoutMs: 10_000, maxOutputBytes: 128 * 1024 });
-          profileOutput = safeText(profile.stdout || profile.stderr, 2000);
+          const profile = await runOpenCli(["profile", "list"], { timeoutMs: 10_000, maxOutputBytes: 128 * 1024, launchTarget: target });
+          profileOutput = publicDiagnostic(profile.stdout || profile.stderr);
         } catch (error) {
           profileOk = false;
-          profileOutput = error instanceof Error ? error.message : String(error);
+          profileOutput = publicDiagnostic(error);
         }
         value = {
           available: true,
-          binary,
+          binary: target.displayName,
+          binarySource: target.source,
           version: safeText(version.stdout, 120),
           doctorOk: true,
-          doctorOutput: safeText(doctor.stdout || doctor.stderr, 2000),
+          doctorOutput: publicDiagnostic(doctor.stdout || doctor.stderr),
           profileOk,
           profileOutput,
+          errorCode: profileOk ? undefined : "opencli_profile_failed",
           docker,
           localOnly: true,
           installCommand: "npm install -g @jackwener/opencli",
@@ -566,25 +611,19 @@ export class OpenCliRuntime {
       } catch (error) {
         value = {
           available: true,
-          binary,
+          binary: target.displayName,
+          binarySource: target.source,
           version: safeText(version.stdout, 120),
           doctorOk: false,
-          doctorOutput: error instanceof Error ? error.message : String(error),
+          doctorOutput: publicDiagnostic(error),
+          errorCode: "opencli_doctor_failed",
           docker,
           localOnly: true,
           installCommand: "npm install -g @jackwener/opencli",
         };
       }
     } catch (error) {
-      value = {
-        available: false,
-        binary,
-        doctorOk: false,
-        error: error instanceof Error ? error.message : String(error),
-        docker,
-        localOnly: true,
-        installCommand: "npm install -g @jackwener/opencli",
-      };
+      value = unavailableStatus(error, docker, target);
     }
     global.statusCache = { at: Date.now(), value };
     return value;

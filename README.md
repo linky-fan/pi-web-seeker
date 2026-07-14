@@ -180,6 +180,8 @@ flowchart LR
 
 受控浏览器是可选能力。用户先在本机安装 OpenCLI 和 Browser Bridge，再从右侧 Browser 标签为当前工作区启用内置 `pi-opencli` package。Agent 通过受约束的 extension tools 操作真实 Chrome；Pi Web 只展示临时页面快照、操作轨迹和敏感操作审批，不嵌入第三方页面，也不会保存 Chrome 登录信息。全自动权限只在当前浏览器会话中有效，可信网站按精确 origin 保存到 `~/.pi/agent/browser-policy.json`。
 
+Windows 通过 npm 全局安装 OpenCLI 时，Pi Web 会识别 `opencli.cmd`，读取相邻 `@jackwener/opencli` 包的 `bin.opencli` 入口，并用当前 Node.js 直接启动该入口，全程不经过 shell。解析优先级为 `PI_WEB_OPENCLI_BIN`、当前进程 `PATH`、`%APPDATA%\npm`/`NPM_CONFIG_PREFIX`；手动覆盖可以指向原生可执行文件、OpenCLI JavaScript 入口或 npm shim。安装或修复后可在 Browser 面板点击“重新运行诊断”，无需重启 Pi Web。
+
 首版受控浏览器只支持 Pi Web 服务与 Chrome 位于同一台机器。Docker/远程部署不会自动连接宿主机的 OpenCLI daemon，且现有 Dockerfile、Compose、端口和数据卷不因此改变。
 
 会话文件默认读取 `~/.pi/agent/sessions`，模型配置读取智能体数据目录下的 `models.json`。可通过 `PI_CODING_AGENT_DIR` 指定其他 pi 数据目录。

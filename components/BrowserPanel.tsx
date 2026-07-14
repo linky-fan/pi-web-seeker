@@ -144,6 +144,18 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
     }
   }, [agentSessionId, cwd, loadStatus]);
 
+  const recheckStatus = useCallback(async () => {
+    setBusy("status");
+    setError(null);
+    try {
+      await loadStatus(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }, [loadStatus]);
+
   const updatePolicy = useCallback(async (body: Record<string, unknown>) => {
     setBusy("policy");
     setError(null);
@@ -200,6 +212,17 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
     || status.profileOk === false
     || !status.packageConfigured
     || status.packageLoaded === false;
+  const unavailableTitle = status?.errorCode === "opencli_windows_shim_unresolved"
+    ? t("browser.shimUnresolved")
+    : status?.errorCode === "opencli_launch_failed"
+      ? t("browser.launchFailed")
+      : t("browser.notInstalled");
+  const unavailableHint = status?.errorCode === "opencli_windows_shim_unresolved"
+    ? t("browser.shimUnresolvedHint")
+    : status?.errorCode === "opencli_launch_failed"
+      ? t("browser.launchFailedHint")
+      : t("browser.notInstalledHint");
+  const showInstallCommand = !status?.errorCode || status.errorCode === "opencli_not_found";
 
   return (
     <section className="pi-browser-panel" aria-label={t("browser.title")}>
@@ -258,9 +281,12 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
         ) : !status.available ? (
           <div className="pi-browser-empty">
             <div className="pi-browser-empty-mark"><GlobeIcon size={22} /></div>
-            <strong>{t("browser.notInstalled")}</strong>
-            <p>{t("browser.notInstalledHint")}</p>
-            <code>{status.installCommand}</code>
+            <strong>{unavailableTitle}</strong>
+            <p>{unavailableHint}</p>
+            {showInstallCommand && <code>{status.installCommand}</code>}
+            <button className="pi-browser-primary" onClick={() => void recheckStatus()} disabled={busy !== null}>
+              {busy === "status" ? t("browser.rechecking") : t("browser.recheck")}
+            </button>
             {status.docker && <p className="pi-browser-caution">{t("browser.dockerLocalOnly")}</p>}
           </div>
         ) : !status.doctorOk ? (
@@ -270,6 +296,9 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
             <p>{t("browser.bridgeOfflineHint")}</p>
             <code>opencli doctor</code>
             {status.doctorOutput && <pre>{status.doctorOutput}</pre>}
+            <button className="pi-browser-primary" onClick={() => void recheckStatus()} disabled={busy !== null}>
+              {busy === "status" ? t("browser.rechecking") : t("browser.recheck")}
+            </button>
           </div>
         ) : status.profileOk === false ? (
           <div className="pi-browser-empty">
@@ -278,6 +307,9 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
             <p>{t("browser.profileUnavailableHint")}</p>
             <code>opencli profile list</code>
             {status.profileOutput && <pre>{status.profileOutput}</pre>}
+            <button className="pi-browser-primary" onClick={() => void recheckStatus()} disabled={busy !== null}>
+              {busy === "status" ? t("browser.rechecking") : t("browser.recheck")}
+            </button>
           </div>
         ) : !status.packageConfigured ? (
           <div className="pi-browser-empty">
