@@ -1,4 +1,11 @@
-import type { SessionManager, SettingsManager, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentSessionEvent,
+  ExtensionCommandContextActions,
+  ExtensionError,
+  ExtensionUIContext,
+  SessionManager,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 
 export interface ContextUsage {
   percent: number | null;
@@ -22,6 +29,15 @@ export interface NavigateTreeResult {
   aborted?: boolean;
 }
 
+export interface ExtensionBindingsLike {
+  uiContext?: ExtensionUIContext;
+  mode?: "tui" | "rpc" | "json" | "print";
+  commandContextActions?: ExtensionCommandContextActions;
+  abortHandler?: () => void;
+  shutdownHandler?: () => void;
+  onError?: (error: ExtensionError) => void;
+}
+
 export interface AgentSessionLike {
   readonly sessionId: string;
   readonly sessionFile: string | undefined;
@@ -33,7 +49,7 @@ export interface AgentSessionLike {
   readonly modelRegistry: { find: (provider: string, modelId: string) => ModelLike | undefined };
   readonly sessionManager: SessionManager;
   readonly settingsManager: SettingsManager;
-  readonly agent: { state?: { systemPrompt?: string; thinkingLevel?: string } };
+  readonly agent: { state?: { systemPrompt?: string; thinkingLevel?: string }; waitForIdle?: () => Promise<void> };
 
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
   prompt(text: string, options?: { images?: Array<{ type: "image"; data: string; mimeType: string }> }): Promise<void>;
@@ -46,11 +62,13 @@ export interface AgentSessionLike {
   setAutoRetryEnabled(enabled: boolean): void;
   steer(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
   followUp(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
-  bindExtensions?(bindings: { mode?: "rpc" }): Promise<void>;
+  bindExtensions?(bindings: ExtensionBindingsLike): Promise<void>;
+  extensionRunner?: { setUIContext?: (uiContext: ExtensionUIContext, mode?: "rpc") => void };
   getAllTools(): ToolInfo[];
   getActiveToolNames(): string[];
   setActiveToolsByName(names: string[]): void;
   abortCompaction(): void;
   getContextUsage(): ContextUsage | undefined;
   dispose?(): void;
+  reload?(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void>;
 }

@@ -1,6 +1,6 @@
 {
   "name": "@linkyfan/pi-web",
-  "version": "0.6.20",
+  "version": "0.6.21",
   "description": "Web UI for the pi coding agent",
   "license": "MIT",
   "repository": {
@@ -19,7 +19,7 @@
     ".next",
     "!.next/_events_*",
     "!.next/cache",
-    "!.next/dev",
+    "!.next/dev*",
     "!.next/trace",
     "!.next/trace-build",
     "!.next/types",
@@ -29,7 +29,9 @@
     "scripts/coms-net-server.mjs",
     "scripts/model-context-test.mjs",
     "scripts/next-build.mjs",
+    "scripts/patch-pi-ai-stepfun-cache.mjs",
     "scripts/prepare-github-install.js",
+    "scripts/release/pack-portable.mjs",
     "pi-packages",
     "next.config.mjs",
     "package.json"
@@ -46,6 +48,7 @@
     "coms-net:server": "node scripts/coms-net-server.mjs",
     "test:context": "node scripts/model-context-test.mjs",
     "pack:portable": "node scripts/release/pack-portable.mjs",
+    "postinstall": "node scripts/patch-pi-ai-stepfun-cache.mjs",
     "prepare": "node scripts/prepare-github-install.js",
     "release": "npm run build && npm publish --access public --registry=https://registry.npmjs.org"
   },

@@ -7,6 +7,7 @@ export function LocaleToggleButton() {
 
   return (
     <button
+      className="pi-locale-toggle-button"
       onClick={toggleLocale}
       title={t("locale.next")}
       aria-label={t("locale.next")}

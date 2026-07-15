@@ -690,9 +690,10 @@ function TextFileViewer({ filePath, cwd }: Props) {
   if (!data) return null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div className="pi-file-viewer" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Status bar */}
       <div
+        className="pi-file-statusbar"
         style={{
           display: "flex",
           alignItems: "center",

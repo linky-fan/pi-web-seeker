@@ -21,6 +21,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
 
   return (
     <div
+      className="pi-tabbar"
       style={{
         display: "flex",
         alignItems: "flex-end",
@@ -34,6 +35,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
         const isActive = tab.id === activeTabId;
         return (
           <div
+            className={`pi-file-tab${isActive ? " pi-file-tab-active" : ""}`}
             key={tab.id}
             onClick={() => onSelectTab(tab.id)}
             style={{

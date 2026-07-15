@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { memo, useState, useCallback, useRef, useEffect, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
@@ -9,10 +9,14 @@ import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { CapabilitiesConfig } from "./CapabilitiesConfig";
 import { BranchNavigator } from "./BranchNavigator";
+import { AgentsMdStatus } from "./AgentsMdStatus";
 import { ThemeCycleButton } from "./ThemeCycleButton";
+import { UiModeToggleButton } from "./UiModeToggleButton";
 import { LocaleToggleButton } from "./LocaleToggleButton";
+import { FluidEnvironmentPanel } from "./FluidEnvironmentPanel";
 import { TopBarTypewriter } from "./BrandTypewriter";
 import { useLocale } from "@/lib/i18n";
+import { useUiMode } from "@/hooks/useUiMode";
 import { APP_NAME } from "@/lib/branding";
 import { revealElement } from "@/lib/motion";
 import { apiPath } from "@/lib/api-path";
@@ -20,6 +24,26 @@ import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
 
 type TaskStatus = "done" | "running" | "error";
+type FluidDrawerView = "sessions" | "explorer" | "context";
+type FluidContextTab = "session" | "system";
+type FluidInspectorTier = 1 | 2;
+type FluidMetricTone = "accent" | "warning" | "danger";
+
+interface FluidMetric {
+  key: string;
+  label: string;
+  value: string;
+  tone?: FluidMetricTone;
+  title?: string;
+}
+
+const FLUID_TITLE_MAX_CHARS = 42;
+const FLUID_RAIL_WIDTH = 44;
+const FLUID_INSPECTOR_TIER_TWO_WIDTH = 560;
+const FLUID_INSPECTOR_TIER_TWO_MIN_WORKSPACE = 680;
+const FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT =
+  FLUID_RAIL_WIDTH + FLUID_INSPECTOR_TIER_TWO_WIDTH + FLUID_INSPECTOR_TIER_TWO_MIN_WORKSPACE;
+const MemoSessionSidebar = memo(SessionSidebar);
 
 interface DebugBundleSummary {
   targetCwd: string;
@@ -104,6 +128,35 @@ function formatBytes(bytes: number): string {
   return `${value >= 10 || idx === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[idx]}`;
 }
 
+function normalizeHeaderText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function truncateFluidTitle(value: string): string {
+  const normalized = normalizeHeaderText(value);
+  if (normalized.length <= FLUID_TITLE_MAX_CHARS) return normalized;
+  return `${normalized.slice(0, FLUID_TITLE_MAX_CHARS - 3).trimEnd()}...`;
+}
+
+function workspaceLabelFromCwd(cwd: string | null | undefined): string {
+  if (!cwd) return APP_NAME;
+  const normalized = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
+  const label = normalized.split("/").filter(Boolean).pop();
+  return label || normalized || APP_NAME;
+}
+
+function FluidRailHint({ label, description, children }: { label: string; description: string; children: ReactNode }) {
+  return (
+    <span className="pi-fluid-rail-item">
+      {children}
+      <span className="pi-fluid-rail-tooltip" role="tooltip" aria-hidden="true">
+        <span className="pi-fluid-rail-tooltip-label">{label}</span>
+        <span className="pi-fluid-rail-tooltip-description">{description}</span>
+      </span>
+    </span>
+  );
+}
+
 function isDebugBundleFile(file: File): boolean {
   const name = file.name.toLowerCase();
   return name.endsWith(".tar.gz") || name.endsWith(".tgz");
@@ -144,6 +197,7 @@ function normalizeExplorerMentionPath(filePath: string): { path: string; project
 
 export function AppShell() {
   const { t } = useLocale();
+  const { isFluid } = useUiMode();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
@@ -156,6 +210,9 @@ export function AppShell() {
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [capabilitiesConfigOpen, setCapabilitiesConfigOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [fluidDrawerOpen, setFluidDrawerOpen] = useState(false);
+  const [fluidDrawerView, setFluidDrawerView] = useState<FluidDrawerView>("sessions");
+  const [fluidContextTab, setFluidContextTab] = useState<FluidContextTab>("session");
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("done");
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -238,6 +295,11 @@ export function AppShell() {
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [fluidInspectorTier, setFluidInspectorTier] = useState<FluidInspectorTier>(1);
+  const [fluidCanUseTierTwo, setFluidCanUseTierTwo] = useState(() => (
+    typeof window === "undefined" ? true : window.innerWidth >= FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT
+  ));
+  const fluidInspectorInitializedRef = useRef(false);
 
   const handleAtMention = useCallback((relativePath: string) => {
     const mention = normalizeExplorerMentionPath(relativePath);
@@ -443,8 +505,14 @@ export function AppShell() {
       return [...prev, { id: tabId, label: fileName, filePath }];
     });
     setActiveFileTabId(tabId);
+    if (isFluid && !rightPanelOpen) setFluidInspectorTier(1);
     setRightPanelOpen(true);
-  }, []);
+  }, [isFluid, rightPanelOpen]);
+
+  const handleOpenFileFromSidebar = useCallback((filePath: string, fileName: string) => {
+    handleOpenFile(filePath, fileName);
+    if (isFluid) setFluidDrawerOpen(false);
+  }, [handleOpenFile, isFluid]);
 
   const handleCloseFileTab = useCallback((tabId: string) => {
     setFileTabs((prev) => {
@@ -467,10 +535,178 @@ export function AppShell() {
   const showPlaceholder = initialSessionRestored && !showChat;
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
+  const effectiveSidebarOpen = isFluid ? fluidDrawerOpen : sidebarOpen;
+  const openFluidDrawer = useCallback((view: FluidDrawerView) => {
+    setFluidDrawerView(view);
+    setFluidDrawerOpen((open) => !(open && fluidDrawerView === view));
+    setActiveTopPanel(null);
+  }, [fluidDrawerView]);
 
-  const sidebarContent = (
+  const formatCompactNumber = useCallback((n: number) => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
+    return String(n);
+  }, []);
+
+  const fluidSessionTitle = normalizeHeaderText(selectedSession?.name || selectedSession?.firstMessage || (effectiveNewSessionCwd ? "New session" : APP_NAME)) || APP_NAME;
+  const fluidDisplayTitle = truncateFluidTitle(fluidSessionTitle);
+  const fluidWorkspaceCwd = selectedSession?.cwd ?? effectiveNewSessionCwd ?? null;
+  const fluidWorkspaceLabel = workspaceLabelFromCwd(fluidWorkspaceCwd);
+  const fluidTokens = sessionStats?.tokens ?? null;
+  const fluidCostText = sessionStats?.cost
+    ? sessionStats.cost >= 0.01 ? `$${sessionStats.cost.toFixed(2)}` : "<$0.01"
+    : null;
+  const fluidContextValue = contextUsage?.contextWindow
+    ? `${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(0)}%` : "?"} / ${formatCompactNumber(contextUsage.contextWindow)}`
+    : null;
+  const fluidContextTone: FluidMetricTone | undefined = contextUsage?.percent !== null && contextUsage?.percent !== undefined
+    ? contextUsage.percent > 90
+      ? "danger"
+      : contextUsage.percent > 70
+        ? "warning"
+        : undefined
+    : undefined;
+  const fluidStatsTooltipParts: string[] = [];
+  if (fluidTokens) {
+    fluidStatsTooltipParts.push(`${t("stats.input")}: ${fluidTokens.input.toLocaleString()}`);
+    fluidStatsTooltipParts.push(`${t("stats.output")}: ${fluidTokens.output.toLocaleString()}`);
+    fluidStatsTooltipParts.push(`${t("stats.cacheRead")}: ${fluidTokens.cacheRead.toLocaleString()}`);
+    fluidStatsTooltipParts.push(`${t("stats.cacheWrite")}: ${fluidTokens.cacheWrite.toLocaleString()}`);
+  }
+  if (sessionStats?.cost) fluidStatsTooltipParts.push(`${t("stats.cost")}: $${sessionStats.cost.toFixed(4)}`);
+  if (contextUsage?.contextWindow) {
+    fluidStatsTooltipParts.push(`${t("stats.context")}: ${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : t("stats.unknown")} / ${contextUsage.contextWindow.toLocaleString()}`);
+  }
+  const fluidStatsTooltip = fluidStatsTooltipParts.length > 0 ? fluidStatsTooltipParts.join("  |  ") : undefined;
+  const fluidStatsMetricItems: Array<FluidMetric | null> = [
+    fluidTokens && fluidTokens.input > 0 ? {
+      key: "input",
+      label: "IN",
+      value: formatCompactNumber(fluidTokens.input),
+      title: `${t("stats.input")}: ${fluidTokens.input.toLocaleString()}`,
+    } : null,
+    fluidTokens && fluidTokens.output > 0 ? {
+      key: "output",
+      label: "OUT",
+      value: formatCompactNumber(fluidTokens.output),
+      title: `${t("stats.output")}: ${fluidTokens.output.toLocaleString()}`,
+    } : null,
+    fluidTokens && fluidTokens.cacheRead > 0 ? {
+      key: "cache",
+      label: "CACHE",
+      value: formatCompactNumber(fluidTokens.cacheRead),
+      tone: "accent",
+      title: `${t("stats.cacheRead")}: ${fluidTokens.cacheRead.toLocaleString()}`,
+    } : null,
+    fluidCostText ? {
+      key: "cost",
+      label: "COST",
+      value: fluidCostText,
+      title: `${t("stats.cost")}: ${sessionStats?.cost?.toFixed(4) ?? fluidCostText}`,
+    } : null,
+    fluidContextValue ? {
+      key: "context",
+      label: "CTX",
+      value: fluidContextValue,
+      tone: fluidContextTone,
+      title: contextUsage?.contextWindow
+        ? `${t("stats.context")}: ${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : t("stats.unknown")} / ${contextUsage.contextWindow.toLocaleString()}`
+        : undefined,
+    } : null,
+  ];
+  const fluidStatsMetrics = fluidStatsMetricItems.filter((metric): metric is FluidMetric => Boolean(metric));
+
+  useEffect(() => {
+    if (!isFluid || !activeCwd || fluidInspectorInitializedRef.current) return;
+    fluidInspectorInitializedRef.current = true;
+    setFluidInspectorTier(1);
+    setRightPanelOpen(true);
+  }, [activeCwd, isFluid]);
+
+  useEffect(() => {
+    setActiveTopPanel(null);
+    setFluidDrawerOpen(false);
+  }, [isFluid]);
+
+  useEffect(() => {
+    if (!isFluid || typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia(`(min-width: ${FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT}px)`);
+    const applyTierCapability = (canUseTierTwo: boolean) => {
+      setFluidCanUseTierTwo((current) => current === canUseTierTwo ? current : canUseTierTwo);
+      if (!canUseTierTwo) setFluidInspectorTier(1);
+    };
+    const handleChange = (event: MediaQueryListEvent) => {
+      applyTierCapability(event.matches);
+    };
+    applyTierCapability(mediaQuery.matches);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, [isFluid]);
+
+  const handleRightPanelToggleClick = useCallback(() => {
+    if (!isFluid) {
+      setRightPanelOpen((open) => !open);
+      return;
+    }
+
+    const canUseTierTwo = typeof window === "undefined"
+      ? fluidCanUseTierTwo
+      : window.innerWidth >= FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT;
+
+    if (!canUseTierTwo) {
+      setFluidInspectorTier(1);
+      setRightPanelOpen((open) => !open);
+      return;
+    }
+
+    if (!rightPanelOpen) {
+      setFluidInspectorTier(1);
+      setRightPanelOpen(true);
+      return;
+    }
+
+    if (fluidInspectorTier === 1) {
+      setFluidInspectorTier(2);
+      return;
+    }
+
+    setFluidInspectorTier(1);
+    setRightPanelOpen(false);
+  }, [fluidCanUseTierTwo, fluidInspectorTier, isFluid, rightPanelOpen]);
+
+  const rightPanelToggleTitle = isFluid
+    ? !rightPanelOpen
+      ? "Show file panel"
+      : fluidCanUseTierTwo && fluidInspectorTier === 1
+        ? "Expand file panel"
+        : "Hide file panel"
+    : rightPanelOpen
+      ? "Hide file panel"
+      : "Show file panel";
+  const showFluidEnvironmentPanel = isFluid && showChat && !rightPanelOpen;
+
+  const railSessionsLabel = t("fluidRail.sessions.label");
+  const railSessionsDescription = t("fluidRail.sessions.description");
+  const railExplorerLabel = t("fluidRail.explorer.label");
+  const railExplorerDescription = t("fluidRail.explorer.description");
+  const railContextLabel = t("fluidRail.context.label");
+  const railContextDescription = t("fluidRail.context.description");
+  const railModelsLabel = t("fluidRail.models.label");
+  const railModelsDescription = t("fluidRail.models.description");
+  const railCapabilitiesLabel = t("fluidRail.capabilities.label");
+  const railCapabilitiesDescription = capabilitiesCwd
+    ? t("fluidRail.capabilities.description")
+    : t("fluidRail.capabilities.disabledDescription");
+  const railThemeLabel = t("fluidRail.theme.label");
+  const railThemeDescription = t("fluidRail.theme.description");
+  const railUiModeLabel = t("fluidRail.uiMode.label");
+  const railUiModeDescription = t("fluidRail.uiMode.description");
+  const railLocaleLabel = t("fluidRail.locale.label");
+  const railLocaleDescription = t("fluidRail.locale.description");
+
+  const sidebarContent = (!isFluid || !fluidDrawerOpen || fluidDrawerView !== "context") ? (
     <>
-      <SessionSidebar
+      <MemoSessionSidebar
         selectedSessionId={selectedSession?.id ?? null}
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}
@@ -480,12 +716,13 @@ export function AppShell() {
         onSessionDeleted={handleSessionDeleted}
         selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
         onCwdChange={handleCwdChange}
-        onOpenFile={handleOpenFile}
+        onOpenFile={handleOpenFileFromSidebar}
         explorerRefreshKey={explorerRefreshKey}
         onAtMention={handleAtMention}
       />
-      <div style={{ padding: "8px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+      {!isFluid && <div className="pi-sidebar-footer" style={{ padding: "8px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
         <ThemeCycleButton variant="footer" />
+        <UiModeToggleButton variant="footer" />
         {([
           {
             id: "models",
@@ -538,9 +775,122 @@ export function AppShell() {
             <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortLabel}</span>
           </button>
         ))}
-      </div>
+      </div>}
     </>
-  );
+  ) : null;
+
+  const fluidContextContent = (isFluid && fluidDrawerOpen && fluidDrawerView === "context") ? (
+    <div className="pi-fluid-context-drawer">
+      <div className="pi-fluid-drawer-heading">
+        <div>
+          <div className="pi-fluid-drawer-kicker">Context</div>
+          <div className="pi-fluid-drawer-title">Session tools</div>
+        </div>
+        <div className="pi-fluid-context-tabs">
+          <button
+            type="button"
+            className={fluidContextTab === "session" ? "active" : ""}
+            onClick={() => setFluidContextTab("session")}
+          >
+            {t("session.label")}
+          </button>
+          <button
+            type="button"
+            className={fluidContextTab === "system" ? "active" : ""}
+            onClick={() => setFluidContextTab("system")}
+          >
+            {t("system.label")}
+          </button>
+        </div>
+      </div>
+      {fluidContextTab === "session" ? (
+        <div className="pi-fluid-context-section">
+          <div className="pi-fluid-context-actions">
+            <button
+              type="button"
+              onClick={handleSessionImportClick}
+              disabled={sessionImporting}
+            >
+              {sessionImporting ? t("session.importing") : t("session.import")}
+            </button>
+            {selectedSession ? (
+              <>
+                <a
+                  href={apiPath(`sessions/${encodeURIComponent(selectedSession.id)}/export?format=markdown${branchActiveLeafId ? `&leafId=${encodeURIComponent(branchActiveLeafId)}` : ""}`)}
+                  download
+                >
+                  {t("session.exportMarkdown")}
+                </a>
+                <a
+                  href={apiPath(`sessions/${encodeURIComponent(selectedSession.id)}/export?format=json${branchActiveLeafId ? `&leafId=${encodeURIComponent(branchActiveLeafId)}` : ""}`)}
+                  download
+                >
+                  {t("session.exportJson")}
+                </a>
+                <a
+                  href={apiPath(`sessions/${encodeURIComponent(selectedSession.id)}/debug-bundle`)}
+                  download
+                >
+                  {t("session.exportDebugBundle")}
+                </a>
+              </>
+            ) : (
+              <span className="pi-fluid-context-muted">{t("branches.noSession")}</span>
+            )}
+          </div>
+          {sessionImportError && (
+            <div className="pi-fluid-context-error">{t("session.importFailed")}: {sessionImportError}</div>
+          )}
+          {debugBundleSummary && (
+            <div className="pi-fluid-debug-summary">
+              <div className="pi-fluid-debug-title">{t("session.debugBundleReady")}</div>
+              <div>{t("session.debugBundleTargetCwd")}: <span>{debugBundleSummary.targetCwd}</span></div>
+              <div>
+                {t("session.debugBundleContents", {
+                  files: debugBundleSummary.fileCount,
+                  fileBytes: formatBytes(debugBundleSummary.fileBytes),
+                  media: debugBundleSummary.mediaCount,
+                  mediaBytes: formatBytes(debugBundleSummary.mediaBytes),
+                })}
+              </div>
+              <div className="pi-fluid-context-actions">
+                <button type="button" onClick={() => void handleDebugBundleImportConfirm()} disabled={sessionImporting}>
+                  {sessionImporting ? t("session.importing") : t("session.debugBundleImport")}
+                </button>
+                <button type="button" onClick={handleDebugBundleImportCancel} disabled={sessionImporting}>
+                  {t("session.debugBundleCancel")}
+                </button>
+              </div>
+            </div>
+          )}
+          {fluidWorkspaceCwd && (
+            <AgentsMdStatus cwd={fluidWorkspaceCwd} variant="context" />
+          )}
+          <div className="pi-fluid-branch-block">
+            <div className="pi-fluid-section-label">{t("session.branches")}</div>
+            <BranchNavigator
+              sessionId={selectedSession?.id ?? null}
+              tree={branchTree}
+              activeLeafId={branchActiveLeafId}
+              onLeafChange={handleBranchLeafChange}
+              hasSession={Boolean(selectedSession)}
+              panelOnly
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="pi-fluid-system-block">
+          {systemPrompt ? (
+            <pre>{systemPrompt}</pre>
+          ) : systemPrompt === "" ? (
+            <div className="pi-fluid-context-muted">{t("system.emptyTools")}</div>
+          ) : (
+            <div className="pi-fluid-context-muted">{t("system.loadHint")}</div>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null;
 
   return (
     <>
@@ -551,25 +901,119 @@ export function AppShell() {
       onChange={handleSessionImportFile}
       style={{ display: "none" }}
     />
-    <div style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
+    <div
+      className={`pi-app-shell${isFluid ? " pi-fluid-shell" : " pi-classic-shell"}`}
+      style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}
+    >
       {/* Mobile overlay backdrop */}
       <div
         className="sidebar-overlay-backdrop"
-        onClick={() => setSidebarOpen(false)}
+        onClick={() => isFluid ? setFluidDrawerOpen(false) : setSidebarOpen(false)}
         style={{
           position: "fixed",
           inset: 0,
           zIndex: 199,
           background: "rgba(0,0,0,0.4)",
-          opacity: sidebarOpen ? 1 : 0,
-          pointerEvents: sidebarOpen ? "auto" : "none",
+          opacity: effectiveSidebarOpen ? 1 : 0,
+          pointerEvents: effectiveSidebarOpen ? "auto" : "none",
           transition: "opacity 0.25s ease",
         }}
       />
 
+      {isFluid && (
+        <div className="pi-fluid-rail" aria-label="Fluid command rail">
+          <div className="pi-fluid-rail-brand" title={APP_NAME}>π</div>
+          <FluidRailHint label={railSessionsLabel} description={railSessionsDescription}>
+            <button
+              className={`pi-fluid-rail-button${fluidDrawerOpen && fluidDrawerView === "sessions" ? " pi-fluid-rail-button-active" : ""}`}
+              type="button"
+              title={`${railSessionsLabel}: ${railSessionsDescription}`}
+              aria-label={`${railSessionsLabel}: ${railSessionsDescription}`}
+              onClick={() => openFluidDrawer("sessions")}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+              </svg>
+            </button>
+          </FluidRailHint>
+          <FluidRailHint label={railExplorerLabel} description={railExplorerDescription}>
+            <button
+              className={`pi-fluid-rail-button${fluidDrawerOpen && fluidDrawerView === "explorer" ? " pi-fluid-rail-button-active" : ""}`}
+              type="button"
+              onClick={() => openFluidDrawer("explorer")}
+              title={`${railExplorerLabel}: ${railExplorerDescription}`}
+              aria-label={`${railExplorerLabel}: ${railExplorerDescription}`}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 20h16" />
+                <path d="M12 4v12" />
+                <path d="m7 9 5-5 5 5" />
+              </svg>
+            </button>
+          </FluidRailHint>
+          <FluidRailHint label={railContextLabel} description={railContextDescription}>
+            <button
+              className={`pi-fluid-rail-button${fluidDrawerOpen && fluidDrawerView === "context" ? " pi-fluid-rail-button-active" : ""}`}
+              type="button"
+              onClick={() => openFluidDrawer("context")}
+              title={`${railContextLabel}: ${railContextDescription}`}
+              aria-label={`${railContextLabel}: ${railContextDescription}`}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+                <path d="M8 13h8" />
+                <path d="M8 17h5" />
+              </svg>
+            </button>
+          </FluidRailHint>
+          <FluidRailHint label={railModelsLabel} description={railModelsDescription}>
+            <button
+              className="pi-fluid-rail-button"
+              type="button"
+              onClick={() => setModelsConfigOpen(true)}
+              title={`${railModelsLabel}: ${railModelsDescription}`}
+              aria-label={`${railModelsLabel}: ${railModelsDescription}`}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+                <rect x="9" y="9" width="6" height="6" />
+                <path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3" />
+              </svg>
+            </button>
+          </FluidRailHint>
+          <FluidRailHint label={railCapabilitiesLabel} description={railCapabilitiesDescription}>
+            <button
+              className="pi-fluid-rail-button"
+              type="button"
+              onClick={() => setCapabilitiesConfigOpen(true)}
+              disabled={!capabilitiesCwd}
+              title={`${railCapabilitiesLabel}: ${railCapabilitiesDescription}`}
+              aria-label={`${railCapabilitiesLabel}: ${railCapabilitiesDescription}`}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m12 2 9 5-9 5-9-5 9-5Z" />
+                <path d="m3 12 9 5 9-5" />
+                <path d="m3 17 9 5 9-5" />
+              </svg>
+            </button>
+          </FluidRailHint>
+          <div className="pi-fluid-rail-spacer" />
+          <FluidRailHint label={railThemeLabel} description={railThemeDescription}>
+            <ThemeCycleButton variant="rail" />
+          </FluidRailHint>
+          <FluidRailHint label={railUiModeLabel} description={railUiModeDescription}>
+            <UiModeToggleButton />
+          </FluidRailHint>
+          <FluidRailHint label={railLocaleLabel} description={railLocaleDescription}>
+            <LocaleToggleButton />
+          </FluidRailHint>
+        </div>
+      )}
+
       {/* Left sidebar */}
       <div
-        className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}`}
+        className={`sidebar-container pi-sidebar${isFluid ? " pi-fluid-drawer" : ""}${effectiveSidebarOpen ? " sidebar-open" : " sidebar-closed"}`}
         style={{
           background: "var(--bg-panel)",
           borderRight: "1px solid var(--border)",
@@ -579,13 +1023,31 @@ export function AppShell() {
           zIndex: 200,
         }}
       >
-        {sidebarContent}
+        {isFluid && (
+          <div className="pi-fluid-drawer-bar">
+            <div>
+              <div className="pi-fluid-drawer-kicker">
+                {fluidDrawerView === "context" ? "Context" : fluidDrawerView === "explorer" ? "Workspace" : "Navigation"}
+              </div>
+              <div className="pi-fluid-drawer-title">
+                {fluidDrawerView === "context" ? "Session & System" : fluidDrawerView === "explorer" ? "Sessions & Explorer" : "Sessions"}
+              </div>
+            </div>
+            <button type="button" onClick={() => setFluidDrawerOpen(false)} title={t("sidebar.hide")}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+        {isFluid && fluidDrawerView === "context" ? fluidContextContent : sidebarContent}
       </div>
 
       {/* Center: chat */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+      <div className={`pi-center-pane${isFluid ? " pi-fluid-workspace" : ""}${showFluidEnvironmentPanel ? " pi-fluid-info-visible" : ""}`} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top bar with sidebar toggle */}
-        <div ref={topBarRef} style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 36, background: "var(--bg-panel)" }}>
+        {!isFluid ? <div ref={topBarRef} className="pi-topbar" style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 36, background: "var(--bg-panel)" }}>
           <button
             onClick={() => setSidebarOpen((v) => !v)}
             title={sidebarOpen ? t("sidebar.hide") : t("sidebar.show")}
@@ -608,11 +1070,13 @@ export function AppShell() {
               </svg>
             )}
           </button>
-          <ThemeCycleButton />
-          <LocaleToggleButton />
+          {!isFluid && <ThemeCycleButton />}
+          {!isFluid && <UiModeToggleButton />}
+          {!isFluid && <LocaleToggleButton />}
           {showChat && (
             <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
               <button
+                className="pi-topbar-command"
                 onClick={() => toggleTopPanel("session")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
@@ -634,9 +1098,10 @@ export function AppShell() {
                   <path d="M8 13h8" />
                   <path d="M8 17h5" />
                 </svg>
-                <span>{t("session.label")}</span>
+                <span>{isFluid ? t("session.label") : t("session.label")}</span>
               </button>
               <button
+                className="pi-topbar-command"
                 ref={systemBtnRef}
                 onClick={() => toggleTopPanel("system")}
                 style={{
@@ -663,7 +1128,7 @@ export function AppShell() {
               </button>
             </div>
           )}
-          {showChat && <TopBarTypewriter />}
+          {showChat && !isFluid && <TopBarTypewriter />}
           {/* Session stats — right-aligned in top bar */}
           {showChat && (sessionStats || contextUsage) && (() => {
             const tokens = sessionStats?.tokens;
@@ -750,7 +1215,7 @@ export function AppShell() {
           })()}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
-            <div ref={topPanelDropdownRef} style={{
+            <div ref={topPanelDropdownRef} className="pi-top-dropdown" style={{
               position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,
@@ -932,10 +1397,63 @@ export function AppShell() {
             </div>
           )}
 
-        </div>
+        </div> : (
+          <div ref={topBarRef} className="pi-fluid-workspace-header">
+            <div className="pi-fluid-workspace-status" title={fluidWorkspaceCwd ?? undefined}>
+              <span
+                className={`pi-fluid-status-dot pi-fluid-status-${taskStatus}`}
+                aria-label={TASK_STATUS_META[taskStatus].label}
+              />
+              <span
+                className="pi-fluid-workspace-project-wrap"
+                title={fluidWorkspaceCwd ?? undefined}
+                aria-label={fluidWorkspaceCwd ? t("fluidHeader.cwdLabel", { path: fluidWorkspaceCwd }) : fluidWorkspaceLabel}
+                tabIndex={fluidWorkspaceCwd ? 0 : undefined}
+              >
+                <span
+                  className="pi-fluid-workspace-project"
+                  title={fluidWorkspaceCwd ?? undefined}
+                  aria-label={fluidWorkspaceCwd ? t("fluidHeader.cwdLabel", { path: fluidWorkspaceCwd }) : fluidWorkspaceLabel}
+                >
+                  {fluidWorkspaceLabel}
+                </span>
+                {fluidWorkspaceCwd && (
+                  <span className="pi-fluid-workspace-path-tooltip" role="tooltip" aria-hidden="true">
+                    {fluidWorkspaceCwd}
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="pi-fluid-workspace-title">
+              <span
+                className="pi-fluid-workspace-name"
+                title={fluidSessionTitle}
+                aria-label={`Session: ${fluidSessionTitle}`}
+              >
+                {fluidDisplayTitle}
+              </span>
+            </div>
+            <div className="pi-fluid-workspace-meta" title={fluidStatsTooltip}>
+              {fluidStatsMetrics.map((metric) => (
+                <span
+                  key={metric.key}
+                  className={`pi-fluid-metric${metric.tone ? ` pi-fluid-metric-${metric.tone}` : ""}`}
+                  data-kind={metric.key}
+                  title={metric.title ?? fluidStatsTooltip}
+                >
+                  <span className="pi-fluid-metric-label">{metric.label}</span>
+                  <span className="pi-fluid-metric-value">{metric.value}</span>
+                </span>
+              ))}
+              {fluidStatsMetrics.length === 0 && (
+                <span className="pi-fluid-meta-fallback">{selectedSession ? `${selectedSession.messageCount} messages` : "Ready"}</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Chat content */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        <div className={`pi-chat-region${isFluid ? " pi-fluid-workspace-body" : ""}`} style={{ flex: 1, overflow: "hidden", position: "relative" }}>
           {showChat ? (
             <ChatWindow
               key={sessionKey}
@@ -972,12 +1490,25 @@ export function AppShell() {
               </div>
             )
           ) : null}
+          {showFluidEnvironmentPanel && (
+            <FluidEnvironmentPanel
+              cwd={fluidWorkspaceCwd}
+              workspaceLabel={fluidWorkspaceLabel}
+              sessionTitle={fluidSessionTitle}
+              displayTitle={fluidDisplayTitle}
+              taskStatus={taskStatus}
+              sessionStats={sessionStats}
+              contextUsage={contextUsage}
+              refreshKey={refreshKey}
+              onOpenFilePanel={handleRightPanelToggleClick}
+            />
+          )}
         </div>
       </div>
 
       {/* Right panel: file viewer — always mounted, width animated via CSS */}
       <div
-        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}`}
+        className={`right-panel-container ${isFluid ? `pi-fluid-inspector pi-fluid-inspector-tier-${fluidInspectorTier}` : "pi-right-panel"}${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}`}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -986,7 +1517,7 @@ export function AppShell() {
         }}
       >
         {/* Right panel tab bar */}
-        <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>
+        <div className="pi-right-panel-header" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>
           <div style={{ flex: 1, overflow: "hidden" }}>
             <TabBar
               tabs={fileTabs}
@@ -1002,6 +1533,19 @@ export function AppShell() {
         <div style={{ flex: 1, overflow: "hidden" }}>
           {activeFileTab?.filePath ? (
             <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} />
+          ) : isFluid ? (
+            <div className="pi-fluid-inspector-empty">
+              <div className="pi-fluid-inspector-empty-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <path d="M14 2v6h6" />
+                  <path d="M8 13h8" />
+                  <path d="M8 17h5" />
+                </svg>
+              </div>
+              <div className="pi-fluid-inspector-empty-title">未打开文件</div>
+              <div className="pi-fluid-inspector-empty-text">从左侧 Explorer 打开文件</div>
+            </div>
           ) : (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
               {t("file.noOpen")}
@@ -1009,11 +1553,28 @@ export function AppShell() {
           )}
         </div>
       </div>
+      {isFluid && (
+        <button
+          className="pi-fluid-dock-handle"
+          onClick={handleRightPanelToggleClick}
+          title={rightPanelToggleTitle}
+          aria-label={rightPanelToggleTitle}
+          aria-pressed={rightPanelOpen}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <line x1="15" y1="3" x2="15" y2="21" />
+          </svg>
+        </button>
+      )}
     </div>
     {/* File panel toggle — always visible at top-right */}
-    <button
-      onClick={() => setRightPanelOpen((v) => !v)}
-      title={rightPanelOpen ? "Hide file panel" : "Show file panel"}
+    {!isFluid && <button
+      className="pi-right-panel-toggle"
+      onClick={handleRightPanelToggleClick}
+      title={rightPanelToggleTitle}
+      aria-label={rightPanelToggleTitle}
+      aria-pressed={rightPanelOpen}
       style={{
         position: "fixed", top: 0, right: 0, zIndex: 300,
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -1028,7 +1589,7 @@ export function AppShell() {
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
       </svg>
-    </button>
+    </button>}
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
     {capabilitiesConfigOpen && capabilitiesCwd && (
       <CapabilitiesConfig

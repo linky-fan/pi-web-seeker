@@ -142,7 +142,6 @@ function TreeNode({
   const [children, setChildren] = useState<FileNode[]>(node.children ?? []);
   const [loaded, setLoaded] = useState(node.loaded ?? false);
   const [loading, setLoading] = useState(false);
-  const [hovered, setHovered] = useState(false);
 
   const loadChildren = useCallback(async (force = false) => {
     if (loaded && !force) return;
@@ -179,9 +178,8 @@ function TreeNode({
   return (
     <div>
       <div
+        className={`pi-file-row${open ? " pi-file-row-open" : ""}`}
         onClick={handleClick}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
         style={{
           position: "relative",
           display: "flex",
@@ -191,7 +189,6 @@ function TreeNode({
           paddingRight: 8,
           height: 24,
           cursor: "pointer",
-          background: hovered ? "var(--bg-hover)" : "transparent",
           borderRadius: 4,
           userSelect: "none",
         }}
@@ -232,7 +229,6 @@ function TreeNode({
             filePath={node.fullPath}
             fileName={node.name}
             cwd={cwd}
-            visible={hovered}
             onAtMention={onAtMention}
           />
         )}
@@ -387,8 +383,8 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
   }
 
   return (
-    <div style={{ padding: "4px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "0 0 4px" }}>
+    <div className="pi-file-explorer" style={{ padding: "4px" }}>
+      <div className="pi-file-explorer-search" style={{ display: "flex", alignItems: "center", gap: 4, padding: "0 0 4px" }}>
         <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: 7, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
             <circle cx="11" cy="11" r="8" />
@@ -508,18 +504,14 @@ function FileRowActions({
   filePath,
   fileName,
   cwd,
-  visible,
   onAtMention,
 }: {
   filePath: string;
   fileName: string;
   cwd: string;
-  visible: boolean;
   onAtMention?: (relativePath: string) => void;
 }) {
   const { t } = useLocale();
-  const [focused, setFocused] = useState(false);
-  const active = visible || focused;
   const buttonBase = {
     display: "grid",
     placeItems: "center",
@@ -535,8 +527,7 @@ function FileRowActions({
 
   return (
     <span
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
+      className="pi-file-row-actions"
       style={{
         display: "flex",
         alignItems: "center",
@@ -546,6 +537,7 @@ function FileRowActions({
       }}
     >
       <a
+        className="pi-file-row-action-download"
         href={getFileDownloadUrl(filePath)}
         download={fileName}
         onClick={(e) => e.stopPropagation()}
@@ -553,7 +545,6 @@ function FileRowActions({
         style={{
           ...buttonBase,
           color: "var(--accent)",
-          opacity: active ? 1 : 0.68,
           textDecoration: "none",
           transition: "opacity 0.12s ease, background 0.12s ease",
         }}
@@ -566,6 +557,7 @@ function FileRowActions({
       </a>
       {onAtMention && (
         <button
+          className="pi-file-row-action-mention"
           onClick={(e) => {
             e.stopPropagation();
             onAtMention(getRelativeFilePath(filePath, cwd));
@@ -573,8 +565,6 @@ function FileRowActions({
           title={t("explorer.insertPath")}
           style={{
             ...buttonBase,
-            opacity: active ? 1 : 0,
-            pointerEvents: active ? "auto" : "none",
             transition: "opacity 0.12s ease",
           }}
         >
@@ -599,12 +589,10 @@ function RecentFileRow({
   onOpenFile: (filePath: string, fileName: string) => void;
   onAtMention?: (relativePath: string) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
   return (
     <div
+      className="pi-file-row pi-file-recent-row"
       onClick={() => onOpenFile(file.filePath, file.name)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       style={{
         display: "flex",
         alignItems: "center",
@@ -612,7 +600,6 @@ function RecentFileRow({
         height: 24,
         padding: "0 6px",
         borderRadius: 4,
-        background: hovered ? "var(--bg-hover)" : "transparent",
         cursor: "pointer",
       }}
       title={file.filePath}
@@ -623,7 +610,7 @@ function RecentFileRow({
       <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: 12 }}>
         {getRelativeFilePath(file.filePath, cwd)}
       </span>
-      <FileRowActions filePath={file.filePath} fileName={file.name} cwd={cwd} visible={hovered} onAtMention={onAtMention} />
+      <FileRowActions filePath={file.filePath} fileName={file.name} cwd={cwd} onAtMention={onAtMention} />
     </div>
   );
 }
@@ -639,12 +626,10 @@ function SearchResult({
   onOpenFile: (filePath: string, fileName: string) => void;
   onAtMention?: (relativePath: string) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
   return (
     <div
+      className="pi-file-row pi-file-search-row"
       onClick={() => onOpenFile(node.fullPath, node.name)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       style={{
         display: "flex",
         alignItems: "center",
@@ -652,7 +637,6 @@ function SearchResult({
         minHeight: 28,
         padding: "2px 6px",
         borderRadius: 4,
-        background: hovered ? "var(--bg-hover)" : "transparent",
         cursor: "pointer",
       }}
       title={node.fullPath}
@@ -668,7 +652,7 @@ function SearchResult({
           {getRelativeFilePath(node.fullPath, cwd)}
         </span>
       </span>
-      <FileRowActions filePath={node.fullPath} fileName={node.name} cwd={cwd} visible={hovered} onAtMention={onAtMention} />
+      <FileRowActions filePath={node.fullPath} fileName={node.name} cwd={cwd} onAtMention={onAtMention} />
     </div>
   );
 }

@@ -175,12 +175,14 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
 
   return (
     <div
+      className="pi-message pi-message-user"
       style={{ marginBottom: 16, display: "flex", flexDirection: "column", alignItems: "flex-end" }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
       <div style={{ display: "flex", alignItems: "flex-end", gap: 6, maxWidth: "85%" }}>
         <div
+          className="pi-message-bubble pi-message-bubble-user"
           style={{
             flex: 1,
             minWidth: 0,
@@ -381,7 +383,7 @@ function CustomMessageView({ message, showTimestamp }: { message: CustomMessage;
 
   if (comsNet) {
     return (
-      <div style={{ marginBottom: 16 }}>
+      <div className="pi-message pi-message-custom" style={{ marginBottom: 16 }}>
         <ComsNetMessageCard event={comsNet} />
         {time && <div style={{ marginTop: 4, fontSize: 10, color: "var(--text-dim)" }}>{time}</div>}
       </div>
@@ -392,7 +394,7 @@ function CustomMessageView({ message, showTimestamp }: { message: CustomMessage;
     const notifications = parseSubagentNotifications(content, message.details);
     if (notifications.length > 0) {
       return (
-        <div style={{ marginBottom: 16 }}>
+        <div className="pi-message pi-message-custom" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {notifications.map((notification, i) => (
               <SubagentNotificationCard key={notification.id ?? i} notification={notification} />
@@ -405,7 +407,7 @@ function CustomMessageView({ message, showTimestamp }: { message: CustomMessage;
   }
 
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div className="pi-message pi-message-custom" style={{ marginBottom: 16 }}>
       <div className="markdown-body">
         <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, markdownMathOptions]]} rehypePlugins={[rehypeKatex]}>
           {normalizeMarkdownMath(content)}
@@ -511,6 +513,7 @@ function ComsNetMessageCard({ event }: { event: ComsNetEvent }) {
 
   return (
     <div
+      className={`pi-status-card pi-coms-card pi-coms-card-${event.direction}${isError ? " pi-status-card-error" : ""}`}
       style={{
         border: `1px solid ${border}`,
         borderLeft: `3px solid ${color}`,
@@ -628,6 +631,7 @@ function SubagentNotificationCard({ notification }: { notification: SubagentNoti
 
   return (
     <div
+      className={`pi-status-card pi-subagent-card pi-status-card-${status.kind}`}
       style={{
         border: `1px solid ${status.border}`,
         borderLeft: `3px solid ${status.color}`,
@@ -915,6 +919,7 @@ function AssistantMessageView({
 
   return (
     <div
+      className={`pi-message pi-message-assistant${isStreaming ? " pi-message-streaming" : ""}`}
       style={{ marginBottom: 16 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -961,7 +966,7 @@ function AssistantMessageView({
         })()}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="pi-message-blocks" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {blocks.map((block, i) => (
           <BlockView key={i} block={block} toolResults={toolResults} runningToolIds={runningToolIds} toolExecutionStatuses={toolExecutionStatuses} isStreaming={isStreaming} streamingDuration={streamingDurations.get(i) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} missingResultDuration={missingResultDuration} />
         ))}
@@ -1098,7 +1103,7 @@ function TextBlock({ block }: { block: TextContent }) {
   if (plan) return <PlanCard title={plan.title} sections={plan.sections} raw={block.text} />;
 
   return (
-    <div className="markdown-body">
+    <div className="markdown-body pi-text-block">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, [remarkMath, markdownMathOptions]]}
         rehypePlugins={[rehypeKatex]}
@@ -1302,6 +1307,7 @@ function ThinkingBlock({ block, duration }: { block: ThinkingContent; duration?:
   const hasThinking = block.thinking.trim().length > 0;
   return (
     <div
+      className="pi-thinking-card"
       style={{
         position: "relative",
         border: "1px solid color-mix(in srgb, var(--accent) 22%, var(--border))",
@@ -1522,6 +1528,7 @@ function ToolCallBlock({ block, result, isRunning, liveStatus, duration, missing
 
   return (
     <div
+      className={`pi-tool-card${isRunning ? " pi-tool-running" : ""}${isError ? " pi-tool-error" : ""}${isMissingResult ? " pi-tool-missing" : ""}`}
       style={{
         borderRadius: 7,
         overflow: "hidden",

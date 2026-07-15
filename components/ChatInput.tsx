@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent, useId } from "react";
+import { createPortal } from "react-dom";
 import { useLocale } from "@/lib/i18n";
 import { apiPath } from "@/lib/api-path";
 import { popOnce, revealChildren, revealElement } from "@/lib/motion";
 import { getSlashCommandQuery, type PlanExecutionMode, type PlanMode, type PlanModeStatus, type SlashCommandQuery } from "@/lib/plan-mode";
+import { useUiMode } from "@/hooks/useUiMode";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -212,6 +214,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   cwd,
 }: Props, ref) {
   const { t } = useLocale();
+  const { isFluid } = useUiMode();
   const imageInputId = useId();
   const [value, setValue] = useState("");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -233,6 +236,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const mentionPanelRef = useRef<HTMLDivElement>(null);
   const slashPanelRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const modelButtonRef = useRef<HTMLButtonElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownPanelRef = useRef<HTMLDivElement>(null);
@@ -249,6 +253,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const effectiveDraftStorageKey = draftStorageKey ? `${DRAFT_STORAGE_KEY}:${draftStorageKey}` : DRAFT_STORAGE_KEY;
   const canSend = value.trim().length > 0 || attachedImages.length > 0;
   const prevCanSendRef = useRef(canSend);
+  const updateModelDropdownRect = useCallback(() => {
+    const rect = modelButtonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
+  }, []);
   const slashCommands = [
     {
       name: "plan",
@@ -319,6 +328,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const tween = revealElement(modelDropdownPanelRef.current, { y: 5, scale: 0.99, duration: 0.16 });
     return () => { tween?.kill(); };
   }, [modelDropdownOpen]);
+
+  useEffect(() => {
+    if (!modelDropdownOpen) return;
+    updateModelDropdownRect();
+    const visualViewport = window.visualViewport;
+    window.addEventListener("resize", updateModelDropdownRect);
+    window.addEventListener("scroll", updateModelDropdownRect, true);
+    visualViewport?.addEventListener("resize", updateModelDropdownRect);
+    visualViewport?.addEventListener("scroll", updateModelDropdownRect);
+    return () => {
+      window.removeEventListener("resize", updateModelDropdownRect);
+      window.removeEventListener("scroll", updateModelDropdownRect, true);
+      visualViewport?.removeEventListener("resize", updateModelDropdownRect);
+      visualViewport?.removeEventListener("scroll", updateModelDropdownRect);
+    };
+  }, [modelDropdownOpen, updateModelDropdownRect]);
 
   useEffect(() => {
     if (!thinkingDropdownOpen) return;
@@ -820,11 +845,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   return (
     <div
+      className={isFluid ? "pi-fluid-composer-wrap" : "pi-composer-wrap"}
       style={{
         flexShrink: 0,
         background: "transparent",
-        padding: "0 16px 8px",
-        paddingRight: 52, // 16px base + 36px for ChatMinimap alignment
+        padding: isFluid ? "0 18px 28px" : "0 16px 8px",
+        paddingRight: isFluid ? 18 : 52, // 16px base + 36px for ChatMinimap alignment
       }}
     >
       {/* Hidden file input */}
@@ -850,10 +876,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           e.target.value = "";
         }}
       />
-      <div style={{ maxWidth: 820, margin: "0 auto" }}>
+      <div className={isFluid ? "pi-fluid-composer-inner pi-fluid-composer-panel" : "pi-composer-inner"} style={{ maxWidth: 820, margin: "0 auto" }}>
         {/* Retry banner */}
         {retryInfo && (
-          <div style={{
+          <div className="pi-retry-banner" style={{
             marginBottom: 8, padding: "5px 10px",
             background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)",
             borderRadius: 6, fontSize: 12, color: "rgba(180,130,0,0.9)",
@@ -868,7 +894,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         )}
         {/* Image previews */}
         {attachedImages.length > 0 && (
-          <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+          <div className="pi-attachment-preview-strip" style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
             {attachedImages.map((img, i) => (
               <div key={i} style={{ position: "relative", flexShrink: 0 }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -901,6 +927,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {/* Main input */}
         <div
           ref={inputShellRef}
+          className="pi-command-surface"
           style={{
             position: "relative",
             display: "flex",
@@ -919,6 +946,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {slashOpen && (
             <div
               ref={slashPanelRef}
+              className="pi-popover pi-slash-popover"
               role="listbox"
               aria-label={t("chat.slash.title")}
               tabIndex={-1}
@@ -1014,6 +1042,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {mentionOpen && (
             <div
               ref={mentionPanelRef}
+              className="pi-popover pi-mention-popover"
               role="listbox"
               aria-label={t("chat.fileMentionsTitle")}
               tabIndex={-1}
@@ -1098,6 +1127,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           )}
           <textarea
+            className="pi-command-textarea"
             ref={textareaRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
@@ -1136,9 +1166,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           />
 
           {isStreaming ? (
-            <div ref={streamActionsRef} style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-end" }}>
+            <div ref={streamActionsRef} className="pi-stream-actions" style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-end" }}>
               {onSteer && (
                 <button
+                  className="pi-send-command pi-send-command-queued"
                   onClick={() => sendQueued("steer")}
                   disabled={!value.trim() && !attachedImages.length}
                   title={t("chat.steerTitle")}
@@ -1157,11 +1188,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M5 1 L9 5 L5 9" /><line x1="1" y1="5" x2="9" y2="5" />
                   </svg>
-                  {t("chat.steer")}
+                  <span className="pi-send-command-label">{t("chat.steer")}</span>
                 </button>
               )}
               {onFollowUp && (
                 <button
+                  className="pi-send-command pi-send-command-queued"
                   onClick={() => sendQueued("followup")}
                   disabled={!value.trim() && !attachedImages.length}
                   title={t("chat.followUpTitle")}
@@ -1181,12 +1213,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <line x1="5" y1="1" x2="5" y2="6" /><polyline points="2.5 3.5 5 1 7.5 3.5" />
                     <line x1="2" y1="9" x2="8" y2="9" />
                   </svg>
-                  {t("chat.followUp")}
+                  <span className="pi-send-command-label">{t("chat.followUp")}</span>
                 </button>
               )}
             </div>
           ) : (
             <button
+              className="pi-send-command"
               ref={sendButtonRef}
               onClick={() => {
                 if (canSend) popOnce(sendButtonRef.current);
@@ -1220,7 +1253,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         </div>
 
         {/* Bottom bar: left | center (context) | right */}
-        <div ref={bottomBarRef} style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", rowGap: 6 }}>
+        <div ref={bottomBarRef} className="pi-command-controls" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", rowGap: 6 }}>
 
           {/* LEFT: attach + snippets + model selector */}
           <div style={{ flex: "1 1 280px", minWidth: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", rowGap: 4 }}>
@@ -1353,6 +1386,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               {snippetDropdownOpen && (
                 <div
                   ref={snippetDropdownPanelRef}
+                  className="pi-popover pi-snippet-popover"
                   role="menu"
                   style={{
                     position: "absolute", bottom: "calc(100% + 6px)", left: 0,
@@ -1396,8 +1430,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {modelOptions.length > 0 && currentName && onModelChange && (
                 <div ref={dropdownRef} data-motion-control style={{ position: "relative" }}>
                   <button
+                    ref={modelButtonRef}
                     onClick={(e) => {
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      const rect = e.currentTarget.getBoundingClientRect();
                       setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
                       setModelDropdownOpen((v) => !v);
                     }}
@@ -1436,17 +1471,27 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     </svg>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{currentName}</span>
                   </button>
-                  {modelDropdownOpen && modelDropdownRect && (() => {
+                  {modelDropdownOpen && modelDropdownRect && typeof document !== "undefined" && createPortal((() => {
+                    const margin = 8;
+                    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
                     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+                    const viewportMaxWidth = Math.max(120, viewportWidth - margin * 2);
+                    const initialMinWidth = Math.min(modelDropdownRect.width, viewportMaxWidth);
+                    const left = Math.min(
+                      Math.max(margin, modelDropdownRect.left),
+                      Math.max(margin, viewportWidth - initialMinWidth - margin),
+                    );
+                    const maxPanelWidth = Math.max(120, viewportWidth - left - margin);
+                    const minPanelWidth = Math.min(modelDropdownRect.width, maxPanelWidth);
                     const bottom = viewportHeight - modelDropdownRect.top + 6;
                     const maxH = Math.max(120, Math.min(modelDropdownRect.top - 8, viewportHeight * 0.6));
                     return (
-                    <div ref={modelDropdownPanelRef} style={{
+                    <div ref={modelDropdownPanelRef} className="pi-popover pi-model-popover" style={{
                       position: "fixed",
-                      bottom, left: modelDropdownRect.left,
+                      bottom, left,
                       zIndex: 500, background: "var(--bg)", border: "1px solid var(--border)",
                       borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
-                      overflow: "hidden", width: "max-content", minWidth: modelDropdownRect.width, maxHeight: maxH, overflowY: "auto",
+                      overflow: "hidden", width: "max-content", minWidth: minPanelWidth, maxWidth: maxPanelWidth, maxHeight: maxH, overflowY: "auto",
                     }}>
                       {modelsByProvider.map((group, gi) => (
                         <div key={group.provider}>
@@ -1490,7 +1535,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       ))}
                     </div>
                     );
-                  })()}
+                  })(), document.body)}
                 </div>
             )}
           </div>
@@ -1542,7 +1587,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   })()}</span>
                 </button>
                 {thinkingDropdownOpen && (
-                  <div ref={thinkingDropdownPanelRef} style={{
+                  <div ref={thinkingDropdownPanelRef} className="pi-popover pi-thinking-popover" style={{
                     position: "absolute", bottom: "calc(100% + 6px)", right: 0,
                     zIndex: 100, background: "var(--bg)", border: "1px solid var(--border)",
                     borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",

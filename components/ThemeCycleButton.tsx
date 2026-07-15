@@ -6,7 +6,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useLocale } from "@/lib/i18n";
 
 interface Props {
-  variant?: "topbar" | "footer";
+  variant?: "topbar" | "footer" | "rail";
 }
 
 export function ThemeCycleButton({ variant = "topbar" }: Props) {
@@ -16,6 +16,7 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
   const wrapRef = useRef<HTMLSpanElement>(null);
   const isTopbar = variant === "topbar";
   const isFooter = variant === "footer";
+  const isRail = variant === "rail";
 
   useEffect(() => {
     if (!open) return;
@@ -39,9 +40,11 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
         display: "flex",
         flex: isFooter ? 1 : undefined,
         minWidth: 0,
+        alignItems: isRail ? "center" : undefined,
       }}
     >
     <button
+      className={`pi-theme-cycle-button pi-theme-cycle-button-${variant}`}
       onClick={(e) => {
         e.stopPropagation();
         setOpen((current) => !current);
@@ -55,8 +58,8 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
         justifyContent: "center",
         gap: isFooter ? 3 : 2,
         flex: isFooter ? 1 : undefined,
-        width: isTopbar ? 36 : undefined,
-        height: isTopbar ? 36 : 32,
+        width: isTopbar || isRail ? 36 : undefined,
+        height: isTopbar || isRail ? 36 : 32,
         padding: isFooter ? "0 3px" : 0,
         background: isTopbar ? "none" : "transparent",
         border: "none",
@@ -77,17 +80,41 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
         if (!isTopbar) e.currentTarget.style.background = "transparent";
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          width: 15,
-          height: 15,
-          borderRadius: "50%",
-          background: themeOption.accent,
-          border: "1px solid color-mix(in srgb, var(--text) 18%, var(--border))",
-          boxShadow: `inset 0 0 0 4px ${themeOption.surface}`,
-        }}
-      />
+      {isRail ? (
+        <span
+          aria-hidden="true"
+          className="pi-theme-rail-icon"
+          style={{
+            width: 18,
+            height: 18,
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 2,
+            padding: 2,
+            borderRadius: 6,
+            border: "1px solid color-mix(in srgb, var(--text) 18%, var(--border))",
+            background: themeOption.surface,
+            boxShadow: `0 0 0 3px color-mix(in srgb, ${themeOption.accent} 14%, transparent)`,
+          }}
+        >
+          <span style={{ borderRadius: 3, background: themeOption.accent }} />
+          <span style={{ borderRadius: 3, background: "var(--bg)" }} />
+          <span style={{ borderRadius: 3, background: "var(--bg-hover)" }} />
+          <span style={{ borderRadius: 3, background: "var(--text-muted)" }} />
+        </span>
+      ) : (
+        <span
+          aria-hidden="true"
+          style={{
+            width: 15,
+            height: 15,
+            borderRadius: "50%",
+            background: themeOption.accent,
+            border: "1px solid color-mix(in srgb, var(--text) 18%, var(--border))",
+            boxShadow: `inset 0 0 0 4px ${themeOption.surface}`,
+          }}
+        />
+      )}
       {isTopbar && (
         <span
           aria-hidden="true"
@@ -104,13 +131,14 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
     </button>
     {open && (
       <div
+        className="pi-theme-menu pi-popover"
         style={{
           position: "absolute",
-          left: isTopbar ? 2 : 0,
+          left: isRail ? "calc(100% + 8px)" : isTopbar ? 2 : 0,
           top: isTopbar ? "calc(100% + 6px)" : undefined,
-          bottom: isFooter ? "calc(100% + 8px)" : undefined,
-          width: 190,
-          maxHeight: 326,
+          bottom: isRail ? 0 : isFooter ? "calc(100% + 8px)" : undefined,
+          width: isRail ? 210 : 190,
+          maxHeight: isRail ? "min(326px, calc(100dvh - 24px))" : 326,
           overflowY: "auto",
           padding: 6,
           border: "1px solid var(--border)",
