@@ -1,5 +1,6 @@
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import { NextResponse } from "next/server";
+import { createAppModelRegistry } from "@/lib/model-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ type Params = { params: Promise<{ provider: string }> };
 export async function GET(_req: Request, { params }: Params) {
   const { provider } = await params;
   const authStorage = AuthStorage.create();
-  const registry = ModelRegistry.create(authStorage);
+  const registry = createAppModelRegistry(authStorage);
   const status = registry.getProviderAuthStatus(provider);
   const displayName = registry.getProviderDisplayName(provider);
   const models = registry.getAll().filter((m) => m.provider === provider).length;

@@ -31,7 +31,7 @@ import CohereColorIcon from "@lobehub/icons/es/Cohere/components/Color";
 import PerplexityColorIcon from "@lobehub/icons/es/Perplexity/components/Color";
 import TogetherColorIcon from "@lobehub/icons/es/Together/components/Color";
 import GrokIcon from "@lobehub/icons/es/Grok/components/Mono";
-import StepfunColorIcon from "@lobehub/icons/es/Stepfun/components/Color";
+import StepfunIcon from "@lobehub/icons/es/Stepfun/components/Mono";
 import { useLocale } from "@/lib/i18n";
 
 type IconComponent = React.ComponentType<{ size?: number | string; style?: React.CSSProperties }>;
@@ -73,8 +73,8 @@ const PROVIDER_ICONS: Record<string, { Icon: IconComponent; hasColor: boolean }>
   "perplexity":             { Icon: PerplexityColorIcon,  hasColor: true },
   "together":               { Icon: TogetherColorIcon,    hasColor: true },
   "grok":                   { Icon: GrokIcon,             hasColor: false },
-  "stepfun":                { Icon: StepfunColorIcon,    hasColor: true },
-  "stepfun-step-plan":      { Icon: StepfunColorIcon,    hasColor: true },
+  "stepfun":                { Icon: StepfunIcon,         hasColor: false },
+  "stepfun-step-plan":      { Icon: StepfunIcon,         hasColor: false },
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -245,7 +245,7 @@ const PROVIDER_TEMPLATES: ProviderTemplate[] = [
           name: "DeepSeek V4 Flash",
           reasoning: true,
           compat: { supportsDeveloperRole: false, thinkingFormat: "deepseek" },
-          thinkingLevelMap: { off: null, minimal: "high", low: "high", medium: "high", high: "high", xhigh: "max" },
+          thinkingLevelMap: { off: null, minimal: "high", low: "high", medium: "high", high: "high", xhigh: "max", max: "max" },
         },
         {
           id: "nex-agi/Nex-N2-Pro",
@@ -475,7 +475,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete }: {
 
 // ── ThinkingLevelMap editor ───────────────────────────────────────────────────
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type ThinkingLevel = typeof THINKING_LEVELS[number];
 
 const LEVEL_COLORS: Record<ThinkingLevel, string> = {
@@ -485,6 +485,7 @@ const LEVEL_COLORS: Record<ThinkingLevel, string> = {
   medium:  "#a78bfa",
   high:    "#f472b6",
   xhigh:   "#fb923c",
+  max:     "#ef4444",
 };
 
 function ThinkingLevelMapEditor({

@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const defaultNodeVersion = "24.14.1";
+const defaultNodeVersion = "24.18.0";
 
 function parseArgs(argv) {
   const options = {

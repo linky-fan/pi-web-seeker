@@ -1,6 +1,7 @@
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { Message } from "@earendil-works/pi-ai";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import { createAppModelRegistry } from "@/lib/model-registry";
 import {
   parseQuickChatMessages,
   parseQuickChatModel,
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
       throw new QuickChatValidationError("The last message must be from the user");
     }
 
-    const registry = ModelRegistry.create(AuthStorage.create());
+    const registry = createAppModelRegistry(AuthStorage.create());
     const model = registry.find(modelRef.provider, modelRef.modelId);
     if (!model) {
       return Response.json({ error: `Model not found: ${modelRef.provider}/${modelRef.modelId}` }, { status: 404 });

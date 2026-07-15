@@ -54,8 +54,8 @@ interface Props {
   isCompacting?: boolean;
   compactError?: string | null;
   contextUsage?: ContextUsage | null;
-  thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-  onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh") => void;
+  thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   planMode?: PlanMode;
   planExecutionMode?: PlanExecutionMode;
   planModeStatus?: PlanModeStatus | null;
@@ -86,7 +86,7 @@ export interface ChatInputHandle {
   addImages: (files: File[]) => void;
 }
 
-const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 const DRAFT_STORAGE_KEY = "pi-web.chat.draft";
 const HISTORY_STORAGE_KEY = "pi-web.chat.history";
@@ -1803,8 +1803,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     overflow: "hidden", minWidth: 180,
                   }}>
                     {THINKING_LEVELS.filter((lvl) => {
-                      if (!availableThinkingLevels) return true;
                       if (lvl === "auto") return true;
+                      if (lvl === "max") return availableThinkingLevels?.includes("max") ?? false;
+                      if (!availableThinkingLevels) return true;
                       return availableThinkingLevels.includes(lvl);
                     }).map((lvl) => {
                       const isActive = (thinkingLevel ?? "auto") === lvl;

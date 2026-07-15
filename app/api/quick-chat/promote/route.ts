@@ -1,6 +1,6 @@
 import { existsSync, statSync } from "fs";
 import { NextResponse } from "next/server";
-import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { AuthStorage, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { assertPathAllowed } from "@/lib/allowed-roots";
 import {
@@ -15,6 +15,7 @@ import {
   QuickChatValidationError,
 } from "@/lib/quick-chat";
 import type { SessionInfo } from "@/lib/types";
+import { createAppModelRegistry } from "@/lib/model-registry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
 
     const modelRef = parseQuickChatModel(body);
     const messages = parseQuickChatMessages(body.messages);
-    const registry = ModelRegistry.create(AuthStorage.create());
+    const registry = createAppModelRegistry(AuthStorage.create());
     const model = registry.find(modelRef.provider, modelRef.modelId);
     if (!model) {
       return NextResponse.json({ error: `Model not found: ${modelRef.provider}/${modelRef.modelId}` }, { status: 404 });

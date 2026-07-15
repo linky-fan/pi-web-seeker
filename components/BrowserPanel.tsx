@@ -175,15 +175,16 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
     }
   }, [agentSessionId, loadSession]);
 
+  const pendingApproval = session?.pendingApproval;
   const resolveApproval = useCallback(async (decision: BrowserApprovalDecision) => {
-    if (!session?.pendingApproval) return;
+    if (!pendingApproval) return;
     setBusy("approval");
     setError(null);
     try {
       const response = await fetch(apiPath(`/api/browser/sessions/${encodeURIComponent(agentSessionId)}/approvals`), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approvalId: session.pendingApproval.id, decision }),
+        body: JSON.stringify({ approvalId: pendingApproval.id, decision }),
       });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
@@ -193,7 +194,7 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
     } finally {
       setBusy(null);
     }
-  }, [agentSessionId, loadSession, session?.pendingApproval]);
+  }, [agentSessionId, loadSession, pendingApproval]);
 
   const submitAddress = (event: FormEvent) => {
     event.preventDefault();

@@ -3,7 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { completeSimple, type AssistantMessage } from "@earendil-works/pi-ai/compat";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import { createAppModelRegistry } from "@/lib/model-registry";
+import { normalizeModelsJsonCompat } from "@/lib/models-config-compat";
 
 export const dynamic = "force-dynamic";
 
@@ -39,16 +41,17 @@ export async function POST(req: Request) {
 
     tempDir = mkdtempSync(join(tmpdir(), "pi-web-model-test-"));
     const modelsPath = join(tempDir, "models.json");
-    writeFileSync(modelsPath, JSON.stringify({
+    const normalized = normalizeModelsJsonCompat({
       providers: {
         [providerName]: {
           ...body.provider,
           models: [{ ...body.model, id: modelId }],
         },
       },
-    }, null, 2), "utf8");
+    });
+    writeFileSync(modelsPath, JSON.stringify(normalized.value, null, 2), "utf8");
 
-    const registry = ModelRegistry.create(AuthStorage.create(), modelsPath);
+    const registry = createAppModelRegistry(AuthStorage.create(), modelsPath);
     const loadError = registry.getError();
     if (loadError) return NextResponse.json({ ok: false, error: loadError });
 

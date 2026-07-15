@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { ensureModelsConfigCompatible, normalizeModelsJsonCompat, writeModelsJsonAtomic } from "@/lib/models-config-compat";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ function getModelsPath(): string {
 function readModelsJson(): Record<string, unknown> {
   const path = getModelsPath();
   if (!existsSync(path)) return { providers: {} };
+  ensureModelsConfigCompatible(path);
   try {
     return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
   } catch {
@@ -53,7 +55,9 @@ function writeModelsJson(data: Record<string, unknown>): void {
   const path = getModelsPath();
   const dir = dirname(path);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(path, JSON.stringify(sanitizeModelsJson(data), null, 2), "utf8");
+  if (existsSync(path)) ensureModelsConfigCompatible(path);
+  const normalized = normalizeModelsJsonCompat(sanitizeModelsJson(data));
+  writeModelsJsonAtomic(path, normalized.value);
 }
 
 export async function GET() {
