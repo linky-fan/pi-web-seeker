@@ -26,6 +26,11 @@
 /.pi-web-data
 /.pi-web-workspace
 
+# Pi and Remote workspace state can contain credentials, session data, and
+# explicitly exported remote captures.  These are local-only by design.
+/.pi/
+/.pi-remote/
+
 # misc
 .DS_Store
 *.pem

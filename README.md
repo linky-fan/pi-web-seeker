@@ -56,6 +56,7 @@ PI_WEB_ACCESS_TOKEN=your-long-random-token pi-web
 | 模型 | Provider / model / API key 管理、模型连通性测试、thinking level、工具预设 |
 | 上下文 | token / cache / cost / context 统计、压缩提示、system prompt 查看 |
 | 文件 | 工作区选择、文件搜索、代码 / Markdown / HTML / 图片 / 音频预览 |
+| Remote | SSH / Telnet 目标、会话级持久连接、人工终端、命令审批和本地捕获分析 |
 | 扩展 | Skills、Subagent 通知、Plan Mode、AGENTS.md 草稿助手、coms-net / Pi Pi |
 | 导入导出 | Markdown / JSON 导出、普通 JSON 导入、Debug Bundle inspect / import |
 
@@ -90,6 +91,27 @@ PI_WEB_ACCESS_TOKEN=your-long-random-token pi-web
 Debug Bundle 用于跨机器复现调试，会导出 `.tar.gz`，包含会话、媒体证据、工作区快照和脱敏环境诊断信息。
 
 ![Debug Bundle 结构图](docs/screenshots/debug-bundle-structure.zh-CN.svg)
+
+### SSH / Telnet 远程分析
+
+正式会话右侧的 Remote 面板可以创建 SSH 或 Telnet 目标，并为当前 AgentSession 保持一个连接。Remote 使用终端优先布局：终端始终占满面板宽度，`Targets` 和 `Activity` 通过覆盖式抽屉管理目标、捕获与命令时间线，不会压缩终端列数。人工终端与 Agent 工具共用同一连接；Agent 执行命令时终端输入会锁定，需要人工操作时可通过 `Take control` 接管，完成后再交还 Agent。
+
+基本流程：
+
+1. 在正式会话中打开右侧 `Remote` 标签，并按提示为当前工作区启用内置远程工具。
+2. 在 `Targets` 中创建 SSH 或 Telnet 目标；密码和私钥口令只在连接时临时提交。`Auto-detect` 会运行固定的只读探针，但检测结果只是提示，必须在当前连接中选择 `Apply detected policy` 后才会启用相应平台的自动读取规则。
+3. 完成 SSH 主机指纹或 Telnet 明文风险确认后建立连接。
+4. 通过底部 Run 输入框或 Agent 的 `remote_execute` 执行命令；两者共用同一套敏感命令分类和审批。
+5. 需要交互式操作时使用 `Take control` 人工接管。接管本身视为明确授权，不逐行弹出审批；接管会中止正在运行的 Agent 命令，交还控制后自动执行才能继续。
+6. 在 `Activity` 中查看捕获和时间线；需要进一步分析时，将捕获显式导出到工作区，再使用现有 bash / Python 工具处理。
+
+读取类命令默认可自动执行，配置、删除、提权、重启、Shell 操作符和无法分类的命令需要确认。未知主机、未确认的自动识别结果和未知命令始终需要确认；Linux、FreeBSD、Windows 与 Cisco 使用各自的严格查询白名单，而不是按危险关键字猜测。`Full-auto` 只在当前连接内跳过命令审批，不跳过 SSH 主机指纹、Telnet 明文风险或捕获导出审批。每次导出（包括新建和覆盖）都会先显示命令、目标路径和覆盖状态，确认后服务端再次校验 allowed-root、symlink 与目标状态并原子写入。完整输出保存在 Agent 数据目录的敏感捕获库中，可分页读取、搜索，或显式导出到工作区后交给现有 bash / Python 工具分析。Remote 捕获以及 `remote_session`、`remote_execute`、`remote_capture` 的工具结果不会进入普通会话导出或 Debug Bundle。
+
+Agent 只能引用用户创建的目标配置，不能自行指定主机或凭据。密码和私钥口令不写入 `remote-targets.json`，也不会进入终端事件、时间线、捕获、错误信息或会话导出；Telnet 登录阶段的交互输出默认不转发，连接关闭后会立即清除临时凭据。首次 SSH 连接必须确认 SHA-256 主机指纹，已保存指纹变化时会硬阻断；Telnet 每次连接都会显示明文传输警告。每个正式会话最多保持一个活动连接，Quick Chat 不加载远程执行工具。工作区启用状态保存在本地 `.pi/`，显式导出默认写到本地 `.pi-remote/`；两者均被 Git 忽略，也会被 Debug Bundle 排除。
+
+下面的界面图已裁剪为 Remote 面板，并移除了设备地址、MAC、用户名、工作区路径、凭据、远程输出和会话正文；图中的命令名仅用于展示捕获列表。
+
+![Remote terminal and activity drawer (privacy-safe preview)](docs/screenshots/remote-terminal-safe.jpg)
 
 ## Docker
 
@@ -130,6 +152,7 @@ npm run dev
 ```bash
 node_modules/.bin/tsc --noEmit
 npm run lint
+npm run test:remote
 node scripts/agents-md.mjs check --path AGENTS.md
 ```
 
@@ -704,4 +727,4 @@ flowchart LR
 - API key、auth 文件、本地 session 数据、`.env*` 和私有路径不要提交到仓库或截图中。
 - 文件 API 会校验 allowed roots，避免通过符号链接读取工作区外文件。
 - Docker Compose 默认只暴露 `/workspace` 单工作区；宿主机路径和容器路径不同，旧会话可能仍显示原宿主机路径。
-- Debug Bundle 会跳过 `.git`、`node_modules`、`.next`、build/cache、`.env*`、疑似 auth/token/key 文件、超限大文件和 symlink。
+- Debug Bundle 会跳过 `.git`、`.pi`、`.pi-remote`、`node_modules`、`.next`、build/cache、`.env*`、疑似 auth/token/key 文件、超限大文件和 symlink。

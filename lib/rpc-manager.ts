@@ -35,6 +35,7 @@ import {
   uniqueToolNames,
 } from "./tool-settings";
 import { ensureModelsConfigCompatible } from "./models-config-compat";
+import { getRemoteRuntime } from "../pi-packages/pi-remote-exec/runtime";
 
 // ============================================================================
 // Types
@@ -1260,6 +1261,7 @@ export class AgentSessionWrapper {
   }
 
   private async reloadExtensionsAware(): Promise<void> {
+    await getRemoteRuntime().close(this.sessionId, false);
     await this.waitForExtensionsBound();
     this.extensionStatuses.clear();
     this.extensionWidgets.clear();
@@ -1285,6 +1287,7 @@ export class AgentSessionWrapper {
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
+    void getRemoteRuntime().close(this.sessionId, false);
     this.pendingGuide = null;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();

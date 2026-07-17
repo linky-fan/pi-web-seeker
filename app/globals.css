@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@xterm/xterm/css/xterm.css";
 
 @theme {
   --color-bg: var(--bg);
@@ -4487,6 +4488,10 @@ html[data-ui="fluid"] .pi-fluid-env-delta-del {
   font-size: 13px;
 }
 
+.pi-app-shell.pi-remote-active .pi-quick-chat {
+  display: none;
+}
+
 html.dark .pi-quick-chat {
   --quick-blue: #3b82f6;
   --quick-blue-hover: #60a5fa;
@@ -5283,25 +5288,125 @@ html.dark .pi-quick-chat {
 }
 
 @media (min-width: 641px) and (max-width: 1099px) {
-  html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+  html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
     right: 424px;
   }
 }
 
 @media (min-width: 1100px) {
-  html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+  html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
     right: 574px;
   }
 }
 
 @media (min-width: 641px) {
-  html:not([data-ui="fluid"]) body:has(.right-panel-container.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+  html:not([data-ui="fluid"]) body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
     right: calc(min(58vw, 860px) + 14px);
   }
 }
 
+body:has(.right-panel-container.pi-remote-panel-active.right-panel-open) .pi-quick-chat,
 body:has(.pi-app-shell.pi-browser-focus-mode) .pi-quick-chat {
   display: none;
+}
+
+/* Controlled SSH/Telnet workspace — terminal-first layout with overlay drawers. */
+.pi-remote-panel { --pi-terminal-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Noto Sans Mono CJK SC", "Microsoft YaHei Mono", monospace; height: 100%; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; background: var(--bg); color: var(--text); }
+.pi-remote-toolbar { height: 42px; flex: 0 0 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 12px; border-bottom: 1px solid var(--border); background: var(--bg-panel); }
+.pi-remote-title, .pi-remote-toolbar-actions, .pi-remote-connection-bar, .pi-remote-section-head, .pi-remote-target-actions, .pi-remote-approval > div { display: flex; align-items: center; gap: 8px; }
+.pi-remote-title { font-size: 13px; font-weight: 650; }
+.pi-remote-title small { color: var(--text-dim); font-weight: 500; text-transform: capitalize; }
+.pi-remote-toolbar-actions { min-width: 0; gap: 5px; }
+.pi-remote-toolbar-actions button { white-space: nowrap; }
+.pi-remote-toolbar-actions button small { margin-left: 3px; color: var(--text-dim); font-size: 9px; font-variant-numeric: tabular-nums; }
+.pi-remote-toolbar-actions button.active small { color: inherit; }
+.pi-remote-status-dot { width: 7px; height: 7px; border-radius: 999px; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 10%, transparent); }
+.pi-remote-panel button { border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text-muted); font-size: 11px; line-height: 1; padding: 7px 9px; cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }
+.pi-remote-panel button:hover:not(:disabled), .pi-remote-panel button.active { color: var(--text); border-color: color-mix(in srgb, var(--accent) 42%, var(--border)); background: var(--bg-hover); }
+.pi-remote-panel button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+.pi-remote-panel button:disabled { opacity: .48; cursor: not-allowed; }
+.pi-remote-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; background: color-mix(in srgb, var(--danger, #dc2626) 10%, var(--bg)); border-bottom: 1px solid color-mix(in srgb, var(--danger, #dc2626) 25%, var(--border)); color: var(--danger, #dc2626); font-size: 12px; }
+.pi-remote-error button { border: 0; padding: 2px 4px; background: transparent; color: inherit; font-size: 16px; }
+.pi-remote-main { position: relative; min-height: 0; flex: 1; overflow: hidden; }
+.pi-remote-drawer-layer { position: absolute; inset: 0; z-index: 30; overflow: hidden; }
+.pi-remote-drawer-scrim { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: rgba(4, 8, 13, .48) !important; cursor: default !important; }
+.pi-remote-drawer { position: relative; z-index: 1; width: min(260px, calc(100% - 42px)); height: 100%; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border)); background: var(--bg-panel); box-shadow: 18px 0 42px rgba(0, 0, 0, .28); animation: pi-remote-drawer-in 150ms cubic-bezier(.2,.8,.2,1); }
+.pi-remote-drawer-header { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 8px 7px 11px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg)); }
+.pi-remote-drawer-header > div { min-width: 0; }
+.pi-remote-drawer-header small, .pi-remote-drawer-header strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pi-remote-drawer-header small { color: var(--text-dim); font-size: 8px; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
+.pi-remote-drawer-header strong { margin-top: 3px; color: var(--text); font-size: 12px; }
+.pi-remote-drawer-header button { width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; padding: 0; border-color: transparent; background: transparent; font-size: 17px; }
+.pi-remote-drawer-scroll { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
+@keyframes pi-remote-drawer-in { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+.pi-remote-section-head { justify-content: space-between; padding: 10px 10px 7px; color: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.pi-remote-section-head.capture { margin-top: 4px; border-top: 1px solid var(--border); }
+.pi-remote-section-head small { font-size: 10px; color: var(--text-dim); }
+.pi-remote-section-head button { padding: 5px 7px; }
+.pi-remote-targets { padding: 0 6px 6px; display: grid; gap: 3px; }
+.pi-remote-targets > button { width: 100%; min-width: 0; display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 7px; padding: 8px; text-align: left; border-color: transparent; background: transparent; }
+.pi-remote-targets > button.active { background: var(--bg-selected); }
+.pi-remote-targets .protocol { padding: 4px 3px; border: 1px solid var(--border); border-radius: 4px; color: var(--accent); font: 700 9px/1 var(--font-mono); text-align: center; }
+.pi-remote-targets strong, .pi-remote-targets small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pi-remote-targets strong { color: var(--text); font-size: 11px; }
+.pi-remote-targets small { margin-top: 4px; color: var(--text-dim); font: 9px/1.2 var(--font-mono); }
+.pi-remote-targets p { padding: 10px; color: var(--text-dim); font-size: 11px; }
+.pi-remote-target-actions { padding: 0 10px 8px; }
+.pi-remote-profile-editor, .pi-remote-connect-card { margin: 2px 8px 8px; padding: 9px; display: grid; gap: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); }
+.pi-remote-profile-editor label, .pi-remote-connect-card label { display: grid; gap: 4px; color: var(--text-muted); font-size: 10px; }
+.pi-remote-profile-editor label > span, .pi-remote-connect-card label > span { color: var(--text-dim); }
+.pi-remote-profile-editor input, .pi-remote-profile-editor select, .pi-remote-connect-card input { min-width: 0; width: 100%; height: 29px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-panel); color: var(--text); padding: 0 7px; font: 11px var(--font-mono); }
+.pi-remote-profile-editor .row { display: grid; grid-template-columns: 1fr 74px; gap: 7px; }
+.pi-remote-profile-editor .warning { display: flex; grid-template-columns: none; align-items: flex-start; gap: 6px; color: var(--warning, #d97706); line-height: 1.35; }
+.pi-remote-profile-editor .warning input { width: 14px; height: 14px; }
+.pi-remote-profile-editor .actions { display: flex; justify-content: flex-end; gap: 6px; }
+.pi-remote-captures { display: grid; gap: 2px; padding: 0 6px 10px; }
+.pi-remote-captures button { min-width: 0; display: block; border-color: transparent; background: transparent; text-align: left; }
+.pi-remote-captures span, .pi-remote-captures small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pi-remote-captures span { color: var(--text-muted); font: 10px var(--font-mono); }
+.pi-remote-captures small { margin-top: 4px; color: var(--text-dim); font-size: 9px; }
+.pi-remote-timeline { display: grid; gap: 4px; padding: 0 10px 12px; }
+.pi-remote-timeline > div { min-width: 0; padding-left: 8px; border-left: 2px solid color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.pi-remote-timeline span, .pi-remote-timeline small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pi-remote-timeline span { color: var(--text-muted); font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.pi-remote-timeline small, .pi-remote-timeline p { margin: 3px 0 0; color: var(--text-dim); font: 9px/1.3 var(--font-mono); }
+.pi-remote-console { width: 100%; height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #101318; }
+.pi-remote-connection-bar { min-height: 36px; justify-content: flex-end; padding: 4px 8px; border-bottom: 1px solid #2a3039; background: #171b21; }
+.pi-remote-connection-bar > span { min-width: 0; margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cbd3dd; font: 11px var(--font-mono); }
+.pi-remote-connection-bar button { border-color: #343b46; background: #1d222a; color: #aeb8c5; }
+.pi-remote-connection-bar button.active { color: #fff; border-color: #d97706; background: #3a2a13; }
+.pi-remote-terminal { min-height: 180px; flex: 1; padding: 8px 4px 4px 9px; overflow: hidden; font-family: var(--pi-terminal-font); font-kerning: none; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; letter-spacing: 0; }
+.pi-remote-terminal .xterm { height: 100%; font-family: var(--pi-terminal-font); font-kerning: none; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; letter-spacing: 0; }
+.pi-remote-terminal .xterm-rows { font-kerning: none; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; letter-spacing: 0; }
+.pi-remote-command { min-height: 40px; display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-top: 1px solid #2a3039; background: #171b21; }
+.pi-remote-command > span { color: #7aa2f7; font: 700 13px var(--font-mono); }
+.pi-remote-command input { min-width: 0; flex: 1; height: 28px; border: 0; outline: 0; background: transparent; color: #d7dce2; font: 12px var(--font-mono); }
+.pi-remote-command button { border-color: #343b46; background: #222831; color: #d7dce2; }
+.pi-remote-approval { padding: 10px 12px; border-bottom: 1px solid #765523; background: #322611; color: #f7d59b; }
+.pi-remote-approval strong { font-size: 12px; }
+.pi-remote-approval p { margin: 4px 0 8px; max-height: 72px; overflow: auto; white-space: pre-wrap; font: 10px/1.45 var(--font-mono); }
+.pi-remote-approval > div { justify-content: flex-end; }
+.pi-remote-setup { margin: auto; max-width: 430px; padding: 28px; display: grid; justify-items: center; gap: 9px; text-align: center; color: var(--text-muted); }
+.pi-remote-setup strong { color: var(--text); font-size: 14px; }
+.pi-remote-setup p { margin: 0; font-size: 12px; line-height: 1.55; }
+.pi-remote-setup code { max-width: 100%; overflow: auto; color: var(--danger, #dc2626); font-size: 10px; }
+
+@container (max-width: 620px) {
+  .pi-remote-title small { display: none; }
+  .pi-remote-toolbar-actions { gap: 3px; }
+  .pi-remote-toolbar-actions button { padding-inline: 6px; }
+  .pi-remote-connection-bar button { padding-inline: 6px; }
+}
+
+@container (max-width: 430px) {
+  .pi-remote-toolbar { padding-left: 8px; padding-right: 6px; }
+  .pi-remote-title > span:not(.pi-remote-status-dot) { display: none; }
+  .pi-remote-toolbar-actions button small { display: none; }
+  .pi-remote-drawer { width: min(280px, calc(100% - 36px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pi-remote-drawer { animation: none; }
 }
 
 @media (max-width: 1099px) {

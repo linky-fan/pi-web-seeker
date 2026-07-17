@@ -7,6 +7,7 @@ import zlib from "zlib";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { FileEntry, SessionEntry, SessionHeader, SessionInfo } from "./types";
 import { getPathRelativeToRoot, isWindowsStylePath, normalizeFilePathSlashes } from "./path-identity";
+import { filterRemoteSessionEntries } from "./session-export";
 
 export const DEBUG_BUNDLE_SCHEMA_VERSION = 1;
 export const DEBUG_BUNDLE_MAX_BYTES = 250 * 1024 * 1024;
@@ -29,6 +30,8 @@ const EXCLUDED_DIR_NAMES = new Set([
   "target",
   "vendor",
   ".pi-web-data",
+  ".pi",
+  ".pi-remote",
 ]);
 
 const SECRET_NAME_RE = /(^|[._-])(?:env|secret|secrets|token|tokens|auth|credential|credentials|apikey|api-key|private-key|id_rsa|id_ed25519)(?:$|[._-])/i;
@@ -566,7 +569,11 @@ export function buildDebugBundle(params: {
   piVersion: string;
 }): { filename: string; data: Buffer; manifest: DebugBundleManifest } {
   const warnings: string[] = [];
-  const externalized = externalizeMedia(params.entries);
+  // Remote command results and captures are sensitive operational data. They
+  // can only leave the application through the explicitly approved capture
+  // export path, never through a general-purpose debug bundle.
+  const safeEntries = filterRemoteSessionEntries(params.entries);
+  const externalized = externalizeMedia(safeEntries);
   const workspace = collectWorkspaceEntries(params.header.cwd);
   warnings.push(...workspace.warnings);
 
@@ -596,7 +603,7 @@ export function buildDebugBundle(params: {
     session: {
       path: "session/session.jsonl",
       originalId: params.sessionId,
-      entryCount: params.entries.length,
+      entryCount: safeEntries.length,
       mediaExternalized: externalized.mediaCount,
     },
     workspace: {

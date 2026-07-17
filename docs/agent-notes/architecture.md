@@ -84,6 +84,9 @@ Debug Bundle import/export is separate from normal session browsing. Export buil
 - `app/api/browser/status/route.ts` - detect the external OpenCLI binary, doctor/profile state, and built-in package state.
 - `app/api/browser/setup/route.ts` - opt a workspace into the built-in `pi-opencli` package and reload a live AgentSession.
 - `app/api/browser/sessions/[id]/*` - browser session state, SSE events, constrained UI commands, approvals, policy, preview, and close.
+- `app/api/remote/profiles/route.ts` - manage secret-free SSH/Telnet target profiles stored in the Agent data directory.
+- `app/api/remote/setup/route.ts` - enable the built-in `pi-remote-exec` package for a workspace and reload a live AgentSession.
+- `app/api/remote/sessions/[id]/*` - remote state, SSE terminal output, commands, approvals, control handoff, captures, and safe export.
 - `app/api/auth/*` - OAuth/API-key provider login and logout.
 - `app/api/files/[...path]/route.ts` - file tree, file contents, media, and SSE watch.
 - `app/api/models/route.ts` - model list and default model.
@@ -101,6 +104,8 @@ Debug Bundle import/export is separate from normal session browsing. Export buil
 - `lib/quick-chat-search.ts` - Tavily override/fallback resolution, safe validation and error codes, bounded search, source sanitization, timeouts, and the untrusted-evidence prompt.
 - `lib/browser-types.ts` - shared controlled-browser session, event, approval, policy, and status types.
 - `lib/browser-package.ts` - built-in `pi-opencli` package discovery and workspace enablement.
+- `lib/remote-store.ts` / `lib/remote-captures.ts` - atomic target configuration, known-host fingerprints, bounded sensitive captures, and allowed-root export.
+- `pi-packages/pi-remote-exec/runtime.ts` - per-AgentSession SSH/Telnet connection state, serial command execution, approval policy, and transport cleanup.
 - `lib/plan-mode.ts` - slash command parsing, plan document detection, Plan Mode prompts, subagent status, and read-only bash allowlist.
 - `lib/types.ts` - shared TypeScript types.
 - `lib/normalize.ts` - normalize stored tool call fields to UI fields.

@@ -18,13 +18,30 @@ export interface BrowserTab {
   cwd: string;
 }
 
-export type Tab = FileTab | BrowserTab;
+export interface RemoteTab {
+  id: string;
+  label: string;
+  kind: "remote";
+  agentSessionId: string;
+  cwd: string;
+}
+
+export type Tab = FileTab | BrowserTab | RemoteTab;
 
 function BrowserTabIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="9" />
       <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </svg>
+  );
+}
+
+function RemoteTabIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m7 9 3 3-3 3M13 15h4" />
     </svg>
   );
 }
@@ -79,7 +96,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
             }}
           >
             <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7, display: "flex", alignItems: "center" }}>
-              {tab.kind === "browser" ? <BrowserTabIcon /> : getFileIcon(tab.label, 13)}
+              {tab.kind === "browser" ? <BrowserTabIcon /> : tab.kind === "remote" ? <RemoteTabIcon /> : getFileIcon(tab.label, 13)}
             </span>
             <span
               style={{

@@ -50,6 +50,7 @@
     "agents:templates": "node scripts/agents-md.mjs templates",
     "coms-net:server": "node scripts/coms-net-server.mjs",
     "test:context": "node scripts/model-context-test.mjs",
+    "test:remote": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/remote-*.test.mjs",
     "pack:portable": "node scripts/release/pack-portable.mjs",
     "postinstall": "node scripts/patch-pi-ai-stepfun-cache.mjs",
     "prepare": "node scripts/prepare-github-install.js",
@@ -59,7 +60,10 @@
     "@earendil-works/pi-ai": "^0.80.7",
     "@earendil-works/pi-coding-agent": "^0.80.7",
     "@lobehub/icons": "^5.13.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "gsap": "^3.15.0",
+    "iconv-lite": "^0.7.3",
     "katex": "^0.17.0",
     "next": "^16.2.10",
     "react": "^19.2.7",
@@ -68,7 +72,9 @@
     "react-syntax-highlighter": "^16.1.1",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "ssh2": "^1.17.0",
+    "telnet-client": "^2.2.13"
   },
   "devDependencies": {
     "@eslint/compat": "^2.1.0",
@@ -77,6 +83,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "@types/ssh2": "^1.15.5",
     "eslint": "^10.7.0",
     "eslint-config-next": "16.2.10",
     "postcss": "^8.5.19",

@@ -1,0 +1,17 @@
+{
+  "name": "pi-web-remote-exec",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pi Web built-in package for controlled SSH and Telnet execution.",
+  "pi": {
+    "extensions": [
+      "extensions/remote-exec.ts"
+    ],
+    "prompts": [],
+    "skills": []
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

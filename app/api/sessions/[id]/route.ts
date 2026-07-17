@@ -14,6 +14,7 @@ import {
 import { getRpcSession } from "@/lib/rpc-manager";
 import { areSameFilePath, isWindowsStylePath } from "@/lib/path-identity";
 import { compressSessionTree } from "@/lib/session-tree";
+import { getRemoteRuntime } from "@/pi-packages/pi-remote-exec/runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -154,6 +155,7 @@ export async function DELETE(
       }
     } catch { /* skip if dir unreadable */ }
 
+    await getRemoteRuntime().close(id, false);
     getRpcSession(id)?.destroy();
     unlinkSync(filePath);
     invalidateSessionPathCache(id);

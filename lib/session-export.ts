@@ -7,6 +7,46 @@ import type {
   SessionInfo,
 } from "./types";
 
+const REMOTE_TOOL_NAMES = new Set(["remote_session", "remote_execute", "remote_capture"]);
+
+function isRemoteToolName(value: unknown): boolean {
+  return typeof value === "string" && REMOTE_TOOL_NAMES.has(value);
+}
+
+function filterRemoteMessage(message: AgentMessage): AgentMessage | null {
+  if (message.role === "toolResult") return isRemoteToolName(message.toolName) ? null : message;
+  if (message.role !== "assistant") return message;
+  const content = message.content.filter((block) => block.type !== "toolCall" || !isRemoteToolName(block.toolName));
+  return content.length === message.content.length ? message : { ...message, content };
+}
+
+/** Remove Remote extension calls/results from ordinary session exports. */
+export function filterRemoteSessionContext(context: SessionContext): SessionContext {
+  const messages: AgentMessage[] = [];
+  const entryIds: string[] = [];
+  context.messages.forEach((message, index) => {
+    const filtered = filterRemoteMessage(message);
+    if (!filtered) return;
+    messages.push(filtered);
+    entryIds.push(context.entryIds[index] ?? "");
+  });
+  return { ...context, messages, entryIds };
+}
+
+/** Remove Remote extension calls/results from persisted entry sets before bundling. */
+export function filterRemoteSessionEntries(entries: SessionEntry[]): SessionEntry[] {
+  const filtered: SessionEntry[] = [];
+  for (const entry of entries) {
+    if (entry.type !== "message") {
+      filtered.push(entry);
+      continue;
+    }
+    const message = filterRemoteMessage(entry.message);
+    if (message) filtered.push({ ...entry, message } as SessionEntry);
+  }
+  return filtered;
+}
+
 type SessionExportInfo = Omit<SessionInfo, "path">;
 
 interface SessionExportData {
@@ -101,7 +141,7 @@ export function buildMarkdownSessionExport(data: SessionExportData): string {
     "",
     "---",
     "",
-    ...data.context.messages.map(messageToMarkdown),
+    ...filterRemoteSessionContext(data.context).messages.map(messageToMarkdown),
     "",
   ];
 
@@ -109,13 +149,14 @@ export function buildMarkdownSessionExport(data: SessionExportData): string {
 }
 
 export function buildJsonSessionExport(data: SessionExportData): string {
+  const context = filterRemoteSessionContext(data.context);
   return JSON.stringify({
     sessionId: data.sessionId,
     info: data.info,
     header: data.header,
     leafId: data.leafId,
     exportedAt: data.exportedAt,
-    context: data.context,
-    entries: data.entries,
+    context,
+    entries: filterRemoteSessionEntries(data.entries),
   }, null, 2);
 }

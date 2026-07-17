@@ -16,6 +16,7 @@ import { LocaleToggleButton } from "./LocaleToggleButton";
 import { FluidEnvironmentPanel } from "./FluidEnvironmentPanel";
 import { QuickChatPanel } from "./QuickChatPanel";
 import { BrowserPanel } from "./BrowserPanel";
+import { RemotePanel } from "./RemotePanel";
 import { FluidSessionTypewriter, TopBarTypewriter } from "./BrandTypewriter";
 import { useLocale } from "@/lib/i18n";
 import { useUiMode } from "@/hooks/useUiMode";
@@ -538,6 +539,18 @@ export function AppShell() {
     if (isFluid) setFluidInspectorTier(2);
   }, [activeCwd, isFluid, selectedSession?.cwd, selectedSession?.id, t]);
 
+  const handleOpenRemote = useCallback((agentSessionId = selectedSession?.id) => {
+    if (!agentSessionId) return;
+    const tabId = `remote:${agentSessionId}`;
+    setFileTabs((prev) => {
+      if (prev.some((tab) => tab.id === tabId)) return prev;
+      return [...prev, { id: tabId, label: t("remote.tab"), kind: "remote", agentSessionId, cwd: selectedSession?.cwd || activeCwd || "" }];
+    });
+    setActiveFileTabId(tabId);
+    setRightPanelOpen(true);
+    if (isFluid) setFluidInspectorTier(2);
+  }, [activeCwd, isFluid, selectedSession?.cwd, selectedSession?.id, t]);
+
   const handleOpenFileFromSidebar = useCallback((filePath: string, fileName: string) => {
     handleOpenFile(filePath, fileName);
     if (isFluid) setFluidDrawerOpen(false);
@@ -554,7 +567,7 @@ export function AppShell() {
       const remaining = fileTabs.filter((t) => t.id !== tabId);
       return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
     });
-    if (tabId === activeFileTabId && tabId.startsWith("browser:")) setBrowserPanelMaximized(false);
+    if (tabId === activeFileTabId && (tabId.startsWith("browser:") || tabId.startsWith("remote:"))) setBrowserPanelMaximized(false);
   }, [activeFileTabId, fileTabs]);
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
@@ -565,7 +578,7 @@ export function AppShell() {
   const showPlaceholder = initialSessionRestored && !showChat;
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
-  const browserPanelIsMaximized = browserPanelMaximized && activeFileTab?.kind === "browser";
+  const interactivePanelIsMaximized = browserPanelMaximized && (activeFileTab?.kind === "browser" || activeFileTab?.kind === "remote");
 
   const handleToggleBrowserMaximize = useCallback(() => {
     if (browserPanelMaximized) {
@@ -594,7 +607,21 @@ export function AppShell() {
   }, [handleOpenBrowser, selectedSession?.id]);
 
   useEffect(() => {
-    if (activeFileTab?.kind !== "browser") setBrowserPanelMaximized(false);
+    if (!selectedSession?.id) return;
+    const source = new EventSource(apiPath(`/api/remote/sessions/${encodeURIComponent(selectedSession.id)}/events`));
+    source.onmessage = (message) => {
+      try {
+        const event = JSON.parse(message.data) as { type?: string };
+        if (event.type && event.type !== "ready") handleOpenRemote(selectedSession.id);
+      } catch {
+        // Ignore malformed/transient SSE messages.
+      }
+    };
+    return () => source.close();
+  }, [handleOpenRemote, selectedSession?.id]);
+
+  useEffect(() => {
+    if (activeFileTab?.kind !== "browser" && activeFileTab?.kind !== "remote") setBrowserPanelMaximized(false);
   }, [activeFileTab?.kind]);
 
   useEffect(() => {
@@ -978,7 +1005,7 @@ export function AppShell() {
       style={{ display: "none" }}
     />
     <div
-      className={`pi-app-shell${isFluid ? " pi-fluid-shell" : " pi-classic-shell"}${browserPanelIsMaximized ? " pi-browser-focus-mode" : ""}`}
+      className={`pi-app-shell${isFluid ? " pi-fluid-shell" : " pi-classic-shell"}${interactivePanelIsMaximized ? " pi-browser-focus-mode" : ""}${activeFileTab?.kind === "remote" ? " pi-remote-active" : ""}`}
       style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}
     >
       {/* Mobile overlay backdrop */}
@@ -1593,7 +1620,7 @@ export function AppShell() {
 
       {/* Right panel: file viewer — always mounted, width animated via CSS */}
       <div
-        className={`right-panel-container ${isFluid ? `pi-fluid-inspector pi-fluid-inspector-tier-${fluidInspectorTier}` : "pi-right-panel"}${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${activeFileTab?.kind === "browser" ? " pi-browser-panel-active" : ""}${browserPanelIsMaximized ? " pi-browser-panel-maximized" : ""}`}
+        className={`right-panel-container ${isFluid ? `pi-fluid-inspector pi-fluid-inspector-tier-${fluidInspectorTier}` : "pi-right-panel"}${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${activeFileTab?.kind === "browser" || activeFileTab?.kind === "remote" ? " pi-browser-panel-active" : ""}${activeFileTab?.kind === "remote" ? " pi-remote-panel-active" : ""}${interactivePanelIsMaximized ? " pi-browser-panel-maximized" : ""}`}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -1610,7 +1637,7 @@ export function AppShell() {
               onSelectTab={(tabId) => {
                 setActiveFileTabId(tabId);
                 const tab = fileTabs.find((candidate) => candidate.id === tabId);
-                if (isFluid && tab?.kind === "browser") setFluidInspectorTier(2);
+                if (isFluid && (tab?.kind === "browser" || tab?.kind === "remote")) setFluidInspectorTier(2);
               }}
               onCloseTab={handleCloseFileTab}
             />
@@ -1627,6 +1654,18 @@ export function AppShell() {
               <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
             </svg>
           </button>
+          <button
+            className="pi-browser-open-tab"
+            onClick={() => handleOpenRemote()}
+            disabled={!selectedSession}
+            title={selectedSession ? t("remote.openTab") : t("remote.requiresSession")}
+            aria-label={selectedSession ? t("remote.openTab") : t("remote.requiresSession")}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="m7 9 3 3-3 3M13 15h4" />
+            </svg>
+          </button>
         </div>
 
         {/* File or controlled-browser content */}
@@ -1637,7 +1676,15 @@ export function AppShell() {
             <BrowserPanel
               agentSessionId={activeFileTab.agentSessionId}
               cwd={activeFileTab.cwd}
-              maximized={browserPanelIsMaximized}
+              maximized={interactivePanelIsMaximized}
+              onToggleMaximize={handleToggleBrowserMaximize}
+              onCloseTab={() => handleCloseFileTab(activeFileTab.id)}
+            />
+          ) : activeFileTab?.kind === "remote" ? (
+            <RemotePanel
+              agentSessionId={activeFileTab.agentSessionId}
+              cwd={activeFileTab.cwd}
+              maximized={interactivePanelIsMaximized}
               onToggleMaximize={handleToggleBrowserMaximize}
               onCloseTab={() => handleCloseFileTab(activeFileTab.id)}
             />
@@ -1661,7 +1708,7 @@ export function AppShell() {
           )}
         </div>
       </div>
-      {isFluid && !browserPanelIsMaximized && (
+      {isFluid && !interactivePanelIsMaximized && (
         <button
           className="pi-fluid-dock-handle"
           onClick={handleRightPanelToggleClick}
@@ -1677,7 +1724,7 @@ export function AppShell() {
       )}
     </div>
     {/* File panel toggle — always visible at top-right */}
-    {!isFluid && !browserPanelIsMaximized && <button
+    {!isFluid && !interactivePanelIsMaximized && <button
       className="pi-right-panel-toggle"
       onClick={handleRightPanelToggleClick}
       title={rightPanelToggleTitle}

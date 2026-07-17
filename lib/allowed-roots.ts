@@ -1,8 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { homedir } from "os";
-import { getSessionCwdRoots } from "@/lib/session-reader";
-import { getRegisteredWorkspaceRoots } from "@/lib/workspace-roots";
+import { getSessionCwdRoots } from "./session-reader";
+import { getRegisteredWorkspaceRoots } from "./workspace-roots";
 
 declare global {
   var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
