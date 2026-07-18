@@ -44,7 +44,7 @@ if (!fs.existsSync(nextDir)) {
     "Build artifacts not found.",
     "",
     "If you installed from npm, reinstall the published package:",
-    "  npm install -g @agegr/pi-web",
+    "  npm install -g @linkyfan/pi-web",
     "",
     "If you installed from GitHub, reinstall so npm can run the prepare build:",
     "  npm install -g github:linky-fan/pi-web-seeker",
