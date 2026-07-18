@@ -40,7 +40,12 @@ const protectedWindowsProfileJunctions = [
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"],
+  serverExternalPackages: [
+    "@earendil-works/pi-coding-agent",
+    "@earendil-works/pi-ai",
+    "ssh2",
+    "telnet-client",
+  ],
   devIndicators: false,
   outputFileTracingRoot: configDir,
   experimental: {
