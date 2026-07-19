@@ -58,8 +58,8 @@
     "release": "npm run build && npm publish --access public --registry=https://registry.npmjs.org"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.80.7",
-    "@earendil-works/pi-coding-agent": "^0.80.7",
+    "@earendil-works/pi-ai": "0.80.7",
+    "@earendil-works/pi-coding-agent": "0.80.7",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "gsap": "^3.15.0",
