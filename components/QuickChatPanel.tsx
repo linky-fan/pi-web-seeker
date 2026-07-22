@@ -47,6 +47,7 @@ interface SearchApiError {
 interface Props {
   activeCwd: string | null;
   modelsRefreshKey: number;
+  initiallyOpen?: boolean;
   onOpenModels: () => void;
   onPromoted: (session: SessionInfo) => void;
 }
@@ -100,6 +101,7 @@ function normalizedClientSources(value: unknown): QuickChatSource[] {
 }
 
 function readStoredState(): StoredQuickChat {
+  if (typeof window === "undefined") return { messages: [], model: null, webSearchEnabled: false };
   try {
     const parsed = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? "null") as Partial<StoredQuickChat> | null;
     const messages = Array.isArray(parsed?.messages)
@@ -144,13 +146,14 @@ function SourceLinks({ sources, label }: { sources: QuickChatSource[]; label: st
   );
 }
 
-export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPromoted }: Props) {
+export function QuickChatPanel({ activeCwd, modelsRefreshKey, initiallyOpen = false, onOpenModels, onPromoted }: Props) {
   const { t } = useLocale();
-  const [open, setOpen] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
-  const [messages, setMessages] = useState<QuickChatMessage[]>([]);
+  const [storedState] = useState<StoredQuickChat>(() => readStoredState());
+  const [open, setOpen] = useState(initiallyOpen);
+  const [messages, setMessages] = useState<QuickChatMessage[]>(storedState.messages);
   const [models, setModels] = useState<ModelOption[]>([]);
-  const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(storedState.model);
   const [preferredAvailable, setPreferredAvailable] = useState(true);
   const [input, setInput] = useState("");
   const [streamingText, setStreamingText] = useState("");
@@ -158,8 +161,9 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
   const [sending, setSending] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(storedState.webSearchEnabled);
   const [searchConfig, setSearchConfig] = useState<SearchConfig | null>(null);
+  const [searchConfigLoading, setSearchConfigLoading] = useState(true);
   const [searchConfigOpen, setSearchConfigOpen] = useState(false);
   const [searchApiKey, setSearchApiKey] = useState("");
   const [savingSearchKey, setSavingSearchKey] = useState(false);
@@ -179,13 +183,18 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const refreshSearchConfig = useCallback(async () => {
+  const refreshSearchConfig = useCallback(async (signal?: AbortSignal) => {
+    setSearchConfigLoading(true);
     try {
-      const response = await fetch(apiPath("quick-chat/search-config"), { cache: "no-store" });
+      const response = await fetch(apiPath("quick-chat/search-config"), { cache: "no-store", signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (signal?.aborted) return;
       setSearchConfig(await response.json() as SearchConfig);
     } catch {
+      if (signal?.aborted) return;
       setSearchConfig({ provider: "tavily", configured: false, environmentConfigured: false, overrideActive: false });
+    } finally {
+      if (!signal?.aborted) setSearchConfigLoading(false);
     }
   }, []);
 
@@ -202,27 +211,27 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
   }, [t]);
 
   useEffect(() => {
-    const stored = readStoredState();
-    setMessages(stored.messages);
-    setSelectedModel(stored.model);
-    setWebSearchEnabled(stored.webSearchEnabled);
-    setHydrated(true);
-    void refreshSearchConfig();
+    const controller = new AbortController();
+    void refreshSearchConfig(controller.signal);
+    return () => controller.abort();
   }, [refreshSearchConfig]);
 
   useEffect(() => {
-    if (!hydrated) return;
     try {
       window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ messages, model: selectedModel, webSearchEnabled }));
     } catch {
       // sessionStorage may be unavailable in restricted contexts.
     }
-  }, [hydrated, messages, selectedModel, webSearchEnabled]);
+  }, [messages, selectedModel, webSearchEnabled]);
 
   useEffect(() => {
     let cancelled = false;
+    setModelsLoading(true);
     fetch(apiPath("models"))
-      .then((response) => response.json())
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
       .then((data: { modelList?: ModelOption[]; defaultModel?: SelectedModel | null }) => {
         if (cancelled) return;
         const nextModels = data.modelList ?? [];
@@ -241,9 +250,17 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
       })
       .catch(() => {
         if (!cancelled) setModels([]);
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false);
       });
     return () => { cancelled = true; };
   }, [modelsRefreshKey]);
+
+  useEffect(() => () => {
+    requestGenerationRef.current += 1;
+    abortRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -615,11 +632,11 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
                   const [provider, modelId] = event.target.value.split("\u0000");
                   setSelectedModel(provider && modelId ? { provider, modelId } : null);
                 }}
-                disabled={models.length === 0 || sending}
+                disabled={modelsLoading || models.length === 0 || sending}
                 aria-label={t("quickChat.model")}
                 title={selectedModelName}
               >
-                {models.length === 0 && <option value="">{t("quickChat.noModels")}</option>}
+                {models.length === 0 && <option value="">{modelsLoading ? t("quickChat.loadingModels") : t("quickChat.noModels")}</option>}
                 {models.map((model) => (
                   <option key={`${model.provider}:${model.id}`} value={modelKey({ provider: model.provider, modelId: model.id })}>
                     {model.name} · {model.provider}
@@ -647,13 +664,17 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
             <div className="pi-quick-chat-notice">{t("quickChat.fallback", { model: selectedModelName })}</div>
           )}
 
+          {(modelsLoading || searchConfigLoading) && (
+            <div className="pi-quick-chat-notice" role="status" aria-live="polite">{t("quickChat.loadingResources")}</div>
+          )}
+
           <div className="pi-quick-chat-messages" ref={messagesRef} aria-live="polite">
             {messages.length === 0 && !streamingText && !sending && (
               <div className="pi-quick-chat-empty">
                 <span className="pi-quick-chat-empty-mark"><Icon size={18}><path d="m13 2-8 11h7l-1 9 8-12h-7l1-8Z" /></Icon></span>
                 <strong>{t("quickChat.emptyTitle")}</strong>
                 <span>{t("quickChat.emptyHint")}</span>
-                {models.length === 0 && <button type="button" onClick={onOpenModels}>{t("quickChat.configure")}</button>}
+                {!modelsLoading && models.length === 0 && <button type="button" onClick={onOpenModels}>{t("quickChat.configure")}</button>}
               </div>
             )}
             {messages.map((message, index) => (
@@ -784,8 +805,8 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleInputKeyDown}
-              placeholder={models.length > 0 ? t("quickChat.placeholder") : t("quickChat.configureFirst")}
-              disabled={models.length === 0}
+              placeholder={modelsLoading ? t("quickChat.loadingModels") : models.length > 0 ? t("quickChat.placeholder") : t("quickChat.configureFirst")}
+              disabled={modelsLoading || models.length === 0}
               rows={2}
             />
             <div className="pi-quick-chat-composer-toolbar">
@@ -794,6 +815,7 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
                   className={`pi-quick-chat-search-toggle${webSearchEnabled ? " is-active" : ""}`}
                   type="button"
                   onClick={toggleWebSearch}
+                  disabled={searchConfigLoading}
                   aria-pressed={webSearchEnabled}
                   title={t("quickChat.searchToggleHint")}
                 >
@@ -801,7 +823,7 @@ export function QuickChatPanel({ activeCwd, modelsRefreshKey, onOpenModels, onPr
                   <span className="pi-quick-chat-search-dot" aria-hidden="true" />
                   {t("quickChat.webSearch")}
                 </button>
-                <button className="pi-quick-chat-search-settings" type="button" onClick={() => {
+                <button className="pi-quick-chat-search-settings" type="button" disabled={searchConfigLoading} onClick={() => {
                   setPromoteOpen(false);
                   setSearchConfigOpen((current) => !current);
                 }} title={t("quickChat.searchSettings")} aria-label={t("quickChat.searchSettings")}>

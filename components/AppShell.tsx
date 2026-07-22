@@ -1,22 +1,20 @@
 "use client";
 
 import { memo, useState, useCallback, useRef, useEffect, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
-import { ModelsConfig } from "./ModelsConfig";
-import { CapabilitiesConfig } from "./CapabilitiesConfig";
 import { BranchNavigator } from "./BranchNavigator";
 import { AgentsMdStatus } from "./AgentsMdStatus";
 import { ThemeCycleButton } from "./ThemeCycleButton";
 import { UiModeToggleButton } from "./UiModeToggleButton";
 import { LocaleToggleButton } from "./LocaleToggleButton";
 import { FluidEnvironmentPanel } from "./FluidEnvironmentPanel";
-import { QuickChatPanel } from "./QuickChatPanel";
-import { BrowserPanel } from "./BrowserPanel";
-import { RemotePanel } from "./RemotePanel";
+import { QuickChatLauncher, QuickChatLoadError, QuickChatLoading } from "./QuickChatLauncher";
+import { DeferredFeatureBoundary, DeferredFeatureError, DeferredFeatureLoading } from "./DeferredFeature";
 import { FluidSessionTypewriter, TopBarTypewriter } from "./BrandTypewriter";
 import { useLocale } from "@/lib/i18n";
 import { useUiMode } from "@/hooks/useUiMode";
@@ -52,6 +50,26 @@ const FLUID_INSPECTOR_TIER_TWO_MIN_WORKSPACE = 680;
 const FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT =
   FLUID_RAIL_WIDTH + FLUID_INSPECTOR_TIER_TWO_WIDTH + FLUID_INSPECTOR_TIER_TWO_MIN_WORKSPACE;
 const MemoSessionSidebar = memo(SessionSidebar);
+const BrowserPanel = dynamic(() => import("./BrowserPanel").then((module) => module.BrowserPanel), {
+  ssr: false,
+  loading: () => <DeferredFeatureLoading featureKey="browser.tab" variant="panel" />,
+});
+const RemotePanel = dynamic(() => import("./RemotePanel").then((module) => module.RemotePanel), {
+  ssr: false,
+  loading: () => <DeferredFeatureLoading featureKey="remote.tab" variant="panel" />,
+});
+const ModelsConfig = dynamic(() => import("./ModelsConfig").then((module) => module.ModelsConfig), {
+  ssr: false,
+  loading: () => <DeferredFeatureLoading featureKey="nav.models" variant="modal" />,
+});
+const CapabilitiesConfig = dynamic(() => import("./CapabilitiesConfig").then((module) => module.CapabilitiesConfig), {
+  ssr: false,
+  loading: () => <DeferredFeatureLoading featureKey="nav.capabilities" variant="modal" />,
+});
+const QuickChatPanel = dynamic(() => import("./QuickChatPanel").then((module) => module.QuickChatPanel), {
+  ssr: false,
+  loading: () => <QuickChatLoading />,
+});
 
 interface DebugBundleSummary {
   targetCwd: string;
@@ -216,6 +234,7 @@ export function AppShell() {
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [modelsConfigOpen, setModelsConfigOpen] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
+  const [quickChatRequested, setQuickChatRequested] = useState(false);
   const [capabilitiesConfigOpen, setCapabilitiesConfigOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [fluidDrawerOpen, setFluidDrawerOpen] = useState(false);
@@ -1673,21 +1692,43 @@ export function AppShell() {
           {activeFileTab?.kind === "file" ? (
             <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} />
           ) : activeFileTab?.kind === "browser" ? (
-            <BrowserPanel
-              agentSessionId={activeFileTab.agentSessionId}
-              cwd={activeFileTab.cwd}
-              maximized={interactivePanelIsMaximized}
-              onToggleMaximize={handleToggleBrowserMaximize}
-              onCloseTab={() => handleCloseFileTab(activeFileTab.id)}
-            />
+            <DeferredFeatureBoundary
+              resetKey={activeFileTab.id}
+              fallback={(
+                <DeferredFeatureError
+                  featureKey="browser.tab"
+                  variant="panel"
+                  onDismiss={() => handleCloseFileTab(activeFileTab.id)}
+                />
+              )}
+            >
+              <BrowserPanel
+                agentSessionId={activeFileTab.agentSessionId}
+                cwd={activeFileTab.cwd}
+                maximized={interactivePanelIsMaximized}
+                onToggleMaximize={handleToggleBrowserMaximize}
+                onCloseTab={() => handleCloseFileTab(activeFileTab.id)}
+              />
+            </DeferredFeatureBoundary>
           ) : activeFileTab?.kind === "remote" ? (
-            <RemotePanel
-              agentSessionId={activeFileTab.agentSessionId}
-              cwd={activeFileTab.cwd}
-              maximized={interactivePanelIsMaximized}
-              onToggleMaximize={handleToggleBrowserMaximize}
-              onCloseTab={() => handleCloseFileTab(activeFileTab.id)}
-            />
+            <DeferredFeatureBoundary
+              resetKey={activeFileTab.id}
+              fallback={(
+                <DeferredFeatureError
+                  featureKey="remote.tab"
+                  variant="panel"
+                  onDismiss={() => handleCloseFileTab(activeFileTab.id)}
+                />
+              )}
+            >
+              <RemotePanel
+                agentSessionId={activeFileTab.agentSessionId}
+                cwd={activeFileTab.cwd}
+                maximized={interactivePanelIsMaximized}
+                onToggleMaximize={handleToggleBrowserMaximize}
+                onCloseTab={() => handleCloseFileTab(activeFileTab.id)}
+              />
+            </DeferredFeatureBoundary>
           ) : isFluid ? (
             <div className="pi-fluid-inspector-empty">
               <div className="pi-fluid-inspector-empty-icon">
@@ -1745,18 +1786,52 @@ export function AppShell() {
         <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
       </svg>
     </button>}
-    {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
-    <QuickChatPanel
-      activeCwd={activeCwd}
-      modelsRefreshKey={modelsRefreshKey}
-      onOpenModels={() => setModelsConfigOpen(true)}
-      onPromoted={applyImportedSession}
-    />
+    {modelsConfigOpen && (
+      <DeferredFeatureBoundary
+        resetKey="models"
+        fallback={(
+          <DeferredFeatureError
+            featureKey="nav.models"
+            variant="modal"
+            onDismiss={() => setModelsConfigOpen(false)}
+          />
+        )}
+      >
+        <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />
+      </DeferredFeatureBoundary>
+    )}
+    {quickChatRequested ? (
+      <DeferredFeatureBoundary
+        resetKey="quick-chat"
+        fallback={<QuickChatLoadError onDismiss={() => setQuickChatRequested(false)} />}
+      >
+        <QuickChatPanel
+          activeCwd={activeCwd}
+          modelsRefreshKey={modelsRefreshKey}
+          initiallyOpen
+          onOpenModels={() => setModelsConfigOpen(true)}
+          onPromoted={applyImportedSession}
+        />
+      </DeferredFeatureBoundary>
+    ) : (
+      <QuickChatLauncher onOpen={() => setQuickChatRequested(true)} />
+    )}
     {capabilitiesConfigOpen && capabilitiesCwd && (
-      <CapabilitiesConfig
-        cwd={capabilitiesCwd}
-        onClose={() => setCapabilitiesConfigOpen(false)}
-      />
+      <DeferredFeatureBoundary
+        resetKey={`capabilities:${capabilitiesCwd}`}
+        fallback={(
+          <DeferredFeatureError
+            featureKey="nav.capabilities"
+            variant="modal"
+            onDismiss={() => setCapabilitiesConfigOpen(false)}
+          />
+        )}
+      >
+        <CapabilitiesConfig
+          cwd={capabilitiesCwd}
+          onClose={() => setCapabilitiesConfigOpen(false)}
+        />
+      </DeferredFeatureBoundary>
     )}
     </>
   );

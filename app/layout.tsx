@@ -3,6 +3,7 @@ import { APP_DESCRIPTION, APP_NAME } from "@/lib/branding";
 import { DARK_THEME_IDS, DEFAULT_THEME, LEGACY_THEME_MAP, THEME_IDS } from "@/lib/themes";
 import "katex/dist/katex.min.css";
 import "./globals.css";
+import "./fluid.css";
 
 export const metadata: Metadata = {
   title: APP_NAME,

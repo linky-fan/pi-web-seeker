@@ -45,6 +45,7 @@
     "build": "node scripts/next-build.mjs",
     "start": "next start -p 30141 -H 0.0.0.0",
     "lint": "eslint .",
+    "check:fluid-css": "node scripts/check-fluid-css.mjs",
     "agents": "node scripts/agents-md.mjs",
     "agents:init": "node scripts/agents-md.mjs init",
     "agents:check": "node scripts/agents-md.mjs check",
