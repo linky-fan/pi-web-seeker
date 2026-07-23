@@ -53,6 +53,8 @@
     "coms-net:server": "node scripts/coms-net-server.mjs",
     "test:context": "node scripts/model-context-test.mjs",
     "test:remote": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/remote-*.test.mjs",
+    "test:app-shell": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/app-shell-state.test.mjs",
+    "test:chat-input": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/chat-input-state.test.mjs",
     "pack:portable": "node scripts/release/pack-portable.mjs",
     "postinstall": "node scripts/patch-pi-ai-stepfun-cache.mjs",
     "prepare": "node scripts/prepare-github-install.js",

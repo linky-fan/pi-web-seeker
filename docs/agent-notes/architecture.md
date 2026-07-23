@@ -59,6 +59,29 @@ Buddy review is orthogonal to Plan Mode. `buddyMode: "plan"` keeps the main agen
 
 Debug Bundle import/export is separate from normal session browsing. Export builds a `.tar.gz` from session entries, externalized media, diagnostics, and selected workspace files; import inspects first, then restores into a new sandbox cwd.
 
+## App Shell State Ownership
+
+`components/AppShell.tsx` is the public composition root, not the owner of feature-specific rendering. It connects three local controllers and four memoized view regions without adding Context or a global store:
+
+- `useSessionWorkspaceController` owns URL restoration, session/workspace selection, refresh keys, branch and system-prompt state, statistics, context usage, task status, and composer activity.
+- `useSessionImportController` owns ordinary JSON/JSONL import and the inspect-confirm-cancel lifecycle for Debug Bundles.
+- `useInspectorController` owns file, Browser, and Remote tabs, panel tiers, maximize/navigation restoration, responsive capability, and Browser/Remote SSE activation.
+- `ShellNavigation`, `ShellWorkspace`, and `ShellInspector` receive only the state needed by their region. High-frequency chat statistics and composer updates therefore do not invalidate navigation or inspector rendering.
+- The inspector and deferred-feature views retain the existing dynamic boundaries: Browser, Remote, Models, Capabilities, and the Quick Chat body stay outside the initial client dependency graph. Quick Chat remains mounted after its first successful load.
+
+Pure transitions used by the controllers live in `components/app-shell/session-state.ts` and `inspector-state.ts`; display derivation lives in `helpers.ts`. Preserve callback stability and the current async ordering when extending a controller.
+
+## Composer State Ownership
+
+`components/ChatInput.tsx` is the stable public composer entry and wires three local controllers without Context or a global store:
+
+- `useComposerDraftController` owns text, per-session draft persistence, prompt history navigation, image object URLs, send/steer/follow-up behavior, and the imperative insertion handle.
+- `useComposerSuggestionsController` owns file mentions, slash-command selection, bounded asynchronous lookup, notices, and suggestion keyboard handling.
+- `useComposerMenusController` owns snippets, model, reviewer, and thinking menus together with outside-click handling and viewport-aware portal placement.
+- Memoized editor, status, primary-control, and runtime-control views isolate normal keystrokes from model, reviewer, thinking, context, compact, and sound controls.
+
+Keep the composer on the initial client path. When extending it, preserve draft keys, callback ordering, DOM/class names, focus behavior, and the split between high-frequency editor state and low-frequency controls.
+
 ## File Map
 
 ### API Routes
@@ -115,10 +138,16 @@ Debug Bundle import/export is separate from normal session browsing. Export buil
 
 ### Components
 
-- `components/AppShell.tsx` - layout, URL state, and tab management.
+- `components/AppShell.tsx` - stable public composition root for shell controllers and memoized view regions.
+- `components/app-shell/useSessionWorkspaceController.ts` - session, workspace, URL, branch, statistics, context, task, and composer state.
+- `components/app-shell/useSessionImportController.ts` - ordinary session and Debug Bundle import lifecycle.
+- `components/app-shell/useInspectorController.ts` - file/Browser/Remote tabs, responsive panel state, maximize restoration, and SSE activation.
+- `components/app-shell/ShellNavigation.tsx` / `ShellWorkspace.tsx` / `ShellInspector.tsx` - memoized navigation, chat workspace, and inspector view regions.
+- `components/app-shell/ShellDeferredFeatures.tsx` - Models, Capabilities, and Quick Chat dynamic-load ownership; Browser and Remote boundaries stay with `ShellInspector.tsx`.
 - `components/SessionSidebar.tsx` - session tree and file explorer shell.
 - `components/ChatWindow.tsx` - messages, streaming, SSE, fork, and navigation logic.
-- `components/ChatInput.tsx` - input bar, slash commands, Plan/Buddy chips, writer/reviewer models, thinking, tools, and compact controls.
+- `components/ChatInput.tsx` - stable composer entry connecting draft, suggestion, and menu controllers.
+- `components/chat-input/` - composer controllers, pure state helpers, memoized editor/suggestion/status views, and low-frequency model/runtime controls.
 - `components/QuickChatPanel.tsx` - floating model-direct text chat, optional Tavily search controls and sources, temporary browser history, and promotion to a formal session.
 - `components/QuickChatLauncher.tsx` - initial lightweight Quick Chat launcher plus local loading and chunk-error states.
 - `components/BrowserPanel.tsx` - controlled-browser snapshot, activity timeline, permissions, setup diagnostics, and manual takeover UI.
