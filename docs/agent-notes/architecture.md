@@ -82,6 +82,42 @@ Pure transitions used by the controllers live in `components/app-shell/session-s
 
 Keep the composer on the initial client path. When extending it, preserve draft keys, callback ordering, DOM/class names, focus behavior, and the split between high-frequency editor state and low-frequency controls.
 
+## Message Rendering Ownership
+
+`components/MessageView.tsx` is the stable message-role router. Rendering details live in `components/message-view/`:
+
+- `UserMessageView` owns user text, images, copy, fork, and edit-from-here controls.
+- `AssistantMessageView` owns the assistant shell and resolves only the tool state referenced by that message. `MessageBlock` memoizes text, thinking, and tool-call blocks independently.
+- `StreamingMetrics` owns its one-second TPS timer, while `useStreamingDurations` records block transitions. Metrics ticks do not invalidate Markdown or completed tool blocks.
+- `MarkdownContent`, `ThinkingBlock`, and `ToolCallBlock` own their local copy/expanded/timer state. Shared Markdown plugin instances are stable, and raw HTML remains disabled by React Markdown's default behavior.
+- `CustomMessageView` and `ComsNetMessageCard` own Subagent, custom, and coms-net history rendering.
+
+`MessageView` uses a relevant-tool comparator: replacement Maps and Sets only invalidate a historical message when the value for one of that message's `toolCallId` entries changed. Preserve this boundary when adding tool status fields. Message rendering remains on the initial client path; Markdown and syntax highlighting are also shared by `FileViewer`, so their loading boundary is handled separately.
+
+## Chat Window Rendering Ownership
+
+`components/ChatWindow.tsx` is the stable session-view composition root. `useAgentSession` continues to own session loading, SSE events, commands, scrolling, and Agent lifecycle; the view layer under `components/chat-window/` separates its update frequencies:
+
+- `messageProjection.ts` derives tool results, timestamps, prompt history, lazy-message decisions, and coms-net visibility only when completed messages or the streaming-active flag changes.
+- `HistoricalMessageTimeline` owns completed messages and lazy slots. Per-token live output does not invalidate it; tool-state changes still reach the relevant tool card through the `MessageView` comparator.
+- `ConversationRegion` owns the live message, phase indicator, scroll anchors, and Classic minimap. The minimap may update with live preview text; Fluid does not render it.
+- `ComposerSurface` owns empty-session and dock placement. Its memoized input props stay stable across token updates, while context, model, retry, and Agent-running changes still reach `ChatInput`.
+- `ExtensionLayer` owns statuses, notices, dialogs, custom terminal rendering, and ANSI parsing. `useChatWindowBridge` is limited to completion audio and scalar status publication to AppShell.
+
+Preserve these boundaries when extending chat rendering: do not pass `streamingMessage` through the historical, composer, or extension regions, and keep `useAgentSession` lifecycle changes separate from view refactors.
+
+## Agent Session Lifecycle Ownership
+
+`hooks/useAgentSession.ts` is the stable composition entry for chat state. The controllers under `hooks/agent-session/` separate network lifetimes from view-facing state without changing the hook's public return shape:
+
+- `useSessionDataController` owns formal-session and branch-context fetches, completed messages, entry IDs, the active leaf, and aggregate token/cost statistics. Session and context requests have independent abort scopes.
+- `usePreferencesController` owns model metadata, Thinking, Plan, and Buddy state together with their existing localStorage keys. Mode, reviewer, model, and Thinking mutations use operation IDs so an older response cannot roll back a newer choice.
+- `useRuntimeController` owns the SSE connection, streaming projection, Agent/tool/retry/compaction state, and extension UI. Each EventSource has a connection generation; reconnect timers and notification timers are cleared on identity changes and unmount.
+- `useCommandsController` owns prompt, abort, fork, navigation, compaction, steer, and follow-up commands. New-session creation still resolves the real session ID before opening SSE, and failed sends remove only their own optimistic user message.
+- `useScrollController` owns DOM anchors and output-follow decisions. Streaming updates scroll only while the user remains near the bottom.
+
+The lifecycle gate combines a session/cwd identity with a monotonically increasing generation. Any fetch, SSE callback, reconnect timer, or command completion that no longer matches that gate must be treated as stale and must not update visible state.
+
 ## File Map
 
 ### API Routes
@@ -145,13 +181,15 @@ Keep the composer on the initial client path. When extending it, preserve draft 
 - `components/app-shell/ShellNavigation.tsx` / `ShellWorkspace.tsx` / `ShellInspector.tsx` - memoized navigation, chat workspace, and inspector view regions.
 - `components/app-shell/ShellDeferredFeatures.tsx` - Models, Capabilities, and Quick Chat dynamic-load ownership; Browser and Remote boundaries stay with `ShellInspector.tsx`.
 - `components/SessionSidebar.tsx` - session tree and file explorer shell.
-- `components/ChatWindow.tsx` - messages, streaming, SSE, fork, and navigation logic.
+- `components/ChatWindow.tsx` - stable session-view composition root over `useAgentSession`.
+- `components/chat-window/` - message projection, historical/live rendering regions, composer placement, extension UI, ANSI helpers, and AppShell status bridging.
 - `components/ChatInput.tsx` - stable composer entry connecting draft, suggestion, and menu controllers.
 - `components/chat-input/` - composer controllers, pure state helpers, memoized editor/suggestion/status views, and low-frequency model/runtime controls.
 - `components/QuickChatPanel.tsx` - floating model-direct text chat, optional Tavily search controls and sources, temporary browser history, and promotion to a formal session.
 - `components/QuickChatLauncher.tsx` - initial lightweight Quick Chat launcher plus local loading and chunk-error states.
 - `components/BrowserPanel.tsx` - controlled-browser snapshot, activity timeline, permissions, setup diagnostics, and manual takeover UI.
-- `components/MessageView.tsx` - user, assistant, PlanCard, tool call, and tool result rendering.
+- `components/MessageView.tsx` - stable role router and relevant-tool memo boundary for message rendering.
+- `components/message-view/` - user/assistant/custom views, Markdown and Plan rendering, Thinking and tool cards, streaming metrics, and pure message helpers.
 - `components/BranchNavigator.tsx` - in-session branch switcher.
 - `components/ChatMinimap.tsx` - scroll minimap.
 - `components/ToolsConfig.tsx` - per-tool toggles persisted to pi settings.
