@@ -1,6 +1,7 @@
 import type { AgentMessage, AssistantMessage, TextContent, ToolExecutionStatus } from "@/lib/types";
 import { getSubagentMessageKey } from "@/lib/subagents";
 import type {
+  ExtensionUiCustomRequest,
   NoticeAction,
   NoticeState,
   SessionStats,
@@ -32,6 +33,26 @@ export function noticeReducer(state: NoticeState, action: NoticeAction): NoticeS
     case "reset": return { visible: [] };
     default: return state;
   }
+}
+
+export type ExtensionCustomUiAction =
+  | { type: "request"; request: ExtensionUiCustomRequest }
+  | { type: "reset" };
+
+export function extensionCustomUiReducer(
+  state: ExtensionUiCustomRequest[],
+  action: ExtensionCustomUiAction,
+): ExtensionUiCustomRequest[] {
+  if (action.type === "reset") return state.length === 0 ? state : [];
+  const { request } = action;
+  const index = state.findIndex((item) => item.id === request.id);
+  if (request.closed) {
+    return index === -1 ? state : state.filter((_, itemIndex) => itemIndex !== index);
+  }
+  if (index === -1) return [...state, request];
+  const next = [...state];
+  next[index] = request;
+  return next;
 }
 
 export function userMessageKey(message: AgentMessage): string | null {

@@ -6,6 +6,7 @@ const {
   PLAN_MODE_STORAGE_PREFIX,
   appendCompletedMessage,
   calculateSessionStats,
+  extensionCustomUiReducer,
   isLifecycleTokenCurrent,
   isOperationCurrent,
   noticeReducer,
@@ -84,6 +85,28 @@ test("stream and notice transitions retain existing public semantics", () => {
   }
   assert.deepEqual(notices.visible.map((notice) => notice.id), ["n2", "n3", "n4", "n5"]);
   assert.equal(noticeReducer(notices, { type: "dismiss", id: "n4" }).visible.some((notice) => notice.id === "n4"), false);
+});
+
+test("custom extension panels preserve order across updates and reveal the previous panel on close", () => {
+  const panelA = { type: "extension_ui_request", id: "panel-a", method: "custom", lines: ["A"] };
+  const panelB = { type: "extension_ui_request", id: "panel-b", method: "custom", lines: ["B"] };
+  const panelAUpdated = { ...panelA, lines: ["A updated"] };
+
+  let panels = extensionCustomUiReducer([], { type: "request", request: panelA });
+  panels = extensionCustomUiReducer(panels, { type: "request", request: panelB });
+  panels = extensionCustomUiReducer(panels, { type: "request", request: panelAUpdated });
+  assert.deepEqual(panels.map((panel) => [panel.id, panel.lines]), [
+    ["panel-a", ["A updated"]],
+    ["panel-b", ["B"]],
+  ]);
+  assert.equal(panels.at(-1).id, "panel-b");
+
+  panels = extensionCustomUiReducer(panels, {
+    type: "request",
+    request: { ...panelB, lines: [], closed: true },
+  });
+  assert.equal(panels.at(-1).id, "panel-a");
+  assert.equal(extensionCustomUiReducer(panels, { type: "reset" }).length, 0);
 });
 
 test("preference keys preserve session and cwd ownership", () => {

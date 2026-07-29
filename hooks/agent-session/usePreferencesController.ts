@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api-path";
 import { sendAgentCommand } from "@/lib/agent-client";
-import type { BuddyMode, ModelRef, PlanExecutionMode, PlanMode, PlanModeStatus } from "@/lib/plan-mode";
+import {
+  modelRefsEqual,
+  resolveBuddyWorkflowTransition,
+  type BuddyMode,
+  type ModelRef,
+  type PlanExecutionMode,
+  type PlanMode,
+  type PlanModeStatus,
+} from "@/lib/plan-mode";
 import {
   BUDDY_MODE_STORAGE_PREFIX,
   BUDDY_REVIEWER_STORAGE_PREFIX,
@@ -146,26 +154,34 @@ export function usePreferencesController(options: PreferencesOptions) {
     if (agentRunningRef.current) return false;
     if (nextBuddyMode !== "off") {
       if (!buddyReviewerModel || !displayModel) return false;
-      if (buddyReviewerModel.provider === displayModel.provider && buddyReviewerModel.modelId === displayModel.modelId) return false;
+      if (modelRefsEqual(buddyReviewerModel, displayModel)) return false;
       if (planModeStatus && !planModeStatus.subagentsAvailable) return false;
     }
     const operation = ++operationRef.current.mode;
     const previous = { buddyMode, planMode, planExecutionMode };
-    const nextPlan: PlanMode = nextBuddyMode === "plan" ? "plan" : nextBuddyMode === "code" ? "normal" : planMode;
-    const nextExecution: PlanExecutionMode = nextBuddyMode === "plan" ? "main" : planExecutionMode;
-    setBuddyMode(nextBuddyMode);
-    setPlanMode(nextPlan);
-    setPlanExecutionMode(nextExecution);
-    persistModes(nextPlan, nextExecution, nextBuddyMode);
+    const next = resolveBuddyWorkflowTransition(previous, nextBuddyMode);
+    setBuddyMode(next.buddyMode);
+    setPlanMode(next.planMode);
+    setPlanExecutionMode(next.planExecutionMode);
+    persistModes(next.planMode, next.planExecutionMode, next.buddyMode);
     const sid = sessionIdRef.current;
     if (!sid || isNew) return true;
     try {
       const result = await sendAgentCommand<LiveAgentState>(sid, {
-        type: "set_plan_mode", enabled: nextPlan === "plan", executionMode: nextExecution,
-        buddyMode: nextBuddyMode, buddyReviewerModel,
+        type: "set_plan_mode", enabled: next.planMode === "plan", executionMode: next.planExecutionMode,
+        buddyMode: next.buddyMode, buddyReviewerModel,
       });
       if (operation !== operationRef.current.mode || sid !== sessionIdRef.current) return false;
-      if (result.buddyMode) setBuddyMode(result.buddyMode);
+      const confirmed = {
+        planMode: result.planMode === undefined ? next.planMode : result.planMode ? "plan" as const : "normal" as const,
+        planExecutionMode: result.planExecutionMode ?? next.planExecutionMode,
+        buddyMode: result.buddyMode ?? next.buddyMode,
+      };
+      setPlanMode(confirmed.planMode);
+      setPlanExecutionMode(confirmed.planExecutionMode);
+      setBuddyMode(confirmed.buddyMode);
+      if (result.planModeStatus) setPlanModeStatus(result.planModeStatus);
+      persistModes(confirmed.planMode, confirmed.planExecutionMode, confirmed.buddyMode);
       return true;
     } catch (caught) {
       if (operation !== operationRef.current.mode || sid !== sessionIdRef.current) return false;
@@ -180,7 +196,7 @@ export function usePreferencesController(options: PreferencesOptions) {
 
   const handleBuddyReviewerChange = useCallback(async (provider: string, modelId: string) => {
     const next = { provider, modelId };
-    if (displayModel?.provider === provider && displayModel.modelId === modelId) return false;
+    if (modelRefsEqual(displayModel, next)) return false;
     const operation = ++operationRef.current.reviewer;
     const previous = buddyReviewerModel;
     setBuddyReviewerModel(next);
@@ -200,7 +216,7 @@ export function usePreferencesController(options: PreferencesOptions) {
   }, [buddyReviewerModel, displayModel, isNew, persistReviewer, sessionIdRef]);
 
   const handleModelChange = useCallback(async (provider: string, modelId: string) => {
-    if (buddyMode !== "off" && buddyReviewerModel?.provider === provider && buddyReviewerModel.modelId === modelId) {
+    if (buddyMode !== "off" && modelRefsEqual(buddyReviewerModel, { provider, modelId })) {
       setTaskError("Buddy writer and reviewer models must be different");
       return;
     }

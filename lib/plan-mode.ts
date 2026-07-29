@@ -7,6 +7,19 @@ export interface ModelRef {
   modelId: string;
 }
 
+export interface BuddyWorkflowState {
+  planMode: PlanMode;
+  planExecutionMode: PlanExecutionMode;
+  buddyMode: BuddyMode;
+}
+
+export interface BuddyReviewGuardState {
+  buddyMode: BuddyMode;
+  reviewerModel: ModelRef | null;
+  mainModel: ModelRef | null;
+  buddyReviewCalls: number;
+}
+
 export interface PlanModeStatus {
   subagentsAvailable: boolean;
   missingTools: string[];
@@ -137,6 +150,70 @@ const SAFE_BASH_SEGMENT_PATTERNS = [
 ];
 
 const PIPE_AND_LIST_SEPARATORS = /\s*(?:\|\||&&|;|\|)\s*/;
+
+export function modelRefKey(model: ModelRef): string {
+  return `${model.provider}/${model.modelId}`;
+}
+
+export function modelRefsEqual(a: ModelRef | null | undefined, b: ModelRef | null | undefined): boolean {
+  if (!a || !b) return a == null && b == null;
+  return a.provider === b.provider && a.modelId === b.modelId;
+}
+
+export function resolveBuddyWorkflowTransition(
+  current: BuddyWorkflowState,
+  nextBuddyMode: BuddyMode,
+): BuddyWorkflowState {
+  if (nextBuddyMode === "plan") {
+    return { planMode: "plan", planExecutionMode: "main", buddyMode: "plan" };
+  }
+  if (nextBuddyMode === "code") {
+    return { planMode: "normal", planExecutionMode: "main", buddyMode: "code" };
+  }
+  if (current.buddyMode === "plan") {
+    return { planMode: "plan", planExecutionMode: "main", buddyMode: "off" };
+  }
+  if (current.buddyMode === "off" && current.planMode === "plan") {
+    return current;
+  }
+  return { planMode: "normal", planExecutionMode: "main", buddyMode: "off" };
+}
+
+export function buddyReviewBlockReason(
+  workflow: BuddyReviewGuardState,
+  toolName: string,
+  args: unknown,
+): string | null {
+  if (workflow.buddyMode === "off" || toolName !== "Agent") return null;
+  if (!workflow.reviewerModel || !workflow.mainModel) return "Blocked by Pi Web Buddy Mode: reviewer or main model is unavailable.";
+  if (typeof args !== "object" || args === null || Array.isArray(args)) {
+    return "Blocked by Pi Web Buddy Mode: Agent arguments were not readable.";
+  }
+  if (workflow.buddyReviewCalls >= 1) return "Blocked by Pi Web Buddy Mode: only one independent reviewer call is allowed per request.";
+
+  const input = args as Record<string, unknown>;
+  const expectedModel = modelRefKey(workflow.reviewerModel);
+  const requestedModel = typeof input.model === "string" ? input.model : "";
+  if (modelRefsEqual(workflow.mainModel, workflow.reviewerModel)) {
+    return "Blocked by Pi Web Buddy Mode: the writer and reviewer models must be different.";
+  }
+  if (input.subagent_type !== "Plan") {
+    return 'Blocked by Pi Web Buddy Mode: the reviewer must use the read-only "Plan" subagent type.';
+  }
+  if (requestedModel !== expectedModel) {
+    return `Blocked by Pi Web Buddy Mode: reviewer model must be exactly "${expectedModel}".`;
+  }
+  if (input.inherit_context !== false) {
+    return "Blocked by Pi Web Buddy Mode: reviewer must set inherit_context to false for an independent review.";
+  }
+  if (input.run_in_background !== false) {
+    return "Blocked by Pi Web Buddy Mode: reviewer must set run_in_background to false so the result is reviewed before completion.";
+  }
+  if (input.isolated === true || input.isolation !== undefined) {
+    return "Blocked by Pi Web Buddy Mode: the read-only reviewer cannot use an isolated worktree.";
+  }
+  return null;
+}
 
 function normalizeHeading(text: string): string {
   return text

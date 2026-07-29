@@ -46,6 +46,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onPlanModeChange: props.onPlanModeChange,
     buddyMode: props.buddyMode ?? "off",
     buddyReviewerModel: props.buddyReviewerModel,
+    mainModel: props.model,
     onBuddyModeChange: props.onBuddyModeChange,
     setInputValue: draft.setInputValue,
     t,

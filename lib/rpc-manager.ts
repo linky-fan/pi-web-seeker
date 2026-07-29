@@ -14,9 +14,12 @@ import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse } from "./types";
 import {
+  buddyReviewBlockReason,
   getPlanModeStatus,
   isSafePlanBashCommand,
   buildBuddySystemPrompt,
+  modelRefKey,
+  modelRefsEqual,
   PLAN_MODE_SUBAGENT_SYSTEM_PROMPT,
   PLAN_MODE_SYSTEM_PROMPT,
   PLAN_SUBAGENT_OPTIONAL_TOOLS,
@@ -279,15 +282,6 @@ type WorkflowGuardState = {
   buddyReviewCalls: number;
 };
 
-function modelRefKey(model: ModelRef): string {
-  return `${model.provider}/${model.modelId}`;
-}
-
-function modelRefsEqual(a: ModelRef | null, b: ModelRef | null): boolean {
-  if (!a || !b) return a === b;
-  return a.provider === b.provider && a.modelId === b.modelId;
-}
-
 function installToolGuards(
   session: AgentSessionLike,
   getWorkflowState: () => WorkflowGuardState,
@@ -302,7 +296,7 @@ function installToolGuards(
     const workflow = getWorkflowState();
     const planBlockReason = planModeToolBlockReason(workflow.planExecutionMode, workflow.buddyMode, toolName, context.args);
     if (planBlockReason) return { block: true, reason: planBlockReason };
-    const buddyBlockReason = buddyToolBlockReason(workflow, toolName, context.args);
+    const buddyBlockReason = buddyReviewBlockReason(workflow, toolName, context.args);
     if (buddyBlockReason) return { block: true, reason: buddyBlockReason };
     if (workflow.buddyMode !== "off" && toolName === "Agent") recordBuddyReviewCall();
     if (toolName !== "bash" || !isRecord(context.args)) return existingResult;
@@ -347,35 +341,6 @@ function planModeToolBlockReason(planExecutionMode: PlanExecutionMode | null, bu
   ].join("\n");
 }
 
-function buddyToolBlockReason(workflow: WorkflowGuardState, toolName: string, args: unknown): string | null {
-  if (workflow.buddyMode === "off" || toolName !== "Agent") return null;
-  if (!workflow.reviewerModel || !workflow.mainModel) return "Blocked by Pi Web Buddy Mode: reviewer or main model is unavailable.";
-  if (!isRecord(args)) return "Blocked by Pi Web Buddy Mode: Agent arguments were not readable.";
-  if (workflow.buddyReviewCalls >= 1) return "Blocked by Pi Web Buddy Mode: only one independent reviewer call is allowed per request.";
-
-  const expectedModel = modelRefKey(workflow.reviewerModel);
-  const requestedModel = typeof args.model === "string" ? args.model : "";
-  if (modelRefKey(workflow.mainModel) === expectedModel) {
-    return "Blocked by Pi Web Buddy Mode: the writer and reviewer models must be different.";
-  }
-  if (args.subagent_type !== "Plan") {
-    return 'Blocked by Pi Web Buddy Mode: the reviewer must use the read-only "Plan" subagent type.';
-  }
-  if (requestedModel !== expectedModel) {
-    return `Blocked by Pi Web Buddy Mode: reviewer model must be exactly "${expectedModel}".`;
-  }
-  if (args.inherit_context !== false) {
-    return "Blocked by Pi Web Buddy Mode: reviewer must set inherit_context to false for an independent review.";
-  }
-  if (args.run_in_background !== false) {
-    return "Blocked by Pi Web Buddy Mode: reviewer must set run_in_background to false so the result is reviewed before completion.";
-  }
-  if (args.isolated === true || args.isolation !== undefined) {
-    return "Blocked by Pi Web Buddy Mode: the read-only reviewer cannot use an isolated worktree.";
-  }
-  return null;
-}
-
 function includeExtensionTools(requestedToolNames: string[], extensionToolNames: string[]): string[] {
   return requestedToolNames.length === 0 ? [] : uniqueToolNames([...requestedToolNames, ...extensionToolNames]);
 }
@@ -401,10 +366,13 @@ function parseModelRef(value: unknown): ModelRef | undefined {
 // ============================================================================
 
 export class AgentSessionWrapper {
+  public readonly inner: AgentSessionLike;
+  private readonly extensionLoadErrors: string[];
   private listeners: EventListener[] = [];
   private pendingUiResponses = new Map<string, PendingUiResponse>();
   private pendingUiRequests = new Map<string, AgentEvent>();
   private activeCustomUis = new Map<string, ActiveCustomUi>();
+  private customUiGeneration = 0;
   private extensionStatuses = new Map<string, ExtensionStatusItem>();
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
   private unsubscribe: (() => void) | null = null;
@@ -423,7 +391,10 @@ export class AgentSessionWrapper {
   private buddyReviewCalls = 0;
   private _alive = true;
 
-  constructor(public readonly inner: AgentSessionLike, private readonly extensionLoadErrors: string[] = []) {}
+  constructor(inner: AgentSessionLike, extensionLoadErrors: string[] = []) {
+    this.inner = inner;
+    this.extensionLoadErrors = extensionLoadErrors;
+  }
 
   get sessionId(): string {
     return this.inner.sessionId;
@@ -1103,21 +1074,44 @@ export class AgentSessionWrapper {
 
     const id = randomUUID();
     const width = this.getCustomUiWidth(options);
+    const generation = this.customUiGeneration;
 
     return new Promise<T>((resolve) => {
+      let completed = false;
       const tui = {
         requestRender: () => {
           const custom = this.activeCustomUis.get(id);
           if (custom) this.emitCustomUiRender(id, custom);
         },
       };
-      const done = (value: T) => this.closeCustomUi(id, value);
+      const done = (value: T) => {
+        if (completed) return;
+        const custom = this.activeCustomUis.get(id);
+        completed = true;
+        if (custom) this.closeCustomUi(id, value);
+        else resolve(value);
+      };
 
       Promise.resolve()
         .then(() => factory(tui, undefined, undefined, done))
         .then((component) => {
           if (!component || typeof component !== "object" || typeof (component as CustomUiComponent).render !== "function") {
-            resolve(undefined as T);
+            if (!completed) {
+              completed = true;
+              resolve(undefined as T);
+            }
+            return;
+          }
+          if (completed || !this._alive || generation !== this.customUiGeneration) {
+            try {
+              (component as CustomUiComponent).dispose?.();
+            } catch {
+              // A stale custom component still needs best-effort cleanup.
+            }
+            if (!completed) {
+              completed = true;
+              resolve(undefined as T);
+            }
             return;
           }
           const custom: ActiveCustomUi = {
@@ -1130,6 +1124,8 @@ export class AgentSessionWrapper {
           this.emitCustomUiRender(id, custom);
         })
         .catch((error) => {
+          if (completed) return;
+          completed = true;
           this.emit({
             type: "extension_error",
             extensionPath: `custom-ui:${id}`,
@@ -1261,6 +1257,7 @@ export class AgentSessionWrapper {
   }
 
   private async reloadExtensionsAware(): Promise<void> {
+    this.customUiGeneration += 1;
     await getRemoteRuntime().close(this.sessionId, false);
     await this.waitForExtensionsBound();
     this.extensionStatuses.clear();
@@ -1287,6 +1284,7 @@ export class AgentSessionWrapper {
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
+    this.customUiGeneration += 1;
     void getRemoteRuntime().close(this.sessionId, false);
     this.pendingGuide = null;
     if (this.idleTimer) clearTimeout(this.idleTimer);

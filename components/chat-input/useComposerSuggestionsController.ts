@@ -3,19 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { apiPath } from "@/lib/api-path";
 import { getSlashCommandQuery, type BuddyMode, type ModelRef, type PlanExecutionMode, type PlanMode, type PlanModeStatus, type SlashCommandQuery } from "@/lib/plan-mode";
-import { getMentionQuery } from "./helpers";
+import { buildWorkflowSlashCommands, getMentionQuery, type WorkflowSlashCommandOption } from "./helpers";
 import type { FileMentionEntry, MentionQuery, Translate } from "./types";
-
-export interface SlashCommandOption {
-  name: string;
-  label: string;
-  description: string;
-  mode: PlanMode;
-  executionMode: PlanExecutionMode;
-  buddyMode: BuddyMode;
-  active: boolean;
-  disabled: boolean;
-}
 
 interface Options {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -27,6 +16,7 @@ interface Options {
   onPlanModeChange?: (mode: PlanMode, executionMode?: PlanExecutionMode) => boolean | Promise<boolean>;
   buddyMode: BuddyMode;
   buddyReviewerModel?: ModelRef | null;
+  mainModel?: ModelRef | null;
   onBuddyModeChange?: (mode: BuddyMode) => boolean | Promise<boolean>;
   setInputValue: (value: string) => void;
   t: Translate;
@@ -35,7 +25,7 @@ interface Options {
 export function useComposerSuggestionsController(options: Options) {
   const {
     textareaRef, cwd, isStreaming, planMode, planExecutionMode, planModeStatus,
-    onPlanModeChange, buddyMode, buddyReviewerModel, onBuddyModeChange, setInputValue, t,
+    onPlanModeChange, buddyMode, buddyReviewerModel, mainModel, onBuddyModeChange, setInputValue, t,
   } = options;
   const [mentionQuery, setMentionQuery] = useState<MentionQuery | null>(null);
   const [mentionEntries, setMentionEntries] = useState<FileMentionEntry[]>([]);
@@ -76,42 +66,10 @@ export function useComposerSuggestionsController(options: Options) {
     setSlashSelectedIndex(0);
   }, [textareaRef]);
 
-  const slashCommands = useMemo<SlashCommandOption[]>(() => {
-    const commands: SlashCommandOption[] = [
-    {
-      name: "plan", label: t("chat.slash.plan"), description: t("chat.slash.planDesc"),
-      mode: "plan", executionMode: "main", buddyMode: "off",
-      active: planMode === "plan" && planExecutionMode === "main" && buddyMode === "off", disabled: false,
-    },
-    {
-      name: "plan-subagent", label: t("chat.slash.planSubagent"),
-      description: planModeStatus && !planModeStatus.subagentsAvailable
-        ? t("chat.slash.planSubagentUnavailable", { tools: planModeStatus.missingTools.join(", ") || "Agent" })
-        : t("chat.slash.planSubagentDesc"),
-      mode: "plan", executionMode: "subagent", buddyMode: "off",
-      active: planMode === "plan" && planExecutionMode === "subagent" && buddyMode === "off",
-      disabled: Boolean(planModeStatus && !planModeStatus.subagentsAvailable),
-    },
-    {
-      name: "buddy-plan", label: t("chat.slash.buddyPlan"), description: t("chat.slash.buddyPlanDesc"),
-      mode: "plan", executionMode: "main", buddyMode: "plan", active: buddyMode === "plan",
-      disabled: !buddyReviewerModel || Boolean(planModeStatus && !planModeStatus.subagentsAvailable),
-    },
-    {
-      name: "buddy-code", label: t("chat.slash.buddyCode"), description: t("chat.slash.buddyCodeDesc"),
-      mode: "normal", executionMode: "main", buddyMode: "code", active: buddyMode === "code",
-      disabled: !buddyReviewerModel || Boolean(planModeStatus && !planModeStatus.subagentsAvailable),
-    },
-    {
-      name: "normal", label: t("chat.slash.normal"), description: t("chat.slash.normalDesc"),
-      mode: "normal", executionMode: "main", buddyMode: "off",
-      active: planMode === "normal" && buddyMode === "off", disabled: false,
-    },
-    ];
-    return commands.filter((command) => !slashQueryText || command.name.startsWith(slashQueryText));
-  }, [
-    buddyMode, buddyReviewerModel, planExecutionMode, planMode, planModeStatus, slashQueryText, t,
-  ]);
+  const slashCommands = useMemo(() => buildWorkflowSlashCommands({
+    planMode, planExecutionMode, planModeStatus, buddyMode, buddyReviewerModel, mainModel,
+    query: slashQueryText, t,
+  }), [buddyMode, buddyReviewerModel, mainModel, planExecutionMode, planMode, planModeStatus, slashQueryText, t]);
 
   const insertMention = useCallback((entry: FileMentionEntry) => {
     const textarea = textareaRef.current;
@@ -130,15 +88,17 @@ export function useComposerSuggestionsController(options: Options) {
     });
   }, [mentionQuery, setInputValue, textareaRef]);
 
-  const runSlashCommand = useCallback(async (command: SlashCommandOption) => {
+  const runSlashCommand = useCallback(async (command: WorkflowSlashCommandOption) => {
     if (isStreaming) {
       showNotice(t("chat.slash.runningDisabled"), 1800);
       return;
     }
     if (command.disabled) {
-      showNotice(!buddyReviewerModel && command.buddyMode !== "off"
+      showNotice(command.disabledReason === "reviewer-required"
         ? t("chat.slash.buddyReviewerRequired")
-        : planModeStatus?.installCommand
+        : command.disabledReason === "same-model"
+          ? t("chat.buddySameModel")
+          : planModeStatus?.installCommand
           ? t("chat.slash.subagentInstall", { command: planModeStatus.installCommand })
           : t("chat.slash.runningDisabled"), 2600);
       return;
@@ -161,7 +121,7 @@ export function useComposerSuggestionsController(options: Options) {
     setSlashOpen(false);
     setSlashQuery(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [buddyReviewerModel, isStreaming, onBuddyModeChange, onPlanModeChange, planModeStatus, setInputValue, showNotice, slashQuery, t, textareaRef]);
+  }, [isStreaming, onBuddyModeChange, onPlanModeChange, planModeStatus, setInputValue, showNotice, slashQuery, t, textareaRef]);
 
   const handleSuggestionKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
     const plainKey = !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;

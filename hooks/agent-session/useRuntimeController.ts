@@ -5,6 +5,7 @@ import { sendAgentCommand } from "@/lib/agent-client";
 import { apiPath } from "@/lib/api-path";
 import {
   appendCompletedMessage,
+  extensionCustomUiReducer,
   isAbortError,
   noticeReducer,
   streamReducer,
@@ -54,7 +55,8 @@ export function useRuntimeController(options: RuntimeOptions) {
   const [toolExecutionStatuses, setToolExecutionStatuses] = useState<Map<string, ToolExecutionStatus>>(new Map());
   const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [] });
   const [extensionDialog, setExtensionDialog] = useState<ExtensionUiDialogRequest | null>(null);
-  const [extensionCustomUi, setExtensionCustomUi] = useState<ExtensionUiCustomRequest | null>(null);
+  const [extensionCustomUis, dispatchExtensionCustomUi] = useReducer(extensionCustomUiReducer, []);
+  const extensionCustomUi = extensionCustomUis.at(-1) ?? null;
   const [extensionStatuses, setExtensionStatuses] = useState<Array<{ key: string; text: string }>>([]);
   const [extensionWidgets, setExtensionWidgets] = useState<Array<{ key: string; lines: string[]; placement?: "aboveEditor" | "belowEditor" }>>([]);
   const agentRunningRef = useRef(false);
@@ -133,7 +135,7 @@ export function useRuntimeController(options: RuntimeOptions) {
       case "setTitle": if (request.title) document.title = request.title; break;
       case "set_editor_text": chatInputRef?.current?.insertText(request.text); break;
       case "custom":
-        setExtensionCustomUi((current) => request.closed ? (current?.id === request.id ? null : current) : request);
+        dispatchExtensionCustomUi({ type: "request", request });
         break;
     }
   }, [addNotice, chatInputRef]);
@@ -277,7 +279,7 @@ export function useRuntimeController(options: RuntimeOptions) {
     dispatch({ type: "reset" });
     setAgentPhase(null); setToolExecutionStatuses(new Map()); setRetryInfo(null);
     setContextUsage(null); setSystemPrompt(null); setTaskError(null); setCompactError(null); setIsCompacting(false);
-    setExtensionDialog(null); setExtensionCustomUi(null); setExtensionStatuses([]); setExtensionWidgets([]);
+    setExtensionDialog(null); dispatchExtensionCustomUi({ type: "reset" }); setExtensionStatuses([]); setExtensionWidgets([]);
     dispatchNotice({ type: "reset" });
     for (const timer of noticeTimersRef.current.values()) window.clearTimeout(timer);
     noticeTimersRef.current.clear();

@@ -1,3 +1,4 @@
+import { modelRefsEqual, type BuddyMode, type ModelRef, type PlanExecutionMode, type PlanMode, type PlanModeStatus } from "@/lib/plan-mode";
 import type { ContextUsage, MentionQuery, ModelGroup, ModelOption, ThinkingLevel, Translate } from "./types";
 
 export const THINKING_LEVELS: readonly ThinkingLevel[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -11,6 +12,91 @@ export const PROMPT_SNIPPETS = [
   { labelKey: "snippets.refactor", text: "Refactor this with the smallest safe change while preserving behavior." },
   { labelKey: "snippets.summarize", text: "Summarize what changed, what was verified, and any remaining risks." },
 ] as const;
+
+export type WorkflowCommandDisabledReason = "reviewer-required" | "same-model" | "subagents-unavailable" | null;
+
+export interface WorkflowSlashCommandOption {
+  name: string;
+  label: string;
+  description: string;
+  mode: PlanMode;
+  executionMode: PlanExecutionMode;
+  buddyMode: BuddyMode;
+  active: boolean;
+  disabled: boolean;
+  disabledReason: WorkflowCommandDisabledReason;
+}
+
+interface WorkflowSlashCommandOptions {
+  planMode: PlanMode;
+  planExecutionMode: PlanExecutionMode;
+  planModeStatus?: PlanModeStatus | null;
+  buddyMode: BuddyMode;
+  buddyReviewerModel?: ModelRef | null;
+  mainModel?: ModelRef | null;
+  query?: string;
+  t: Translate;
+}
+
+export function getBuddyCommandDisabledReason(
+  mainModel: ModelRef | null | undefined,
+  reviewerModel: ModelRef | null | undefined,
+  planModeStatus: PlanModeStatus | null | undefined,
+): WorkflowCommandDisabledReason {
+  if (!reviewerModel) return "reviewer-required";
+  if (modelRefsEqual(mainModel, reviewerModel)) return "same-model";
+  if (planModeStatus && !planModeStatus.subagentsAvailable) return "subagents-unavailable";
+  return null;
+}
+
+export function shouldShowBuddyReviewerSelector(
+  buddyMode: BuddyMode,
+  mainModel: ModelRef | null | undefined,
+  reviewerModel: ModelRef | null | undefined,
+): boolean {
+  return buddyMode !== "off" || !reviewerModel || modelRefsEqual(mainModel, reviewerModel);
+}
+
+export function buildWorkflowSlashCommands(options: WorkflowSlashCommandOptions): WorkflowSlashCommandOption[] {
+  const {
+    planMode, planExecutionMode, planModeStatus, buddyMode, buddyReviewerModel, mainModel, query, t,
+  } = options;
+  const buddyDisabledReason = getBuddyCommandDisabledReason(mainModel, buddyReviewerModel, planModeStatus);
+  const commands: WorkflowSlashCommandOption[] = [
+    {
+      name: "plan", label: t("chat.slash.plan"), description: t("chat.slash.planDesc"),
+      mode: "plan", executionMode: "main", buddyMode: "off",
+      active: planMode === "plan" && planExecutionMode === "main" && buddyMode === "off",
+      disabled: false, disabledReason: null,
+    },
+    {
+      name: "plan-subagent", label: t("chat.slash.planSubagent"),
+      description: planModeStatus && !planModeStatus.subagentsAvailable
+        ? t("chat.slash.planSubagentUnavailable", { tools: planModeStatus.missingTools.join(", ") || "Agent" })
+        : t("chat.slash.planSubagentDesc"),
+      mode: "plan", executionMode: "subagent", buddyMode: "off",
+      active: planMode === "plan" && planExecutionMode === "subagent" && buddyMode === "off",
+      disabled: Boolean(planModeStatus && !planModeStatus.subagentsAvailable),
+      disabledReason: planModeStatus && !planModeStatus.subagentsAvailable ? "subagents-unavailable" : null,
+    },
+    {
+      name: "buddy-plan", label: t("chat.slash.buddyPlan"), description: t("chat.slash.buddyPlanDesc"),
+      mode: "plan", executionMode: "main", buddyMode: "plan", active: buddyMode === "plan",
+      disabled: buddyDisabledReason !== null, disabledReason: buddyDisabledReason,
+    },
+    {
+      name: "buddy-code", label: t("chat.slash.buddyCode"), description: t("chat.slash.buddyCodeDesc"),
+      mode: "normal", executionMode: "main", buddyMode: "code", active: buddyMode === "code",
+      disabled: buddyDisabledReason !== null, disabledReason: buddyDisabledReason,
+    },
+    {
+      name: "normal", label: t("chat.slash.normal"), description: t("chat.slash.normalDesc"),
+      mode: "normal", executionMode: "main", buddyMode: "off",
+      active: planMode === "normal" && buddyMode === "off", disabled: false, disabledReason: null,
+    },
+  ];
+  return commands.filter((command) => !query || command.name.startsWith(query));
+}
 
 export function mergeHistory(...groups: string[][]): string[] {
   const seen = new Set<string>();

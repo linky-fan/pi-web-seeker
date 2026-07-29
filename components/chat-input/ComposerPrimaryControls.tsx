@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { createPortal } from "react-dom";
 import type { BuddyMode, ModelRef, PlanExecutionMode, PlanMode } from "@/lib/plan-mode";
-import { PROMPT_SNIPPETS } from "./helpers";
+import { PROMPT_SNIPPETS, shouldShowBuddyReviewerSelector } from "./helpers";
 import type { ModelGroup, ModelOption, Translate } from "./types";
 import type { ComposerMenusController } from "./useComposerMenusController";
 
@@ -246,7 +246,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
         </div>
       )}
 
-      {props.modelOptions.length > 1 && props.onBuddyReviewerChange && (props.buddyMode !== "off" || !props.buddyReviewerModel) && (
+      {props.modelOptions.length > 1 && props.onBuddyReviewerChange && shouldShowBuddyReviewerSelector(props.buddyMode, props.model, props.buddyReviewerModel) && (
         <div ref={menus.reviewerDropdownRef} data-motion-control style={{ position: "relative", flexShrink: 0 }}>
           <button
             type="button" aria-haspopup="menu" aria-expanded={menus.reviewerDropdownOpen} disabled={props.isStreaming}

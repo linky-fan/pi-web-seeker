@@ -100,10 +100,21 @@ test("ANSI and terminal helpers preserve colors, Unicode, frames, and control ke
     ["green", "rgb(0, 255, 0)"],
     ["true", "rgb(1, 2, 3)"],
   ]);
+  const backgrounds = parseAnsiLine("\x1b[44mstandard\x1b[48;5;196mindexed\x1b[48;2;4;5;6mtruecolor");
+  assert.deepEqual(backgrounds.map((segment) => [segment.text, segment.style.backgroundColor]), [
+    ["standard", "#2563eb"],
+    ["indexed", "rgb(255, 0, 0)"],
+    ["truecolor", "rgb(4, 5, 6)"],
+  ]);
   assert.equal(stripAnsi("中\x1b[1m文\x1b[0m"), "中文");
   assert.deepEqual(normalizeCustomPanelLines(["┌──┐", "│ hello │", "└──┘"]), ["hello"]);
+  assert.deepEqual(
+    normalizeCustomPanelLines(["\x1b[36m┌────┐\x1b[0m", "\x1b[36m│ 你好 │\x1b[0m", "\x1b[36m└────┘\x1b[0m"]),
+    ["\x1b[36m你好\x1b[0m"],
+  );
   assert.equal(toTerminalKeyData({ key: "c", ctrlKey: true, metaKey: false, altKey: false }), "\x03");
   assert.equal(toTerminalKeyData({ key: "ArrowUp", ctrlKey: false, metaKey: false, altKey: false }), "\x1b[A");
+  assert.equal(toTerminalKeyData({ key: "ArrowLeft", ctrlKey: false, metaKey: false, altKey: false }), "\x1b[D");
   assert.equal(toTerminalKeyData({ key: "x", ctrlKey: false, metaKey: false, altKey: false }), "x");
 });
 

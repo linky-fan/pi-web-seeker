@@ -58,6 +58,8 @@
     "test:message-view": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/message-view-state.test.mjs",
     "test:chat-window": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/chat-window-state.test.mjs",
     "test:agent-session": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/agent-session-state.test.mjs",
+    "test:extension-ui": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/extension-ui.test.mjs",
+    "test:buddy": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/buddy-workflow.test.mjs",
     "pack:portable": "node scripts/release/pack-portable.mjs",
     "postinstall": "node scripts/patch-pi-ai-stepfun-cache.mjs",
     "prepare": "node scripts/prepare-github-install.js",
