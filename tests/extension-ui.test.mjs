@@ -16,7 +16,7 @@ function createFakeSession() {
     autoCompactionEnabled: true,
     autoRetryEnabled: true,
     model: { provider: "test", id: "model" },
-    modelRegistry: { find: () => undefined },
+    modelRuntime: { getModel: () => undefined, getAvailableSnapshot: () => [] },
     sessionManager: {},
     settingsManager: {},
     agent: { state: { systemPrompt: "test" } },

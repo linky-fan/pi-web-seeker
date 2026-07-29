@@ -112,9 +112,9 @@ function createFakeSession() {
     autoCompactionEnabled: true,
     autoRetryEnabled: true,
     model: models.get("writer-provider/writer-model"),
-    modelRegistry: {
-      find: (provider, modelId) => models.get(`${provider}/${modelId}`),
-      getAvailable: () => [...models.values()],
+    modelRuntime: {
+      getModel: (provider, modelId) => models.get(`${provider}/${modelId}`),
+      getAvailableSnapshot: () => [...models.values()],
     },
     sessionManager: {},
     settingsManager: {},

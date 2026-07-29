@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
-import { join } from "node:path";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { assertPathAllowed } from "@/lib/allowed-roots";
-import { ensureModelsConfigCompatible } from "@/lib/models-config-compat";
+import { createAppModelRuntime } from "@/lib/model-registry";
 import {
   BUILTIN_CODING_TOOL_NAMES,
   DEFAULT_ACTIVE_TOOL_NAMES,
@@ -30,12 +29,13 @@ async function enumerateTools(cwd: string, agentDir: string): Promise<ToolToggle
   const extensionToolNames = getLoadedExtensionToolNames(resourceLoader);
   const registeredToolNames = uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES, ...extensionToolNames]);
   const sessionManager = SessionManager.create(cwd, undefined);
-  ensureModelsConfigCompatible(join(agentDir, "models.json"));
+  const modelRuntime = await createAppModelRuntime();
   const { session } = await createAgentSession({
     cwd,
     agentDir,
     sessionManager,
     resourceLoader,
+    modelRuntime,
     tools: registeredToolNames,
   });
 

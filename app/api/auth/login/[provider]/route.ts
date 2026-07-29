@@ -1,4 +1,5 @@
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
+import { createAppModelRuntime } from "@/lib/model-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -63,16 +64,14 @@ export async function GET(
     }
   };
 
-  // AbortController propagates client disconnect into authStorage.login()
+  // AbortController propagates client disconnect into ModelRuntime.login().
   const abort = new AbortController();
   req.signal.addEventListener("abort", () => abort.abort());
 
   const stream = new ReadableStream({
     async start(controller) {
-      const authStorage = AuthStorage.create();
-      const providers = authStorage.getOAuthProviders();
-      const providerInfo = providers.find((p) => p.id === provider);
-      if (!providerInfo) {
+      const runtime = await createAppModelRuntime();
+      if (!runtime.getProvider(provider)?.auth.oauth) {
         send(controller, { type: "error", message: `Unknown provider: ${provider}` });
         close(controller);
         return;
@@ -81,6 +80,7 @@ export async function GET(
       const registry = getCallbackRegistry();
       const activeTokens = new Set<string>();
       let pendingManualRequest: { token: string; promise: Promise<string> } | undefined;
+      let manualInputAnnounced = false;
 
       const createClientInputRequest = () => {
         const token = `${provider}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -110,6 +110,7 @@ export async function GET(
           pendingManualRequest.promise
             .finally(() => {
               pendingManualRequest = undefined;
+              manualInputAnnounced = false;
             })
             .catch(() => {});
         }
@@ -129,56 +130,56 @@ export async function GET(
       abort.signal.addEventListener("abort", cleanup);
 
       try {
-        await authStorage.login(provider, {
-          onAuth: (info: { url: string; instructions?: string }) => {
-            const request = getManualInputRequest();
-            send(controller, {
-              type: "auth",
-              url: info.url,
-              instructions: info.instructions ?? null,
-              token: request.token,
-            });
-          },
-          onDeviceCode: (info: {
-            userCode: string;
-            verificationUri: string;
-            intervalSeconds?: number;
-            expiresInSeconds?: number;
-          }) => {
-            send(controller, {
-              type: "device_code",
-              userCode: info.userCode,
-              verificationUri: info.verificationUri,
-              intervalSeconds: info.intervalSeconds ?? null,
-              expiresInSeconds: info.expiresInSeconds ?? null,
-            });
-          },
-          onPrompt: async (prompt: { message: string; placeholder?: string }) => {
-            const request = getManualInputRequest();
-            send(controller, {
-              type: "prompt_request",
-              message: prompt.message,
-              placeholder: prompt.placeholder ?? null,
-              token: request.token,
-            });
-            const value = await request.promise;
-            return value;
-          },
-          onProgress: (message: string) => {
-            send(controller, { type: "progress", message });
-          },
-          onSelect: async (prompt: { message: string; options: { id: string; label: string }[] }) => {
+        const prompt = async (authPrompt: AuthPrompt): Promise<string> => {
+          if (authPrompt.type === "select") {
             const request = createClientInputRequest();
             send(controller, {
               type: "select_request",
-              message: prompt.message,
-              options: prompt.options,
+              message: authPrompt.message,
+              options: authPrompt.options,
               token: request.token,
             });
-            const value = await request.promise;
-            return value || undefined;
-          },
-          onManualCodeInput: () => getManualInputRequest().promise,
+            return request.promise;
+          }
+
+          const request = getManualInputRequest();
+          if (authPrompt.type !== "manual_code" || !manualInputAnnounced) {
+            send(controller, {
+              type: "prompt_request",
+              message: authPrompt.message,
+              placeholder: authPrompt.placeholder ?? null,
+              token: request.token,
+            });
+          }
+          return request.promise;
+        };
+
+        const notify = (event: AuthEvent) => {
+          if (event.type === "auth_url") {
+            const request = getManualInputRequest();
+            manualInputAnnounced = true;
+            send(controller, {
+              type: "auth",
+              url: event.url,
+              instructions: event.instructions ?? null,
+              token: request.token,
+            });
+          } else if (event.type === "device_code") {
+            send(controller, {
+              type: "device_code",
+              userCode: event.userCode,
+              verificationUri: event.verificationUri,
+              intervalSeconds: event.intervalSeconds ?? null,
+              expiresInSeconds: event.expiresInSeconds ?? null,
+            });
+          } else {
+            send(controller, { type: "progress", message: event.message });
+          }
+        };
+
+        await runtime.login(provider, "oauth", {
+          prompt,
+          notify,
           signal: abort.signal,
         });
 

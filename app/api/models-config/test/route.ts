@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { completeSimple, type AssistantMessage } from "@earendil-works/pi-ai/compat";
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
-import { createAppModelRegistry } from "@/lib/model-registry";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { createAppModelRuntime } from "@/lib/model-registry";
 import { normalizeModelsJsonCompat } from "@/lib/models-config-compat";
 
 export const dynamic = "force-dynamic";
@@ -51,16 +50,15 @@ export async function POST(req: Request) {
     });
     writeFileSync(modelsPath, JSON.stringify(normalized.value, null, 2), "utf8");
 
-    const registry = createAppModelRegistry(AuthStorage.create(), modelsPath);
-    const loadError = registry.getError();
+    const runtime = await createAppModelRuntime(modelsPath);
+    const loadError = runtime.getError();
     if (loadError) return NextResponse.json({ ok: false, error: loadError });
 
-    const model = registry.find(providerName, modelId);
+    const model = runtime.getModel(providerName, modelId);
     if (!model) return NextResponse.json({ ok: false, error: `Model not found: ${providerName}/${modelId}` });
 
-    const auth = await registry.getApiKeyAndHeaders(model);
-    if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error });
-    if (!auth.apiKey) return NextResponse.json({ ok: false, error: `No API key found for "${providerName}"` });
+    const auth = await runtime.getAuth(model);
+    if (!auth) return NextResponse.json({ ok: false, error: `No API key found for "${providerName}"` });
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS);
@@ -68,15 +66,13 @@ export async function POST(req: Request) {
     const startedAt = Date.now();
 
     try {
-      const message = await completeSimple(model, {
+      const message = await runtime.completeSimple(model, {
         messages: [{
           role: "user",
           content: "Reply with OK only.",
           timestamp: Date.now(),
         }],
       }, {
-        apiKey: auth.apiKey,
-        headers: auth.headers,
         maxTokens: 16,
         timeoutMs: TEST_TIMEOUT_MS,
         maxRetries: 0,

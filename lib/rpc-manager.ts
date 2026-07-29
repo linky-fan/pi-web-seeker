@@ -37,7 +37,7 @@ import {
   readActiveTools,
   uniqueToolNames,
 } from "./tool-settings";
-import { ensureModelsConfigCompatible } from "./models-config-compat";
+import { createAppModelRuntime } from "./model-registry";
 import { getRemoteRuntime } from "../pi-packages/pi-remote-exec/runtime";
 
 // ============================================================================
@@ -657,8 +657,7 @@ export class AgentSessionWrapper {
 
       case "set_model": {
         const { provider, modelId } = command as { provider: string; modelId: string };
-        const registry = this.inner.modelRegistry;
-        const model = registry.find(provider, modelId);
+        const model = this.inner.modelRuntime.getModel(provider, modelId);
         if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
         if (this.buddyMode !== "off" && this.buddyReviewerModel && modelRefKey(this.buddyReviewerModel) === `${provider}/${modelId}`) {
           throw new Error("Buddy writer and reviewer models must be different");
@@ -937,14 +936,11 @@ export class AgentSessionWrapper {
   }
 
   private assertBuddyReviewer(reviewer: ModelRef): void {
-    const model = this.inner.modelRegistry.find(reviewer.provider, reviewer.modelId);
+    const model = this.inner.modelRuntime.getModel(reviewer.provider, reviewer.modelId);
     if (!model) throw new Error(`Buddy reviewer model not found: ${modelRefKey(reviewer)}`);
-    const registry = this.inner.modelRegistry as typeof this.inner.modelRegistry & {
-      getAvailable?: () => Array<{ provider: string; id: string }>;
-    };
-    const available = registry.getAvailable?.().some((candidate) => (
+    const available = this.inner.modelRuntime.getAvailableSnapshot().some((candidate) => (
       candidate.provider === reviewer.provider && candidate.id === reviewer.modelId
-    )) ?? true;
+    ));
     if (!available) throw new Error(`Buddy reviewer model is not authenticated: ${modelRefKey(reviewer)}`);
     const main = this.inner.model;
     if (main && main.provider === reviewer.provider && main.id === reviewer.modelId) {
@@ -1350,7 +1346,7 @@ export async function startRpcSession(
   const starting = (async () => {
     const { SessionManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
     const agentDir = getAgentDir();
-    ensureModelsConfigCompatible(join(agentDir, "models.json"));
+    const modelRuntime = await createAppModelRuntime(join(agentDir, "models.json"));
 
     const sessionManager = sessionFile
       ? SessionManager.open(sessionFile, undefined)
@@ -1394,6 +1390,7 @@ export async function startRpcSession(
       agentDir,
       sessionManager,
       resourceLoader,
+      modelRuntime,
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
 

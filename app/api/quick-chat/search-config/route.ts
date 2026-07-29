@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       throw new QuickChatSearchError("A valid Tavily API key is required", 400, "tavily_not_configured", "stored");
     }
     await validateQuickChatSearchApiKey(apiKey, req.signal, "stored");
-    saveQuickChatSearchApiKey(apiKey);
+    await saveQuickChatSearchApiKey(apiKey);
     return Response.json(getQuickChatSearchConfig());
   } catch (error) {
     return errorResponse(error);
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
 
 export async function DELETE() {
   try {
-    removeQuickChatSearchApiKey();
+    await removeQuickChatSearchApiKey();
     return Response.json(getQuickChatSearchConfig());
   } catch (error) {
     return errorResponse(error);

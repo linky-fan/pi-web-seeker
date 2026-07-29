@@ -1,5 +1,7 @@
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import type { Provider } from "@earendil-works/pi-ai";
+import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 import type { QuickChatSource } from "@/lib/quick-chat";
+import { createAppModelRuntime } from "@/lib/model-registry";
 
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const TAVILY_USAGE_ENDPOINT = "https://api.tavily.com/usage";
@@ -33,14 +35,21 @@ export type QuickChatSearchErrorCode =
   | "request_stopped";
 
 export class QuickChatSearchError extends Error {
+  readonly status: number;
+  readonly code: QuickChatSearchErrorCode;
+  readonly source?: QuickChatSearchCredentialSource;
+
   constructor(
     message: string,
-    readonly status = 502,
-    readonly code: QuickChatSearchErrorCode = "tavily_request_failed",
-    readonly source?: QuickChatSearchCredentialSource,
+    status = 502,
+    code: QuickChatSearchErrorCode = "tavily_request_failed",
+    source?: QuickChatSearchCredentialSource,
   ) {
     super(message);
     this.name = "QuickChatSearchError";
+    this.status = status;
+    this.code = code;
+    this.source = source;
   }
 }
 
@@ -55,8 +64,8 @@ function environmentApiKey(): string | undefined {
 }
 
 function storedApiKey(): string | undefined {
-  const credential = AuthStorage.create().get(TAVILY_AUTH_ID);
-  return credential?.type === "api_key" && credential.key.trim() ? credential.key.trim() : undefined;
+  const credential = readStoredCredential(TAVILY_AUTH_ID);
+  return credential?.type === "api_key" && credential.key?.trim() ? credential.key.trim() : undefined;
 }
 
 export function getQuickChatSearchConfig(): QuickChatSearchConfig {
@@ -71,12 +80,38 @@ export function getQuickChatSearchConfig(): QuickChatSearchConfig {
   };
 }
 
-export function saveQuickChatSearchApiKey(apiKey: string): void {
-  AuthStorage.create().set(TAVILY_AUTH_ID, { type: "api_key", key: apiKey.trim() });
+function createTavilyCredentialProvider(apiKey: string): Provider {
+  return {
+    id: TAVILY_AUTH_ID,
+    name: "Tavily Search",
+    auth: {
+      apiKey: {
+        name: "Tavily API key",
+        login: async () => ({ type: "api_key", key: apiKey.trim() }),
+        resolve: async ({ credential }) => {
+          const key = credential?.type === "api_key" ? credential.key?.trim() : undefined;
+          return key ? { auth: { apiKey: key }, source: "stored" } : undefined;
+        },
+      },
+    },
+    getModels: () => [],
+    stream: () => { throw new Error("Tavily is not a model provider"); },
+    streamSimple: () => { throw new Error("Tavily is not a model provider"); },
+  };
 }
 
-export function removeQuickChatSearchApiKey(): void {
-  AuthStorage.create().remove(TAVILY_AUTH_ID);
+export async function saveQuickChatSearchApiKey(apiKey: string): Promise<void> {
+  const runtime = await createAppModelRuntime();
+  runtime.registerNativeProvider(createTavilyCredentialProvider(apiKey));
+  await runtime.login(TAVILY_AUTH_ID, "api_key", {
+    prompt: async () => apiKey.trim(),
+    notify: () => {},
+  });
+}
+
+export async function removeQuickChatSearchApiKey(): Promise<void> {
+  const runtime = await createAppModelRuntime();
+  await runtime.logout(TAVILY_AUTH_ID);
 }
 
 function resolvedCredential(): ResolvedCredential | undefined {

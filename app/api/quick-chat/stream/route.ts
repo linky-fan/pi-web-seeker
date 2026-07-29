@@ -1,7 +1,5 @@
-import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { Message } from "@earendil-works/pi-ai";
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
-import { createAppModelRegistry } from "@/lib/model-registry";
+import { createAppModelRuntime } from "@/lib/model-registry";
 import {
   parseQuickChatMessages,
   parseQuickChatModel,
@@ -42,14 +40,13 @@ export async function POST(req: Request) {
       throw new QuickChatValidationError("The last message must be from the user");
     }
 
-    const registry = createAppModelRegistry(AuthStorage.create());
-    const model = registry.find(modelRef.provider, modelRef.modelId);
+    const runtime = await createAppModelRuntime();
+    const model = runtime.getModel(modelRef.provider, modelRef.modelId);
     if (!model) {
       return Response.json({ error: `Model not found: ${modelRef.provider}/${modelRef.modelId}` }, { status: 404 });
     }
-    const auth = await registry.getApiKeyAndHeaders(model);
-    if (!auth.ok) return Response.json({ error: auth.error }, { status: 400 });
-    if (!auth.apiKey) {
+    const auth = await runtime.getAuth(model);
+    if (!auth) {
       return Response.json({ error: `No API key found for "${modelRef.provider}"` }, { status: 400 });
     }
 
@@ -116,9 +113,7 @@ export async function POST(req: Request) {
                   timestamp: message.timestamp,
                 });
 
-            const response = streamSimple(model, { messages: contextMessages, ...(systemPrompt ? { systemPrompt } : {}) }, {
-              apiKey: auth.apiKey,
-              headers: auth.headers,
+            const response = runtime.streamSimple(model, { messages: contextMessages, ...(systemPrompt ? { systemPrompt } : {}) }, {
               cacheRetention: "none",
               maxRetries: 0,
               timeoutMs: QUICK_CHAT_TIMEOUT_MS,

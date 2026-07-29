@@ -1,6 +1,6 @@
-import { AuthStorage, SettingsManager, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { SettingsManager, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import { createAppModelRegistry } from "@/lib/model-registry";
+import { createAppModelRuntime } from "@/lib/model-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -13,9 +13,8 @@ export async function GET() {
 
   try {
     const agentDir = getAgentDir();
-    const authStorage = AuthStorage.create();
-    const registry = createAppModelRegistry(authStorage);
-    const available = registry.getAvailable();
+    const runtime = await createAppModelRuntime();
+    const available = await runtime.getAvailable();
     modelList = available.map((m: { id: string; name: string; provider: string }) => ({
       id: m.id,
       name: m.name,

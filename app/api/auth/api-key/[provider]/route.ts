@@ -1,6 +1,5 @@
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import { NextResponse } from "next/server";
-import { createAppModelRegistry } from "@/lib/model-registry";
+import { createAppModelRuntime } from "@/lib/model-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -9,11 +8,10 @@ type Params = { params: Promise<{ provider: string }> };
 // GET /api/auth/api-key/[provider] — returns auth status (never returns the actual key)
 export async function GET(_req: Request, { params }: Params) {
   const { provider } = await params;
-  const authStorage = AuthStorage.create();
-  const registry = createAppModelRegistry(authStorage);
-  const status = registry.getProviderAuthStatus(provider);
-  const displayName = registry.getProviderDisplayName(provider);
-  const models = registry.getAll().filter((m) => m.provider === provider).length;
+  const runtime = await createAppModelRuntime();
+  const status = runtime.getProviderAuthStatus(provider);
+  const displayName = runtime.getProvider(provider)?.name ?? provider;
+  const models = runtime.getModels(provider).length;
   return NextResponse.json({ provider, displayName, configured: status.configured, source: status.source, models });
 }
 
@@ -25,8 +23,11 @@ export async function POST(req: Request, { params }: Params) {
     if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
       return NextResponse.json({ error: "apiKey is required" }, { status: 400 });
     }
-    const authStorage = AuthStorage.create();
-    authStorage.set(provider, { type: "api_key", key: apiKey.trim() });
+    const runtime = await createAppModelRuntime();
+    await runtime.login(provider, "api_key", {
+      prompt: async () => apiKey.trim(),
+      notify: () => {},
+    });
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -37,8 +38,8 @@ export async function POST(req: Request, { params }: Params) {
 export async function DELETE(_req: Request, { params }: Params) {
   const { provider } = await params;
   try {
-    const authStorage = AuthStorage.create();
-    authStorage.remove(provider);
+    const runtime = await createAppModelRuntime();
+    await runtime.logout(provider);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
