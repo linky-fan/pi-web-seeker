@@ -73,9 +73,9 @@
     "gsap": "^3.15.0",
     "iconv-lite": "^0.7.3",
     "katex": "^0.17.0",
-    "next": "^16.2.10",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "next": "^16.2.12",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^16.1.1",
     "rehype-katex": "^7.0.1",
@@ -86,16 +86,16 @@
   },
   "devDependencies": {
     "@eslint/compat": "^2.1.0",
-    "@tailwindcss/postcss": "^4.3.2",
-    "@types/node": "^26.1.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/ssh2": "^1.15.5",
-    "eslint": "^10.7.0",
-    "eslint-config-next": "16.2.10",
-    "postcss": "^8.5.19",
-    "tailwindcss": "^4.3.2",
+    "eslint": "^10.8.0",
+    "eslint-config-next": "16.2.12",
+    "postcss": "^8.5.24",
+    "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3"
   },
   "overrides": {
@@ -104,6 +104,6 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "js-cookie": "3.0.8",
     "mermaid": "11.15.0",
-    "protobufjs": "7.6.4"
+    "protobufjs": "7.6.5"
   }
 }
