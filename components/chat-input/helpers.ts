@@ -49,12 +49,33 @@ export function getBuddyCommandDisabledReason(
   return null;
 }
 
-export function shouldShowBuddyReviewerSelector(
+export interface BuddyReviewerControlPresentation {
+  title: string;
+  label: string;
+  hint: string;
+}
+
+export function shouldShowBuddyReviewerControl(modelOptionCount: number, canChangeReviewer: boolean): boolean {
+  return modelOptionCount > 1 && canChangeReviewer;
+}
+
+export function getBuddyReviewerControlPresentation(
   buddyMode: BuddyMode,
-  mainModel: ModelRef | null | undefined,
-  reviewerModel: ModelRef | null | undefined,
-): boolean {
-  return buddyMode !== "off" || !reviewerModel || modelRefsEqual(mainModel, reviewerModel);
+  reviewerName: string | null | undefined,
+  t: Translate,
+): BuddyReviewerControlPresentation {
+  if (buddyMode === "off") {
+    return {
+      title: t("chat.buddyConfigure"),
+      label: t("chat.buddyConfigure"),
+      hint: t("chat.buddyConfigureHint"),
+    };
+  }
+  return {
+    title: t("chat.buddyReviewer"),
+    label: reviewerName ? `${t("chat.buddyReviewer")} · ${reviewerName}` : t("chat.buddyReviewerSelect"),
+    hint: t("chat.buddyReviewerHint"),
+  };
 }
 
 export function buildWorkflowSlashCommands(options: WorkflowSlashCommandOptions): WorkflowSlashCommandOption[] {

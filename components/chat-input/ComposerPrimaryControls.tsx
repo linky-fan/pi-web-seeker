@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { createPortal } from "react-dom";
 import type { BuddyMode, ModelRef, PlanExecutionMode, PlanMode } from "@/lib/plan-mode";
-import { PROMPT_SNIPPETS, shouldShowBuddyReviewerSelector } from "./helpers";
+import { getBuddyReviewerControlPresentation, PROMPT_SNIPPETS, shouldShowBuddyReviewerControl } from "./helpers";
 import type { ModelGroup, ModelOption, Translate } from "./types";
 import type { ComposerMenusController } from "./useComposerMenusController";
 
@@ -31,6 +31,7 @@ interface Props {
 
 export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(props: Props) {
   const { menus } = props;
+  const reviewerControl = getBuddyReviewerControlPresentation(props.buddyMode, props.reviewerName, props.t);
   return (
     <div style={{ flex: "1 1 280px", minWidth: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", rowGap: 4 }}>
       {(props.planMode === "plan" || props.buddyMode !== "off") && (
@@ -246,11 +247,11 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
         </div>
       )}
 
-      {props.modelOptions.length > 1 && props.onBuddyReviewerChange && shouldShowBuddyReviewerSelector(props.buddyMode, props.model, props.buddyReviewerModel) && (
+      {shouldShowBuddyReviewerControl(props.modelOptions.length, Boolean(props.onBuddyReviewerChange)) && (
         <div ref={menus.reviewerDropdownRef} data-motion-control style={{ position: "relative", flexShrink: 0 }}>
           <button
             type="button" aria-haspopup="menu" aria-expanded={menus.reviewerDropdownOpen} disabled={props.isStreaming}
-            onClick={() => menus.setReviewerDropdownOpen((open) => !open)} title={props.t("chat.buddyReviewer")}
+            onClick={() => menus.setReviewerDropdownOpen((open) => !open)} title={reviewerControl.title}
             style={{
               height: 32, maxWidth: 210, display: "flex", alignItems: "center", gap: 6, padding: "0 9px",
               background: menus.reviewerDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)",
@@ -261,7 +262,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
             }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 3l7 3v5c0 4.6-2.8 8-7 10-4.2-2-7-5.4-7-10V6l7-3z" /><path d="M9 12l2 2 4-4" /></svg>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{props.reviewerName ? `${props.t("chat.buddyReviewerShort")} · ${props.reviewerName}` : props.t("chat.buddyReviewerSelect")}</span>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{reviewerControl.label}</span>
             <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ flexShrink: 0, opacity: 0.7 }}><path d="M2 3.5L5 6.5L8 3.5" /></svg>
           </button>
           {menus.reviewerDropdownOpen && (
@@ -271,7 +272,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
               background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 9,
               boxShadow: "0 -6px 20px rgba(15,23,42,0.12)", padding: 4,
             }}>
-              <div style={{ padding: "7px 9px 6px", color: "var(--text-dim)", fontSize: 10, fontWeight: 650, letterSpacing: "0.04em" }}>{props.t("chat.buddyReviewerHint")}</div>
+              <div style={{ padding: "7px 9px 6px", color: "var(--text-dim)", fontSize: 10, fontWeight: 650, letterSpacing: "0.04em" }}>{reviewerControl.hint}</div>
               {props.modelGroups.map((group) => (
                 <div key={group.provider}>
                   {props.modelGroups.length > 1 && <div style={{ padding: "6px 9px 3px", color: "var(--text-dim)", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>{group.provider}</div>}

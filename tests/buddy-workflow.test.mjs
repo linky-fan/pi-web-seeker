@@ -8,7 +8,8 @@ const {
 } = await import("../lib/plan-mode.ts");
 const {
   buildWorkflowSlashCommands,
-  shouldShowBuddyReviewerSelector,
+  getBuddyReviewerControlPresentation,
+  shouldShowBuddyReviewerControl,
 } = await import("../components/chat-input/helpers.ts");
 const { AgentSessionWrapper } = await import("../lib/rpc-manager.ts");
 
@@ -17,7 +18,29 @@ const reviewer = { provider: "review-provider", modelId: "review-model" };
 const availableStatus = { subagentsAvailable: true, missingTools: [], installCommand: "install", loadErrors: [] };
 const t = (key) => key;
 
-test("composer exposes a recovery path and blocks Buddy commands for a same-model reviewer", () => {
+test("composer presents Buddy configuration separately from an active reviewer", () => {
+  assert.equal(shouldShowBuddyReviewerControl(2, true), true);
+  assert.equal(shouldShowBuddyReviewerControl(1, true), false);
+  assert.equal(shouldShowBuddyReviewerControl(2, false), false);
+  assert.deepEqual(getBuddyReviewerControlPresentation("off", "Review Model", t), {
+    title: "chat.buddyConfigure",
+    label: "chat.buddyConfigure",
+    hint: "chat.buddyConfigureHint",
+  });
+  for (const mode of ["plan", "code"]) {
+    assert.deepEqual(getBuddyReviewerControlPresentation(mode, "Review Model", t), {
+      title: "chat.buddyReviewer",
+      label: "chat.buddyReviewer · Review Model",
+      hint: "chat.buddyReviewerHint",
+    });
+  }
+  assert.equal(
+    getBuddyReviewerControlPresentation("code", null, t).label,
+    "chat.buddyReviewerSelect",
+  );
+});
+
+test("composer blocks Buddy commands for a same-model reviewer", () => {
   const commands = buildWorkflowSlashCommands({
     planMode: "normal",
     planExecutionMode: "main",
@@ -33,10 +56,6 @@ test("composer exposes a recovery path and blocks Buddy commands for a same-mode
     assert.equal(command?.disabled, true);
     assert.equal(command?.disabledReason, "same-model");
   }
-  assert.equal(shouldShowBuddyReviewerSelector("off", writer, writer), true);
-  assert.equal(shouldShowBuddyReviewerSelector("off", writer, reviewer), false);
-  assert.equal(shouldShowBuddyReviewerSelector("code", writer, reviewer), true);
-
   const available = buildWorkflowSlashCommands({
     planMode: "normal",
     planExecutionMode: "main",
@@ -143,6 +162,10 @@ test("RPC workflow state applies Buddy prompts/tools and restores the original s
     buddyReviewerModel: reviewer,
   });
   assert.deepEqual(reviewerResult.buddyReviewerModel, reviewer);
+  const configuredState = await wrapper.send({ type: "get_state" });
+  assert.equal(configuredState.buddyMode, "off");
+  assert.deepEqual(configuredState.buddyReviewerModel, reviewer);
+  assert.equal(fake.inner.agent.state.systemPrompt, "base prompt");
 
   let result = await wrapper.send({
     type: "set_plan_mode",
