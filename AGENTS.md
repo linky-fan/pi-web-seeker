@@ -26,6 +26,8 @@ Pi Web Seeker is a Next.js UI over Pi session files and in-process `AgentSession
 - Never revert user changes unless explicitly requested.
 - Keep API keys, auth files, local session data, and private paths out of commits and screenshots.
 - Use `apply_patch` for manual edits; avoid touching generated `.next/` output.
+- Frontend structure is frozen at `2b259c4`: preserve the current AppShell, ChatInput, MessageView, ChatWindow, and AgentSession ownership boundaries. Do not split or merge components only to meet file-count, line-count, or bundle-size targets.
+- Add a controller, dynamic import, custom memo comparator, or cross-file UI boundary only for a demonstrated defect, an independent feature domain, a reproducible performance problem, or an async lifecycle race.
 - Preserve extension tools when changing tool presets; packages such as `pi-subagents` must not be hidden by built-in tool filtering.
 - For Docker/default workspace changes, keep host-mounted user data separate from app code and preserve LAN access behavior.
 - For Markdown math, remember `remark-math` can misread prices such as `$5` to `$10`; keep `singleDollarTextMath` disabled where configured.
@@ -33,6 +35,7 @@ Pi Web Seeker is a Next.js UI over Pi session files and in-process `AgentSession
 ## Common Flows
 
 - UI changes: edit the relevant component, run typecheck/lint, then smoke-test the affected route in the browser.
+- Prefer user-visible features, session/SSE/Remote/data reliability, and privacy-safe diagnostics over speculative structural or bundle optimization.
 - API/session changes: inspect `lib/session-reader.ts`, `lib/rpc-manager.ts`, and the matching `app/api/*` route together.
 - File explorer changes: check allowed roots, Docker workspace env vars, symlink safety, and large-file behavior.
 - Model config changes: verify both `models.json` editing and the user-triggered connection test path.

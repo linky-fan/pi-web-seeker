@@ -59,6 +59,16 @@ Buddy review is orthogonal to Plan Mode. `buddyMode: "plan"` keeps the main agen
 
 Debug Bundle import/export is separate from normal session browsing. Export builds a `.tar.gz` from session entries, externalized media, diagnostics, and selected workspace files; import inspects first, then restores into a new sandbox cwd.
 
+## Frontend Structure Freeze
+
+Commit `2b259c4` is the frontend structure baseline. The existing AppShell, ChatInput, MessageView, ChatWindow, and AgentSession composition entries and their ownership modules are stable architecture, not an unfinished sequence of refactoring phases. Do not introduce later phase numbers or hard file-length targets.
+
+Keep new feature work inside the current owner when practical. In particular, `SessionSidebar`, `FileViewer`, `ModelsConfig`, `QuickChatPanel`, `SkillsConfig`, and `BranchNavigator` must not be split merely because they are large. A new controller, dynamic-load boundary, custom memo comparator, or cross-file rendering layer requires at least one concrete reason: an independent feature domain, a reproducible defect, measured rendering/loading cost, or an async lifecycle race that cannot be fixed safely within the existing owner.
+
+Development priority is user-visible capability first, then session/SSE/Remote/data-persistence reliability, privacy-safe error recovery and diagnostics, and finally performance work backed by measurements. Preserve the current deferred panels, Fluid CSS ownership, state tests, and stale-request protections. Run targeted checks for the subsystem being changed; repeat full bundle or profiler comparisons only when a loading or rendering boundary actually changes.
+
+When improving observability, keep the existing user-friendly failure surface and add only sanitized diagnostics suitable for local development. Logs and error details must not include credentials, Remote captures, session content, API responses containing secrets, or private filesystem paths.
+
 ## App Shell State Ownership
 
 `components/AppShell.tsx` is the public composition root, not the owner of feature-specific rendering. It connects three local controllers and four memoized view regions without adding Context or a global store:
