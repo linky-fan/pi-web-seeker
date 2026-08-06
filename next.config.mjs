@@ -40,6 +40,7 @@ const protectedWindowsProfileJunctions = [
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  agentRules: false,
   serverExternalPackages: [
     "@earendil-works/pi-coding-agent",
     "@earendil-works/pi-ai",
