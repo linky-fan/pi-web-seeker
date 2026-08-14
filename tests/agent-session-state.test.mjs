@@ -74,9 +74,10 @@ test("statistics and tool partial helpers preserve accumulated runtime state", (
 
 test("stream and notice transitions retain existing public semantics", () => {
   const started = streamReducer({ isStreaming: false, streamingMessage: null }, { type: "start" });
-  const updated = streamReducer(started, { type: "update", message: assistant("token") });
+  const partial = streamReducer(started, { type: "update", message: assistant("token") });
+  const updated = streamReducer(partial, { type: "update", message: assistant("token stream") });
   assert.equal(updated.isStreaming, true);
-  assert.equal(updated.streamingMessage.content[0].text, "token");
+  assert.equal(updated.streamingMessage.content[0].text, "token stream");
   assert.deepEqual(streamReducer(updated, { type: "end" }), { isStreaming: false, streamingMessage: null });
 
   let notices = { visible: [] };
