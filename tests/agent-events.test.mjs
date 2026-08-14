@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { createAgentEventStream } = await import("../app/api/agent/[id]/events/route.ts");
+const { createAgentEventStream } = await import("../lib/agent-event-stream.ts");
 
 function decode(value) {
   return new TextDecoder().decode(value);
