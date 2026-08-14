@@ -29,6 +29,7 @@ export interface StreamingState {
 export type StreamAction =
   | { type: "start" }
   | { type: "update"; message: Partial<AgentMessage> }
+  | { type: "runtime_error" }
   | { type: "end" }
   | { type: "reset" };
 

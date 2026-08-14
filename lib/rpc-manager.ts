@@ -216,6 +216,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function numberFromUnknown(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -436,14 +440,21 @@ export class AgentSessionWrapper {
   }
 
   start(): void {
-    this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
+    if (!this._alive) throw new Error("Agent session is no longer available");
+    try {
+      this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
+        if (!this._alive) return;
+        this.resetIdleTimer();
+        this.emit(event);
+        if (event.type === "agent_end") {
+          this.flushPendingGuideSoon();
+        }
+      });
       this.resetIdleTimer();
-      for (const l of this.listeners) l(event);
-      if (event.type === "agent_end") {
-        this.flushPendingGuideSoon();
-      }
-    });
-    this.resetIdleTimer();
+    } catch (error) {
+      this.destroy();
+      throw error;
+    }
   }
 
   setForceEmptySystemPrompt(force: boolean): void {
@@ -453,7 +464,8 @@ export class AgentSessionWrapper {
 
   beginExtensionBinding(options: ExtensionBindingOptions = {}): void {
     void this.ensureExtensionsBound(options).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
+      if (!this._alive) return;
+      const message = errorMessage(error);
       console.error("[pi-web] failed to dispatch session_start to extensions:", message);
       this.emit({
         type: "extension_error",
@@ -461,6 +473,7 @@ export class AgentSessionWrapper {
         event: "session_start",
         error: message,
       });
+      this.destroy();
     });
   }
 
@@ -532,14 +545,67 @@ export class AgentSessionWrapper {
   }
 
   private emit(event: AgentEvent): void {
-    for (const listener of this.listeners) listener(event);
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(event);
+      } catch (error) {
+        this.listeners = this.listeners.filter((candidate) => candidate !== listener);
+        console.error("[pi-web] agent event listener failed and was removed:", errorMessage(error));
+      }
+    }
+  }
+
+  private submitPrompt(guide: PendingGuide): Promise<void> {
+    let preflightAccepted: boolean | null = null;
+    let acceptanceSettled = false;
+    let resolveAcceptance!: () => void;
+    let rejectAcceptance!: (error: unknown) => void;
+    const acceptance = new Promise<void>((resolve, reject) => {
+      resolveAcceptance = resolve;
+      rejectAcceptance = reject;
+    });
+    const resolveOnce = () => {
+      if (acceptanceSettled) return;
+      acceptanceSettled = true;
+      resolveAcceptance();
+    };
+    const rejectOnce = (error: unknown) => {
+      if (acceptanceSettled) return;
+      acceptanceSettled = true;
+      rejectAcceptance(error);
+    };
+
+    void Promise.resolve().then(() => this.inner.prompt(guide.message, {
+      ...(guide.images?.length ? { images: guide.images } : {}),
+      preflightResult: (accepted) => {
+        preflightAccepted = accepted;
+        if (accepted) resolveOnce();
+      },
+    })).then(() => {
+      // Extension commands and test doubles may finish without starting an Agent turn.
+      if (preflightAccepted !== false) resolveOnce();
+    }).catch((error) => {
+      if (preflightAccepted === true) {
+        if (!this._alive) return;
+        this.emit({
+          type: "runtime_error",
+          scope: "session",
+          message: errorMessage(error),
+          recoverable: true,
+        });
+        this.destroy();
+        return;
+      }
+      rejectOnce(error);
+    });
+
+    return acceptance;
   }
 
   private promptNow(guide: PendingGuide): void {
-    this.inner.prompt(
-      guide.message,
-      guide.images?.length ? { images: guide.images } : undefined
-    ).catch(() => {});
+    void this.submitPrompt(guide).catch((error) => {
+      console.error("[pi-web] deferred prompt was rejected before start:", errorMessage(error));
+    });
   }
 
   private flushPendingGuideSoon(): void {
@@ -565,11 +631,19 @@ export class AgentSessionWrapper {
   }
 
   onEvent(listener: EventListener): () => void {
+    if (!this._alive) return () => {};
     this.listeners.push(listener);
-    for (const event of this.pendingUiRequests.values()) listener(event);
+    for (const event of this.pendingUiRequests.values()) {
+      if (!this.listeners.includes(listener)) break;
+      try {
+        listener(event);
+      } catch (error) {
+        this.listeners = this.listeners.filter((candidate) => candidate !== listener);
+        console.error("[pi-web] agent event replay listener failed and was removed:", errorMessage(error));
+      }
+    }
     return () => {
-      const i = this.listeners.indexOf(listener);
-      if (i !== -1) this.listeners.splice(i, 1);
+      this.listeners = this.listeners.filter((candidate) => candidate !== listener);
     };
   }
 
@@ -578,6 +652,7 @@ export class AgentSessionWrapper {
   }
 
   async send(command: Record<string, unknown>): Promise<unknown> {
+    if (!this._alive) throw new Error("Agent session is no longer available");
     this.resetIdleTimer();
     const type = command.type as string;
     if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
@@ -619,9 +694,12 @@ export class AgentSessionWrapper {
           );
         }
         this.buddyReviewCalls = 0;
-        // Fire and forget — events come via subscribe
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-        this.inner.prompt(command.message as string, promptImages?.length ? { images: promptImages } : undefined).catch(() => {});
+        // Wait only for Pi's preflight result. The accepted Agent run continues via events.
+        await this.submitPrompt({
+          message: command.message as string,
+          ...(promptImages?.length ? { images: promptImages } : {}),
+        });
         return null;
       }
 
@@ -1254,43 +1332,100 @@ export class AgentSessionWrapper {
 
   private async reloadExtensionsAware(): Promise<void> {
     this.customUiGeneration += 1;
-    await getRemoteRuntime().close(this.sessionId, false);
-    await this.waitForExtensionsBound();
+    try {
+      await getRemoteRuntime().close(this.sessionId, false);
+    } catch (error) {
+      console.error("[pi-web] failed to close Remote runtime during extension reload:", errorMessage(error));
+    }
     this.extensionStatuses.clear();
     this.extensionWidgets.clear();
-    for (const pending of this.pendingUiResponses.values()) pending.cancel();
+    for (const pending of [...this.pendingUiResponses.values()]) {
+      try {
+        pending.cancel();
+      } catch (error) {
+        console.error("[pi-web] failed to cancel extension UI request during reload:", errorMessage(error));
+      }
+    }
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
     this.pendingUiRequests.clear();
 
-    if (this.inner.reload) {
-      await this.inner.reload({
-        beforeSessionStart: () => {
-          if (typeof this.inner.bindExtensions !== "function") {
-            this.inner.extensionRunner?.setUIContext?.(this.createExtensionUiContext(), "rpc");
-          }
-        },
-      });
-    } else if (typeof this.inner.bindExtensions !== "function") {
-      this.inner.extensionRunner?.setUIContext?.(this.createExtensionUiContext(), "rpc");
+    try {
+      await this.waitForExtensionsBound();
+      if (this.inner.reload) {
+        await this.inner.reload({
+          beforeSessionStart: () => {
+            if (typeof this.inner.bindExtensions !== "function") {
+              this.inner.extensionRunner?.setUIContext?.(this.createExtensionUiContext(), "rpc");
+            }
+          },
+        });
+      } else if (typeof this.inner.bindExtensions !== "function") {
+        this.inner.extensionRunner?.setUIContext?.(this.createExtensionUiContext(), "rpc");
+      }
+      this.applyForcedEmptySystemPrompt();
+    } catch (error) {
+      if (this._alive) {
+        this.emit({
+          type: "extension_error",
+          extensionPath: "extension-runtime",
+          event: "reload",
+          error: errorMessage(error),
+        });
+        this.destroy();
+      }
+      throw error;
     }
-    this.applyForcedEmptySystemPrompt();
   }
 
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
     this.customUiGeneration += 1;
-    void getRemoteRuntime().close(this.sessionId, false);
     this.pendingGuide = null;
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.unsubscribe?.();
-    for (const pending of this.pendingUiResponses.values()) pending.cancel();
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    try {
+      void getRemoteRuntime().close(this.sessionId, false).catch((error) => {
+        console.error("[pi-web] failed to close Remote runtime during session destroy:", errorMessage(error));
+      });
+    } catch (error) {
+      console.error("[pi-web] failed to start Remote runtime cleanup during session destroy:", errorMessage(error));
+    }
+    const unsubscribe = this.unsubscribe;
+    this.unsubscribe = null;
+    try {
+      unsubscribe?.();
+    } catch (error) {
+      console.error("[pi-web] failed to unsubscribe AgentSession during destroy:", errorMessage(error));
+    }
+    for (const pending of [...this.pendingUiResponses.values()]) {
+      try {
+        pending.cancel();
+      } catch (error) {
+        console.error("[pi-web] failed to cancel extension UI request during destroy:", errorMessage(error));
+      }
+    }
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
     this.pendingUiRequests.clear();
-    this.inner.dispose?.();
-    this.onDestroyCallback?.();
+    this.extensionStatuses.clear();
+    this.extensionWidgets.clear();
+    this.listeners = [];
+    try {
+      this.inner.dispose?.();
+    } catch (error) {
+      console.error("[pi-web] failed to dispose AgentSession:", errorMessage(error));
+    }
+    const onDestroy = this.onDestroyCallback;
+    this.onDestroyCallback = null;
+    try {
+      onDestroy?.();
+    } catch (error) {
+      console.error("[pi-web] AgentSession destroy callback failed:", errorMessage(error));
+    }
   }
 }
 

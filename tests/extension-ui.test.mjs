@@ -3,11 +3,13 @@ import test from "node:test";
 
 const { AgentSessionWrapper } = await import("../lib/rpc-manager.ts");
 
-function createFakeSession() {
+function createFakeSession(overrides = {}) {
   const allTools = ["read", "bash", "extension_tool"].map((name) => ({ name, description: name }));
   let activeToolNames = allTools.map((tool) => tool.name);
   let reloadCalls = 0;
   let disposed = false;
+  let subscriber = null;
+  let unsubscribeCalls = 0;
   const inner = {
     sessionId: `extension-ui-${Math.random().toString(36).slice(2)}`,
     sessionFile: "/tmp/extension-ui-test.jsonl",
@@ -23,18 +25,26 @@ function createFakeSession() {
     getAllTools: () => allTools,
     getActiveToolNames: () => [...activeToolNames],
     setActiveToolsByName: (names) => { activeToolNames = [...names]; },
+    subscribe: (listener) => {
+      subscriber = listener;
+      return () => { unsubscribeCalls += 1; subscriber = null; };
+    },
+    prompt: async (_text, options) => { options?.preflightResult?.(true); },
     reload: async (options) => {
       reloadCalls += 1;
       await options?.beforeSessionStart?.();
     },
     getContextUsage: () => undefined,
     dispose: () => { disposed = true; },
+    ...overrides,
   };
   return {
     inner,
     getActiveToolNames: () => activeToolNames,
     getReloadCalls: () => reloadCalls,
     isDisposed: () => disposed,
+    emit: (event) => subscriber?.(event),
+    getUnsubscribeCalls: () => unsubscribeCalls,
   };
 }
 
@@ -178,4 +188,154 @@ test("normal tool presets preserve extension tools while exact mode stays exact"
   assert.deepEqual(fake.getActiveToolNames(), ["read", "extension_tool"]);
   await wrapper.send({ type: "set_tools", toolNames: ["bash"], exact: true });
   assert.deepEqual(fake.getActiveToolNames(), ["bash"]);
+});
+
+test("event listeners are isolated and a throwing listener is removed", (t) => {
+  t.mock.method(console, "error", () => {});
+  const fake = createFakeSession();
+  const wrapper = new AgentSessionWrapper(fake.inner);
+  wrapper.start();
+  t.after(() => wrapper.destroy());
+  let failedCalls = 0;
+  const received = [];
+  wrapper.onEvent(() => { failedCalls += 1; throw new Error("listener failed"); });
+  wrapper.onEvent((event) => received.push(event.type));
+
+  fake.emit({ type: "agent_start" });
+  fake.emit({ type: "agent_end" });
+
+  assert.equal(failedCalls, 1);
+  assert.deepEqual(received, ["agent_start", "agent_end"]);
+});
+
+test("destroy is idempotent and completes every cleanup step after failures", async (t) => {
+  t.mock.method(console, "error", () => {});
+  let disposeCalls = 0;
+  let unsubscribeCalls = 0;
+  const fake = createFakeSession({
+    subscribe: () => () => { unsubscribeCalls += 1; throw new Error("unsubscribe failed"); },
+    dispose: () => { disposeCalls += 1; throw new Error("dispose failed"); },
+  });
+  const wrapper = new AgentSessionWrapper(fake.inner);
+  wrapper.start();
+  const ui = wrapper.createExtensionUiContext();
+  let customDisposeCalls = 0;
+  const dialogResult = ui.select("Choose", ["one"]);
+  const customResult = ui.custom(() => ({
+    render: () => ["active"],
+    dispose: () => { customDisposeCalls += 1; throw new Error("custom dispose failed"); },
+  }));
+  await flushFactory();
+  let destroyCallbacks = 0;
+  wrapper.onDestroy(() => { destroyCallbacks += 1; throw new Error("destroy callback failed"); });
+
+  assert.doesNotThrow(() => wrapper.destroy());
+  assert.doesNotThrow(() => wrapper.destroy());
+  assert.equal(await dialogResult, undefined);
+  assert.equal(await customResult, undefined);
+  assert.equal(wrapper.isAlive(), false);
+  assert.equal(unsubscribeCalls, 1);
+  assert.equal(customDisposeCalls, 1);
+  assert.equal(disposeCalls, 1);
+  assert.equal(destroyCallbacks, 1);
+
+  let failedStartDisposals = 0;
+  const failedStart = new AgentSessionWrapper(createFakeSession({
+    subscribe: () => { throw new Error("subscribe failed"); },
+    dispose: () => { failedStartDisposals += 1; },
+  }).inner);
+  assert.throws(() => failedStart.start(), /subscribe failed/);
+  assert.equal(failedStart.isAlive(), false);
+  assert.equal(failedStartDisposals, 1);
+});
+
+test("extension binding and reload failures retire their session after cleanup", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const bindingFake = createFakeSession({
+    bindExtensions: async () => { throw new Error("binding failed"); },
+  });
+  const bindingWrapper = new AgentSessionWrapper(bindingFake.inner);
+  const bindingEvents = [];
+  bindingWrapper.onEvent((event) => bindingEvents.push(event));
+  let bindingDestroyCalls = 0;
+  bindingWrapper.onDestroy(() => { bindingDestroyCalls += 1; });
+  bindingWrapper.beginExtensionBinding();
+  await flushFactory();
+  assert.equal(bindingWrapper.isAlive(), false);
+  assert.equal(bindingDestroyCalls, 1);
+  assert.equal(bindingEvents.some((event) => event.type === "extension_error" && event.event === "session_start"), true);
+  await assert.rejects(bindingWrapper.send({ type: "get_state" }), /no longer available/);
+
+  const reloadFake = createFakeSession({
+    reload: async () => { throw new Error("reload failed"); },
+  });
+  const reloadWrapper = new AgentSessionWrapper(reloadFake.inner);
+  const reloadEvents = [];
+  reloadWrapper.onEvent((event) => reloadEvents.push(event));
+  const ui = reloadWrapper.createExtensionUiContext();
+  let customDisposeCalls = 0;
+  const dialogResult = ui.confirm("Confirm", "Continue?");
+  const customResult = ui.custom(() => ({
+    render: () => ["reload pending"],
+    dispose: () => { customDisposeCalls += 1; },
+  }));
+  await flushFactory();
+
+  await assert.rejects(reloadWrapper.send({ type: "reload" }), /reload failed/);
+  assert.equal(await dialogResult, false);
+  assert.equal(await customResult, undefined);
+  assert.equal(customDisposeCalls, 1);
+  assert.equal(reloadWrapper.isAlive(), false);
+  assert.equal(reloadEvents.some((event) => event.type === "extension_error" && event.event === "reload"), true);
+  await assert.rejects(reloadWrapper.send({ type: "get_state" }), /no longer available/);
+});
+
+test("accepted prompt failures retire once while preflight errors stay reusable", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const failedFake = createFakeSession({
+    prompt: async (_text, options) => {
+      options?.preflightResult?.(true);
+      throw new Error("agent loop failed");
+    },
+  });
+  const failedWrapper = new AgentSessionWrapper(failedFake.inner);
+  const failedEvents = [];
+  failedWrapper.onEvent((event) => failedEvents.push(event));
+  let destroyCalls = 0;
+  failedWrapper.onDestroy(() => { destroyCalls += 1; });
+
+  assert.equal(await failedWrapper.send({ type: "prompt", message: "hello" }), null);
+  await flushFactory();
+  assert.equal(failedWrapper.isAlive(), false);
+  assert.equal(destroyCalls, 1);
+  await assert.rejects(failedWrapper.send({ type: "get_state" }), /no longer available/);
+  assert.deepEqual(
+    failedEvents.filter((event) => event.type === "runtime_error"),
+    [{ type: "runtime_error", scope: "session", message: "agent loop failed", recoverable: true }],
+  );
+
+  const preflightFake = createFakeSession({
+    prompt: async (_text, options) => {
+      options?.preflightResult?.(false);
+      throw new Error("authentication required");
+    },
+  });
+  const preflightWrapper = new AgentSessionWrapper(preflightFake.inner);
+  t.after(() => preflightWrapper.destroy());
+  const preflightEvents = [];
+  preflightWrapper.onEvent((event) => preflightEvents.push(event));
+  await assert.rejects(preflightWrapper.send({ type: "prompt", message: "hello" }), /authentication required/);
+  assert.equal(preflightWrapper.isAlive(), true);
+  assert.equal(preflightEvents.some((event) => event.type === "runtime_error"), false);
+
+  const ordinaryFake = createFakeSession();
+  const ordinaryWrapper = new AgentSessionWrapper(ordinaryFake.inner);
+  ordinaryWrapper.start();
+  t.after(() => ordinaryWrapper.destroy());
+  assert.equal(await ordinaryWrapper.send({ type: "prompt", message: "hello" }), null);
+  ordinaryFake.emit({
+    type: "message_end",
+    message: { role: "assistant", content: [], stopReason: "error", errorMessage: "provider failed" },
+  });
+  assert.equal(ordinaryWrapper.isAlive(), true);
 });

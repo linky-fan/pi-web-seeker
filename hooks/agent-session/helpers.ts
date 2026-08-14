@@ -19,10 +19,18 @@ export function streamReducer(state: StreamingState, action: StreamAction): Stre
   switch (action.type) {
     case "start": return { isStreaming: true, streamingMessage: null };
     case "update": return { isStreaming: true, streamingMessage: action.message };
+    case "runtime_error":
     case "end":
     case "reset": return { isStreaming: false, streamingMessage: null };
     default: return state;
   }
+}
+
+export function runtimeErrorMessage(event: unknown): string {
+  const message = (event as { message?: unknown } | null)?.message;
+  return typeof message === "string" && message.trim()
+    ? message.trim()
+    : "Agent runtime failed";
 }
 
 export function noticeReducer(state: NoticeState, action: NoticeAction): NoticeState {

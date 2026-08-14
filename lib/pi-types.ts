@@ -55,7 +55,10 @@ export interface AgentSessionLike {
   readonly agent: { state?: { systemPrompt?: string; thinkingLevel?: string }; waitForIdle?: () => Promise<void> };
 
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
-  prompt(text: string, options?: { images?: Array<{ type: "image"; data: string; mimeType: string }> }): Promise<void>;
+  prompt(text: string, options?: {
+    images?: Array<{ type: "image"; data: string; mimeType: string }>;
+    preflightResult?: (accepted: boolean) => void;
+  }): Promise<void>;
   abort(): Promise<void>;
   setModel(model: ModelLike): Promise<void>;
   navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult>;

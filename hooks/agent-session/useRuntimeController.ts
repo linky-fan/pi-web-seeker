@@ -8,6 +8,7 @@ import {
   extensionCustomUiReducer,
   isAbortError,
   noticeReducer,
+  runtimeErrorMessage,
   streamReducer,
   textFromToolPartial,
   updateToolStatus,
@@ -144,6 +145,12 @@ export function useRuntimeController(options: RuntimeOptions) {
     switch (event.type) {
       case "extension_ui_request": handleExtensionUiRequest(event as ExtensionUiRequest); break;
       case "extension_error": addNotice({ type: "error", message: event.error as string ?? "Extension command failed" }); break;
+      case "runtime_error":
+        updateRunning(false); setAgentPhase(null); setToolExecutionStatuses(new Map()); setRetryInfo(null);
+        setIsCompacting(false); setTaskError(runtimeErrorMessage(event)); dispatch({ type: "runtime_error" });
+        setExtensionDialog(null); dispatchExtensionCustomUi({ type: "reset" });
+        setExtensionStatuses([]); setExtensionWidgets([]); clearConnection();
+        break;
       case "agent_start":
         setTaskError(null); updateRunning(true); setAgentPhase({ kind: "waiting_model" });
         setToolExecutionStatuses(new Map()); dispatch({ type: "start" }); break;
@@ -220,7 +227,7 @@ export function useRuntimeController(options: RuntimeOptions) {
         else if (!event.aborted && sessionIdRef.current) void loadSession(sessionIdRef.current);
         break;
     }
-  }, [addNotice, applyAgentState, gate, handleExtensionUiRequest, loadSession, messagesRef, onAgentEnd, sessionIdRef, setMessages, updateRunning]);
+  }, [addNotice, applyAgentState, clearConnection, gate, handleExtensionUiRequest, loadSession, messagesRef, onAgentEnd, sessionIdRef, setMessages, updateRunning]);
   baseAgentEventHandlerRef.current = handleAgentEvent;
 
   const connectEvents = useCallback((sid: string, options: { syncOnConnect?: boolean } = {}) => {

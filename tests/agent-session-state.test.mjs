@@ -10,6 +10,7 @@ const {
   isLifecycleTokenCurrent,
   isOperationCurrent,
   noticeReducer,
+  runtimeErrorMessage,
   sessionStorageKey,
   shouldFollowScroll,
   streamReducer,
@@ -78,7 +79,10 @@ test("stream and notice transitions retain existing public semantics", () => {
   const updated = streamReducer(partial, { type: "update", message: assistant("token stream") });
   assert.equal(updated.isStreaming, true);
   assert.equal(updated.streamingMessage.content[0].text, "token stream");
+  assert.deepEqual(streamReducer(updated, { type: "runtime_error" }), { isStreaming: false, streamingMessage: null });
   assert.deepEqual(streamReducer(updated, { type: "end" }), { isStreaming: false, streamingMessage: null });
+  assert.equal(runtimeErrorMessage({ message: "  runtime failed  " }), "runtime failed");
+  assert.equal(runtimeErrorMessage({ message: "" }), "Agent runtime failed");
 
   let notices = { visible: [] };
   for (let index = 0; index < 6; index += 1) {

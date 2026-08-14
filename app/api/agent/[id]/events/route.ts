@@ -1,7 +1,59 @@
 import { getCachedSessionFile, resolveSessionPath } from "@/lib/session-reader";
-import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
+import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "@/lib/rpc-manager";
 
 export const dynamic = "force-dynamic";
+
+type AgentEventSource = Pick<AgentSessionWrapper, "onEvent">;
+
+export function createAgentEventStream(
+  req: Request,
+  session: AgentEventSource,
+  sessionId: string,
+  heartbeatMs = 30_000,
+): ReadableStream<Uint8Array> {
+  let cleanup = () => {};
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder();
+      let closed = false;
+      let heartbeat: ReturnType<typeof setInterval> | null = null;
+      let unsubscribe: (() => void) | null = null;
+
+      cleanup = () => {
+        if (closed) return;
+        closed = true;
+        if (heartbeat) clearInterval(heartbeat);
+        heartbeat = null;
+        req.signal.removeEventListener("abort", cleanup);
+        const stopListening = unsubscribe;
+        unsubscribe = null;
+        try { stopListening?.(); } catch { /* session cleanup is best effort */ }
+        try { controller.close(); } catch { /* stream may already be closed */ }
+      };
+
+      const enqueue = (text: string) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(text));
+        } catch {
+          cleanup();
+        }
+      };
+      const encode = (data: unknown) => enqueue(`data: ${JSON.stringify(data)}\n\n`);
+
+      encode({ type: "connected", sessionId });
+      if (closed) return;
+      unsubscribe = session.onEvent((event) => encode(event));
+      heartbeat = setInterval(() => enqueue(":\n\n"), heartbeatMs);
+      req.signal.addEventListener("abort", cleanup, { once: true });
+      if (req.signal.aborted) cleanup();
+    },
+    cancel() {
+      cleanup();
+    },
+  });
+  return stream;
+}
 
 // GET /api/agent/[id]/events - SSE stream of agent events
 export async function GET(
@@ -25,40 +77,7 @@ export async function GET(
     }
   }
 
-  const stream = new ReadableStream({
-    start(controller) {
-      const encode = (data: unknown) => {
-        const text = `data: ${JSON.stringify(data)}\n\n`;
-        controller.enqueue(new TextEncoder().encode(text));
-      };
-
-      // Send initial connected event
-      encode({ type: "connected", sessionId: id });
-
-      const unsubscribe = session.onEvent((event) => {
-        encode(event);
-      });
-
-      // Heartbeat every 30s to prevent server/proxy timeout (Next.js default ~120-150s)
-      const heartbeat = setInterval(() => {
-        try {
-          controller.enqueue(new TextEncoder().encode(":\n\n"));
-        } catch {
-          // controller already closed
-        }
-      }, 30_000);
-
-      // Cleanup when client disconnects
-      const cleanup = () => {
-        clearInterval(heartbeat);
-        unsubscribe();
-        controller.close();
-      };
-
-      // Detect client disconnect via abort signal
-      req.signal?.addEventListener("abort", cleanup);
-    },
-  });
+  const stream = createAgentEventStream(req, session, id);
 
   return new Response(stream, {
     headers: {

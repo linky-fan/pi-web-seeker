@@ -58,6 +58,7 @@
     "test:message-view": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/message-view-state.test.mjs",
     "test:chat-window": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/chat-window-state.test.mjs",
     "test:agent-session": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/agent-session-state.test.mjs",
+    "test:agent-events": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/agent-events.test.mjs",
     "test:extension-ui": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/extension-ui.test.mjs",
     "test:buddy": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/buddy-workflow.test.mjs",
     "test:model-runtime": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/model-runtime.test.mjs",
