@@ -2316,6 +2316,8 @@ html[data-ui="fluid"] {
   --fluid-rail-width: 44px;
   --fluid-drawer-width: 316px;
   --fluid-dock-width: 410px;
+  --fluid-interactive-dock-width: clamp(560px, 36vw, 960px);
+  --fluid-interactive-max-width: min(70vw, calc(100vw - var(--fluid-rail-width) - 480px));
   --fluid-workspace-gutter: 24px;
   --fluid-header-height: 38px;
   --fluid-work-lane-width: 820px;
@@ -2544,13 +2546,13 @@ html[data-ui="fluid"] .pi-fluid-env-open-panel {
 @media (min-width: 1100px) {
 
 html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized) {
-    width: 560px !important;
-    min-width: 560px !important;
-    max-width: 560px !important;
+    width: var(--fluid-interactive-dock-width) !important;
+    min-width: var(--fluid-interactive-dock-width) !important;
+    max-width: var(--fluid-interactive-dock-width) !important;
   }
 
 html[data-ui="fluid"] .pi-fluid-shell:has(.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-fluid-dock-handle {
-    right: 560px !important;
+    right: var(--fluid-interactive-dock-width) !important;
   }
 }
 
@@ -2560,10 +2562,10 @@ html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel
     position: relative !important;
     inset: auto !important;
     z-index: 180 !important;
-    width: min(1120px, calc(100vw - var(--fluid-rail-width) - 480px)) !important;
-    min-width: min(1120px, calc(100vw - var(--fluid-rail-width) - 480px)) !important;
-    max-width: min(1120px, calc(100vw - var(--fluid-rail-width) - 480px)) !important;
-    flex-basis: min(1120px, calc(100vw - var(--fluid-rail-width) - 480px)) !important;
+    width: var(--fluid-interactive-max-width) !important;
+    min-width: var(--fluid-interactive-max-width) !important;
+    max-width: var(--fluid-interactive-max-width) !important;
+    flex-basis: var(--fluid-interactive-max-width) !important;
     box-shadow: none !important;
   }
 }
@@ -2592,7 +2594,7 @@ html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active:no
 @media (min-width: 1100px) {
 
 html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
-    right: 574px;
+    right: calc(var(--fluid-interactive-dock-width) + 14px);
   }
 }
 
