@@ -17,10 +17,12 @@ interface Props {
   currentName: string | null;
   onModelChange?: (provider: string, modelId: string) => void;
   buddyMode: BuddyMode;
+  subagentsEnabled: boolean;
   planMode: PlanMode;
   planExecutionMode: PlanExecutionMode;
   onPlanModeChange?: (mode: PlanMode, executionMode?: PlanExecutionMode) => boolean | Promise<boolean>;
   onBuddyModeChange?: (mode: BuddyMode) => boolean | Promise<boolean>;
+  onSubagentsModeChange?: (enabled: boolean) => boolean | Promise<boolean>;
   buddyReviewerModel?: ModelRef | null;
   reviewerName: string | null;
   onBuddyReviewerChange?: (provider: string, modelId: string) => boolean | Promise<boolean>;
@@ -34,17 +36,20 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
   const reviewerControl = getBuddyReviewerControlPresentation(props.buddyMode, props.reviewerName, props.t);
   return (
     <div style={{ flex: "1 1 280px", minWidth: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", rowGap: 4 }}>
-      {(props.planMode === "plan" || props.buddyMode !== "off") && (
+      {(props.planMode === "plan" || props.buddyMode !== "off" || props.subagentsEnabled) && (
         <button
           type="button"
           data-motion-control
           onClick={() => {
             if (props.isStreaming) return;
-            if (props.buddyMode !== "off") void props.onBuddyModeChange?.("off");
+            if (props.subagentsEnabled) void props.onSubagentsModeChange?.(false);
+            else if (props.buddyMode !== "off") void props.onBuddyModeChange?.("off");
             else void props.onPlanModeChange?.("normal");
           }}
           disabled={props.isStreaming}
-          title={props.buddyMode !== "off"
+          title={props.subagentsEnabled
+            ? props.t("chat.subagentsModeExit")
+            : props.buddyMode !== "off"
             ? props.t("chat.buddyExit")
             : props.planExecutionMode === "subagent" ? props.t("chat.planModeSubagentHint") : props.t("chat.planModeExit")}
           style={{
@@ -57,7 +62,9 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 11h6" /><path d="M9 15h4" /><path d="M5 4h14v16H5z" /><path d="M8 4V2" /><path d="M16 4V2" />
           </svg>
-          <span>{props.buddyMode === "plan"
+          <span>{props.subagentsEnabled
+            ? props.t("chat.subagentsMode")
+            : props.buddyMode === "plan"
             ? props.t("chat.buddyPlan")
             : props.buddyMode === "code"
               ? props.t("chat.buddyCode")

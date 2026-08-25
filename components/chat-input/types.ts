@@ -73,6 +73,8 @@ export interface ChatInputProps {
   buddyMode?: BuddyMode;
   buddyReviewerModel?: ModelRef | null;
   onBuddyModeChange?: (mode: BuddyMode) => boolean | Promise<boolean>;
+  subagentsEnabled?: boolean;
+  onSubagentsModeChange?: (enabled: boolean) => boolean | Promise<boolean>;
   onBuddyReviewerChange?: (provider: string, modelId: string) => boolean | Promise<boolean>;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;

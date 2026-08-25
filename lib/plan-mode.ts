@@ -11,6 +11,7 @@ export interface BuddyWorkflowState {
   planMode: PlanMode;
   planExecutionMode: PlanExecutionMode;
   buddyMode: BuddyMode;
+  subagentsEnabled: boolean;
 }
 
 export interface BuddyReviewGuardState {
@@ -47,6 +48,10 @@ export interface PlanDocument {
 const PLAN_SECTION_KEYS: Array<PlanDocumentSection["key"]> = ["summary", "goals", "implementation", "tests", "risks"];
 export const PLAN_SUBAGENT_REQUIRED_TOOLS = ["Agent", "get_subagent_result"];
 export const PLAN_SUBAGENT_OPTIONAL_TOOLS = ["steer_subagent"];
+export const SUBAGENT_TOOL_NAMES = [
+  ...PLAN_SUBAGENT_REQUIRED_TOOLS,
+  ...PLAN_SUBAGENT_OPTIONAL_TOOLS,
+];
 export const PLAN_SUBAGENTS_INSTALL_COMMAND = "npx --no-install pi install npm:@tintinweb/pi-subagents";
 
 const SECTION_ALIASES: Record<PlanDocumentSection["key"], RegExp> = {
@@ -165,18 +170,18 @@ export function resolveBuddyWorkflowTransition(
   nextBuddyMode: BuddyMode,
 ): BuddyWorkflowState {
   if (nextBuddyMode === "plan") {
-    return { planMode: "plan", planExecutionMode: "main", buddyMode: "plan" };
+    return { planMode: "plan", planExecutionMode: "main", buddyMode: "plan", subagentsEnabled: false };
   }
   if (nextBuddyMode === "code") {
-    return { planMode: "normal", planExecutionMode: "main", buddyMode: "code" };
+    return { planMode: "normal", planExecutionMode: "main", buddyMode: "code", subagentsEnabled: false };
   }
   if (current.buddyMode === "plan") {
-    return { planMode: "plan", planExecutionMode: "main", buddyMode: "off" };
+    return { planMode: "plan", planExecutionMode: "main", buddyMode: "off", subagentsEnabled: false };
   }
   if (current.buddyMode === "off" && current.planMode === "plan") {
     return current;
   }
-  return { planMode: "normal", planExecutionMode: "main", buddyMode: "off" };
+  return { planMode: "normal", planExecutionMode: "main", buddyMode: "off", subagentsEnabled: false };
 }
 
 export function buddyReviewBlockReason(
@@ -369,6 +374,15 @@ Use 2-4 sentences to state the goal, current state, recommended path, and what i
 
 ## 假设与风险
 - Record assumptions, defaults, unresolved inputs, and remaining risks.
+`.trim();
+
+export const SUBAGENTS_SYSTEM_PROMPT = `
+Subagents Mode is active for this session.
+
+Pi Web policy:
+- Start at most two background subagents by default.
+- Keep delegated work read-only unless the user explicitly requested implementation.
+- The main agent owns synthesis and must verify any edits before reporting completion.
 `.trim();
 
 const BUDDY_REVIEW_FORMAT = `

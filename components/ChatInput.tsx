@@ -45,9 +45,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     planModeStatus: props.planModeStatus,
     onPlanModeChange: props.onPlanModeChange,
     buddyMode: props.buddyMode ?? "off",
+    subagentsEnabled: props.subagentsEnabled ?? false,
     buddyReviewerModel: props.buddyReviewerModel,
     mainModel: props.model,
     onBuddyModeChange: props.onBuddyModeChange,
+    onSubagentsModeChange: props.onSubagentsModeChange,
     setInputValue: draft.setInputValue,
     t,
   });
@@ -187,10 +189,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             currentName={currentName}
             onModelChange={props.onModelChange}
             buddyMode={props.buddyMode ?? "off"}
+            subagentsEnabled={props.subagentsEnabled ?? false}
             planMode={props.planMode ?? "normal"}
             planExecutionMode={props.planExecutionMode ?? "main"}
             onPlanModeChange={props.onPlanModeChange}
             onBuddyModeChange={props.onBuddyModeChange}
+            onSubagentsModeChange={props.onSubagentsModeChange}
             buddyReviewerModel={props.buddyReviewerModel}
             reviewerName={reviewerName}
             onBuddyReviewerChange={props.onBuddyReviewerChange}

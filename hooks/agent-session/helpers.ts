@@ -13,6 +13,7 @@ export const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 140;
 export const PLAN_MODE_STORAGE_PREFIX = "pi-web.planMode";
 export const PLAN_EXECUTION_MODE_STORAGE_PREFIX = "pi-web.planExecutionMode";
 export const BUDDY_MODE_STORAGE_PREFIX = "pi-web.buddyMode";
+export const SUBAGENTS_MODE_STORAGE_PREFIX = "pi-web.subagentsMode";
 export const BUDDY_REVIEWER_STORAGE_PREFIX = "pi-web.buddyReviewer";
 
 export function streamReducer(state: StreamingState, action: StreamAction): StreamingState {

@@ -6,6 +6,7 @@ import {
   BUDDY_MODE_STORAGE_PREFIX,
   PLAN_EXECUTION_MODE_STORAGE_PREFIX,
   PLAN_MODE_STORAGE_PREFIX,
+  SUBAGENTS_MODE_STORAGE_PREFIX,
 } from "./helpers";
 import type { AttachedImage, ThinkingLevelOption } from "./types";
 import type { BuddyMode, ModelRef, PlanExecutionMode, PlanMode } from "@/lib/plan-mode";
@@ -36,6 +37,7 @@ interface CommandsOptions {
   planExecutionMode: PlanExecutionMode;
   buddyMode: BuddyMode;
   buddyReviewerModel: ModelRef | null;
+  subagentsEnabled: boolean;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
   pendingScrollToUserRef: React.MutableRefObject<boolean>;
@@ -54,7 +56,7 @@ export function useCommandsController(options: CommandsOptions) {
     setAgentPhase, dispatch, setMessages, setTaskError, isCompacting, setIsCompacting,
     setCompactError, loadSession, loadContext, setActiveLeafId, setPendingModel,
     connectEvents, newSessionModel, thinkingLevel, planMode, planExecutionMode,
-    buddyMode, buddyReviewerModel, onSessionCreated, onSessionForked, pendingScrollToUserRef,
+    buddyMode, buddyReviewerModel, subagentsEnabled, onSessionCreated, onSessionForked, pendingScrollToUserRef,
   } = options;
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null);
   const operationRef = useRef({ send: 0, fork: 0, compact: 0, navigate: 0 });
@@ -91,7 +93,7 @@ export function useCommandsController(options: CommandsOptions) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             cwd: newSessionCwd, type: "prompt", message, planMode: planMode === "plan", planExecutionMode,
-            buddyMode, buddyReviewerModel, ...(commandImages?.length ? { images: commandImages } : {}),
+            buddyMode, buddyReviewerModel, subagentsEnabled, ...(commandImages?.length ? { images: commandImages } : {}),
             ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
             ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
           }),
@@ -111,6 +113,10 @@ export function useCommandsController(options: CommandsOptions) {
           persistMigratedMode(`${BUDDY_MODE_STORAGE_PREFIX}:session:${realId}`, buddyMode);
           persistMigratedMode(`${BUDDY_MODE_STORAGE_PREFIX}:cwd:${newSessionCwd}`, null);
         }
+        if (subagentsEnabled) {
+          persistMigratedMode(`${SUBAGENTS_MODE_STORAGE_PREFIX}:session:${realId}`, "enabled");
+          persistMigratedMode(`${SUBAGENTS_MODE_STORAGE_PREFIX}:cwd:${newSessionCwd}`, null);
+        }
         connectEvents(realId, { syncOnConnect: false });
         onSessionCreated?.({
           id: realId, path: "", cwd: newSessionCwd, name: undefined,
@@ -122,7 +128,7 @@ export function useCommandsController(options: CommandsOptions) {
         connectEvents(sid, { syncOnConnect: false });
         await sendAgentCommand(sid, {
           type: "prompt", message, planMode: planMode === "plan", planExecutionMode,
-          buddyMode, buddyReviewerModel, ...(commandImages?.length ? { images: commandImages } : {}),
+          buddyMode, buddyReviewerModel, subagentsEnabled, ...(commandImages?.length ? { images: commandImages } : {}),
         });
       } else throw new Error("No active session");
       return operation === operationRef.current.send;
@@ -134,7 +140,7 @@ export function useCommandsController(options: CommandsOptions) {
       setTaskError(caught instanceof Error ? caught.message : String(caught));
       return false;
     }
-  }, [agentRunning, buddyMode, buddyReviewerModel, connectEvents, dispatch, isNew, newSessionCwd, newSessionModel, onSessionCreated, pendingScrollToUserRef, planExecutionMode, planMode, session, sessionIdRef, setAgentPhase, setAgentRunning, setMessages, setPendingModel, setTaskError, thinkingLevel]);
+  }, [agentRunning, buddyMode, buddyReviewerModel, connectEvents, dispatch, isNew, newSessionCwd, newSessionModel, onSessionCreated, pendingScrollToUserRef, planExecutionMode, planMode, session, sessionIdRef, setAgentPhase, setAgentRunning, setMessages, setPendingModel, setTaskError, subagentsEnabled, thinkingLevel]);
 
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -204,11 +210,11 @@ export function useCommandsController(options: CommandsOptions) {
     try {
       await sendAgentCommand(sid, {
         type, message, ...(type === "steer" ? { interrupt: true } : {}),
-        planMode: planMode === "plan", planExecutionMode, buddyMode, buddyReviewerModel,
+        planMode: planMode === "plan", planExecutionMode, buddyMode, buddyReviewerModel, subagentsEnabled,
         ...(commandImages?.length ? { images: commandImages } : {}),
       });
     } catch (caught) { if (sid === sessionIdRef.current) console.error(`Failed to ${type}:`, caught); }
-  }, [buddyMode, buddyReviewerModel, planExecutionMode, planMode, sessionIdRef, setMessages]);
+  }, [buddyMode, buddyReviewerModel, planExecutionMode, planMode, sessionIdRef, setMessages, subagentsEnabled]);
 
   const handleSteer = useCallback((message: string, images?: AttachedImage[]) => sendQueued("steer", message, images), [sendQueued]);
   const handleFollowUp = useCallback((message: string, images?: AttachedImage[]) => sendQueued("follow_up", message, images), [sendQueued]);

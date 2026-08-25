@@ -15,9 +15,11 @@ interface Options {
   planModeStatus?: PlanModeStatus | null;
   onPlanModeChange?: (mode: PlanMode, executionMode?: PlanExecutionMode) => boolean | Promise<boolean>;
   buddyMode: BuddyMode;
+  subagentsEnabled: boolean;
   buddyReviewerModel?: ModelRef | null;
   mainModel?: ModelRef | null;
   onBuddyModeChange?: (mode: BuddyMode) => boolean | Promise<boolean>;
+  onSubagentsModeChange?: (enabled: boolean) => boolean | Promise<boolean>;
   setInputValue: (value: string) => void;
   t: Translate;
 }
@@ -25,7 +27,8 @@ interface Options {
 export function useComposerSuggestionsController(options: Options) {
   const {
     textareaRef, cwd, isStreaming, planMode, planExecutionMode, planModeStatus,
-    onPlanModeChange, buddyMode, buddyReviewerModel, mainModel, onBuddyModeChange, setInputValue, t,
+    onPlanModeChange, buddyMode, subagentsEnabled, buddyReviewerModel, mainModel,
+    onBuddyModeChange, onSubagentsModeChange, setInputValue, t,
   } = options;
   const [mentionQuery, setMentionQuery] = useState<MentionQuery | null>(null);
   const [mentionEntries, setMentionEntries] = useState<FileMentionEntry[]>([]);
@@ -67,9 +70,9 @@ export function useComposerSuggestionsController(options: Options) {
   }, [textareaRef]);
 
   const slashCommands = useMemo(() => buildWorkflowSlashCommands({
-    planMode, planExecutionMode, planModeStatus, buddyMode, buddyReviewerModel, mainModel,
+    planMode, planExecutionMode, planModeStatus, buddyMode, subagentsEnabled, buddyReviewerModel, mainModel,
     query: slashQueryText, t,
-  }), [buddyMode, buddyReviewerModel, mainModel, planExecutionMode, planMode, planModeStatus, slashQueryText, t]);
+  }), [buddyMode, buddyReviewerModel, mainModel, planExecutionMode, planMode, planModeStatus, slashQueryText, subagentsEnabled, t]);
 
   const insertMention = useCallback((entry: FileMentionEntry) => {
     const textarea = textareaRef.current;
@@ -105,9 +108,11 @@ export function useComposerSuggestionsController(options: Options) {
     }
     const ok = command.buddyMode !== "off"
       ? await Promise.resolve(onBuddyModeChange?.(command.buddyMode) ?? false)
-      : await Promise.resolve(onPlanModeChange?.(command.mode, command.executionMode) ?? true);
+      : command.name === "subagents" || command.name === "normal"
+        ? await Promise.resolve(onSubagentsModeChange?.(command.subagentsEnabled) ?? false)
+        : await Promise.resolve(onPlanModeChange?.(command.mode, command.executionMode) ?? true);
     if (!ok) {
-      showNotice(command.executionMode === "subagent"
+      showNotice(command.executionMode === "subagent" || command.subagentsEnabled
         ? t("chat.slash.subagentInstall", { command: planModeStatus?.installCommand ?? "npx --no-install pi install npm:@tintinweb/pi-subagents" })
         : t("chat.slash.runningDisabled"), 2600);
       return;
@@ -121,7 +126,7 @@ export function useComposerSuggestionsController(options: Options) {
     setSlashOpen(false);
     setSlashQuery(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [isStreaming, onBuddyModeChange, onPlanModeChange, planModeStatus, setInputValue, showNotice, slashQuery, t, textareaRef]);
+  }, [isStreaming, onBuddyModeChange, onPlanModeChange, onSubagentsModeChange, planModeStatus, setInputValue, showNotice, slashQuery, t, textareaRef]);
 
   const handleSuggestionKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
     const plainKey = !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;

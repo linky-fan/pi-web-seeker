@@ -17,6 +17,7 @@ import {
   PLAN_EXECUTION_MODE_STORAGE_PREFIX,
   PLAN_MODE_STORAGE_PREFIX,
   sessionStorageKey,
+  SUBAGENTS_MODE_STORAGE_PREFIX,
 } from "./helpers";
 import type { LiveAgentState, ModelListItem, ThinkingLevelOption } from "./types";
 
@@ -65,6 +66,7 @@ export function usePreferencesController(options: PreferencesOptions) {
   const [planExecutionMode, setPlanExecutionMode] = useState<PlanExecutionMode>("main");
   const [planModeStatus, setPlanModeStatus] = useState<PlanModeStatus | null>(null);
   const [buddyMode, setBuddyMode] = useState<BuddyMode>("off");
+  const [subagentsEnabled, setSubagentsEnabled] = useState(false);
   const [buddyReviewerModel, setBuddyReviewerModel] = useState<ModelRef | null>(null);
   const modelRequestRef = useRef<AbortController | null>(null);
   const operationRef = useRef({ mode: 0, model: 0, reviewer: 0, thinking: 0 });
@@ -77,6 +79,7 @@ export function usePreferencesController(options: PreferencesOptions) {
   const planModeStorageKey = sessionStorageKey(PLAN_MODE_STORAGE_PREFIX, sessionId, newSessionCwd);
   const planExecutionModeStorageKey = sessionStorageKey(PLAN_EXECUTION_MODE_STORAGE_PREFIX, sessionId, newSessionCwd);
   const buddyModeStorageKey = sessionStorageKey(BUDDY_MODE_STORAGE_PREFIX, sessionId, newSessionCwd);
+  const subagentsModeStorageKey = sessionStorageKey(SUBAGENTS_MODE_STORAGE_PREFIX, sessionId, newSessionCwd);
   const buddyReviewerStorageKey = sessionCwd || newSessionCwd
     ? `${BUDDY_REVIEWER_STORAGE_PREFIX}:cwd:${newSessionCwd ?? sessionCwd}`
     : BUDDY_REVIEWER_STORAGE_PREFIX;
@@ -91,6 +94,7 @@ export function usePreferencesController(options: PreferencesOptions) {
       setPlanExecutionMode(planExecutionModeStorageKey && window.localStorage.getItem(planExecutionModeStorageKey) === "subagent" ? "subagent" : "main");
       const savedBuddy = buddyModeStorageKey ? window.localStorage.getItem(buddyModeStorageKey) : null;
       setBuddyMode(savedBuddy === "plan" || savedBuddy === "code" ? savedBuddy : "off");
+      setSubagentsEnabled(Boolean(subagentsModeStorageKey && window.localStorage.getItem(subagentsModeStorageKey) === "enabled"));
       const savedReviewer = window.localStorage.getItem(buddyReviewerStorageKey);
       const parsed = savedReviewer ? JSON.parse(savedReviewer) as Partial<ModelRef> : null;
       setBuddyReviewerModel(parsed && typeof parsed.provider === "string" && typeof parsed.modelId === "string"
@@ -100,19 +104,21 @@ export function usePreferencesController(options: PreferencesOptions) {
       setPlanMode("normal");
       setPlanExecutionMode("main");
       setBuddyMode("off");
+      setSubagentsEnabled(false);
       setBuddyReviewerModel(null);
     }
-  }, [buddyModeStorageKey, buddyReviewerStorageKey, planExecutionModeStorageKey, planModeStorageKey]);
+  }, [buddyModeStorageKey, buddyReviewerStorageKey, planExecutionModeStorageKey, planModeStorageKey, subagentsModeStorageKey]);
 
   useEffect(() => {
     if (contextThinkingLevel && contextThinkingLevel !== "off") setThinkingLevel(contextThinkingLevel);
   }, [contextThinkingLevel]);
 
-  const persistModes = useCallback((nextPlan: PlanMode, nextExecution: PlanExecutionMode, nextBuddy: BuddyMode) => {
+  const persistModes = useCallback((nextPlan: PlanMode, nextExecution: PlanExecutionMode, nextBuddy: BuddyMode, nextSubagents: boolean) => {
     writeStorage(planModeStorageKey, nextPlan === "plan" ? "plan" : null);
     writeStorage(planExecutionModeStorageKey, nextExecution === "subagent" ? "subagent" : null);
     writeStorage(buddyModeStorageKey, nextBuddy === "off" ? null : nextBuddy);
-  }, [buddyModeStorageKey, planExecutionModeStorageKey, planModeStorageKey]);
+    writeStorage(subagentsModeStorageKey, nextSubagents ? "enabled" : null);
+  }, [buddyModeStorageKey, planExecutionModeStorageKey, planModeStorageKey, subagentsModeStorageKey]);
 
   const persistReviewer = useCallback((model: ModelRef | null) => {
     writeStorage(buddyReviewerStorageKey, model ? JSON.stringify(model) : null);
@@ -123,17 +129,18 @@ export function usePreferencesController(options: PreferencesOptions) {
   const handlePlanModeChange = useCallback(async (mode: PlanMode, executionMode: PlanExecutionMode = "main") => {
     if (agentRunningRef.current) return false;
     const operation = ++operationRef.current.mode;
-    const previous = { planMode, planExecutionMode, buddyMode };
+    const previous = { planMode, planExecutionMode, buddyMode, subagentsEnabled };
     const nextExecution = mode === "plan" ? executionMode : "main";
     setPlanMode(mode);
     setPlanExecutionMode(nextExecution);
     setBuddyMode("off");
-    persistModes(mode, nextExecution, "off");
+    setSubagentsEnabled(false);
+    persistModes(mode, nextExecution, "off", false);
     const sid = sessionIdRef.current;
     if (!sid || isNew) return true;
     try {
       const result = await sendAgentCommand<LiveAgentState>(sid, {
-        type: "set_plan_mode", enabled: mode === "plan", executionMode, buddyMode: "off",
+        type: "set_plan_mode", enabled: mode === "plan", executionMode, buddyMode: "off", subagentsEnabled: false,
       });
       if (operation !== operationRef.current.mode || sid !== sessionIdRef.current) return false;
       if (result.planExecutionMode) setPlanExecutionMode(result.planExecutionMode);
@@ -145,10 +152,11 @@ export function usePreferencesController(options: PreferencesOptions) {
       setPlanMode(previous.planMode);
       setPlanExecutionMode(previous.planExecutionMode);
       setBuddyMode(previous.buddyMode);
-      persistModes(previous.planMode, previous.planExecutionMode, previous.buddyMode);
+      setSubagentsEnabled(previous.subagentsEnabled);
+      persistModes(previous.planMode, previous.planExecutionMode, previous.buddyMode, previous.subagentsEnabled);
       return false;
     }
-  }, [agentRunningRef, buddyMode, isNew, persistModes, planExecutionMode, planMode, sessionIdRef]);
+  }, [agentRunningRef, buddyMode, isNew, persistModes, planExecutionMode, planMode, sessionIdRef, subagentsEnabled]);
 
   const handleBuddyModeChange = useCallback(async (nextBuddyMode: BuddyMode) => {
     if (agentRunningRef.current) return false;
@@ -158,30 +166,33 @@ export function usePreferencesController(options: PreferencesOptions) {
       if (planModeStatus && !planModeStatus.subagentsAvailable) return false;
     }
     const operation = ++operationRef.current.mode;
-    const previous = { buddyMode, planMode, planExecutionMode };
+    const previous = { buddyMode, planMode, planExecutionMode, subagentsEnabled };
     const next = resolveBuddyWorkflowTransition(previous, nextBuddyMode);
     setBuddyMode(next.buddyMode);
     setPlanMode(next.planMode);
     setPlanExecutionMode(next.planExecutionMode);
-    persistModes(next.planMode, next.planExecutionMode, next.buddyMode);
+    setSubagentsEnabled(next.subagentsEnabled);
+    persistModes(next.planMode, next.planExecutionMode, next.buddyMode, next.subagentsEnabled);
     const sid = sessionIdRef.current;
     if (!sid || isNew) return true;
     try {
       const result = await sendAgentCommand<LiveAgentState>(sid, {
         type: "set_plan_mode", enabled: next.planMode === "plan", executionMode: next.planExecutionMode,
-        buddyMode: next.buddyMode, buddyReviewerModel,
+        buddyMode: next.buddyMode, buddyReviewerModel, subagentsEnabled: next.subagentsEnabled,
       });
       if (operation !== operationRef.current.mode || sid !== sessionIdRef.current) return false;
       const confirmed = {
         planMode: result.planMode === undefined ? next.planMode : result.planMode ? "plan" as const : "normal" as const,
         planExecutionMode: result.planExecutionMode ?? next.planExecutionMode,
         buddyMode: result.buddyMode ?? next.buddyMode,
+        subagentsEnabled: result.subagentsEnabled ?? next.subagentsEnabled,
       };
       setPlanMode(confirmed.planMode);
       setPlanExecutionMode(confirmed.planExecutionMode);
       setBuddyMode(confirmed.buddyMode);
+      setSubagentsEnabled(confirmed.subagentsEnabled);
       if (result.planModeStatus) setPlanModeStatus(result.planModeStatus);
-      persistModes(confirmed.planMode, confirmed.planExecutionMode, confirmed.buddyMode);
+      persistModes(confirmed.planMode, confirmed.planExecutionMode, confirmed.buddyMode, confirmed.subagentsEnabled);
       return true;
     } catch (caught) {
       if (operation !== operationRef.current.mode || sid !== sessionIdRef.current) return false;
@@ -189,10 +200,49 @@ export function usePreferencesController(options: PreferencesOptions) {
       setBuddyMode(previous.buddyMode);
       setPlanMode(previous.planMode);
       setPlanExecutionMode(previous.planExecutionMode);
-      persistModes(previous.planMode, previous.planExecutionMode, previous.buddyMode);
+      setSubagentsEnabled(previous.subagentsEnabled);
+      persistModes(previous.planMode, previous.planExecutionMode, previous.buddyMode, previous.subagentsEnabled);
       return false;
     }
-  }, [agentRunningRef, buddyReviewerModel, displayModel, isNew, persistModes, planExecutionMode, planMode, planModeStatus, sessionIdRef, buddyMode]);
+  }, [agentRunningRef, buddyReviewerModel, displayModel, isNew, persistModes, planExecutionMode, planMode, planModeStatus, sessionIdRef, buddyMode, subagentsEnabled]);
+
+  const handleSubagentsModeChange = useCallback(async (enabled: boolean) => {
+    if (agentRunningRef.current) return false;
+    if (enabled && planModeStatus && !planModeStatus.subagentsAvailable) return false;
+    const operation = ++operationRef.current.mode;
+    const previous = { planMode, planExecutionMode, buddyMode, subagentsEnabled };
+    setPlanMode("normal");
+    setPlanExecutionMode("main");
+    setBuddyMode("off");
+    setSubagentsEnabled(enabled);
+    persistModes("normal", "main", "off", enabled);
+    const sid = sessionIdRef.current;
+    if (!sid || isNew) return true;
+    try {
+      const result = await sendAgentCommand<LiveAgentState>(sid, {
+        type: "set_plan_mode",
+        enabled: false,
+        executionMode: "main",
+        buddyMode: "off",
+        subagentsEnabled: enabled,
+      });
+      if (operation !== operationRef.current.mode || sid !== sessionIdRef.current) return false;
+      const confirmed = result.subagentsEnabled ?? enabled;
+      setSubagentsEnabled(confirmed);
+      if (result.planModeStatus) setPlanModeStatus(result.planModeStatus);
+      persistModes("normal", "main", "off", confirmed);
+      return true;
+    } catch (caught) {
+      if (operation !== operationRef.current.mode || sid !== sessionIdRef.current) return false;
+      console.error("Failed to set subagents mode:", caught);
+      setPlanMode(previous.planMode);
+      setPlanExecutionMode(previous.planExecutionMode);
+      setBuddyMode(previous.buddyMode);
+      setSubagentsEnabled(previous.subagentsEnabled);
+      persistModes(previous.planMode, previous.planExecutionMode, previous.buddyMode, previous.subagentsEnabled);
+      return false;
+    }
+  }, [agentRunningRef, buddyMode, isNew, persistModes, planExecutionMode, planMode, planModeStatus, sessionIdRef, subagentsEnabled]);
 
   const handleBuddyReviewerChange = useCallback(async (provider: string, modelId: string) => {
     const next = { provider, modelId };
@@ -253,6 +303,7 @@ export function usePreferencesController(options: PreferencesOptions) {
     if (state.planModeStatus !== undefined) setPlanModeStatus(state.planModeStatus ?? null);
     if (state.buddyMode) setBuddyMode(state.buddyMode);
     if (state.buddyReviewerModel !== undefined) setBuddyReviewerModel(state.buddyReviewerModel ?? null);
+    if (state.subagentsEnabled !== undefined) setSubagentsEnabled(state.subagentsEnabled);
   }, []);
 
   useEffect(() => {
@@ -290,8 +341,8 @@ export function usePreferencesController(options: PreferencesOptions) {
   return {
     modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel,
     thinkingLevel, setThinkingLevel, planMode, planExecutionMode, planModeStatus,
-    buddyMode, buddyReviewerModel, displayModel,
-    handlePlanModeChange, handleBuddyModeChange, handleBuddyReviewerChange,
+    buddyMode, buddyReviewerModel, subagentsEnabled, displayModel,
+    handlePlanModeChange, handleBuddyModeChange, handleSubagentsModeChange, handleBuddyReviewerChange,
     handleModelChange, handleThinkingLevelChange, applyPreferenceState, persistModes,
   };
 }

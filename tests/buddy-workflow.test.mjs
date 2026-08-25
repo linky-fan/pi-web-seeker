@@ -12,6 +12,10 @@ const {
   shouldShowBuddyReviewerControl,
 } = await import("../components/chat-input/helpers.ts");
 const { AgentSessionWrapper } = await import("../lib/rpc-manager.ts");
+const {
+  getDefaultActiveToolNames,
+  includeDefaultExtensionTools,
+} = await import("../lib/tool-settings.ts");
 
 const writer = { provider: "writer-provider", modelId: "writer-model" };
 const reviewer = { provider: "review-provider", modelId: "review-model" };
@@ -46,6 +50,7 @@ test("composer blocks Buddy commands for a same-model reviewer", () => {
     planExecutionMode: "main",
     planModeStatus: availableStatus,
     buddyMode: "off",
+    subagentsEnabled: false,
     buddyReviewerModel: writer,
     mainModel: writer,
     t,
@@ -61,6 +66,7 @@ test("composer blocks Buddy commands for a same-model reviewer", () => {
     planExecutionMode: "main",
     planModeStatus: availableStatus,
     buddyMode: "off",
+    subagentsEnabled: false,
     buddyReviewerModel: reviewer,
     mainModel: writer,
     t,
@@ -72,17 +78,17 @@ test("composer blocks Buddy commands for a same-model reviewer", () => {
 });
 
 test("Buddy mode transitions normalize execution state and preserve Plan Mode when leaving Buddy Plan", () => {
-  const fromSubagentPlan = { planMode: "plan", planExecutionMode: "subagent", buddyMode: "off" };
+  const fromSubagentPlan = { planMode: "plan", planExecutionMode: "subagent", buddyMode: "off", subagentsEnabled: false };
   const code = resolveBuddyWorkflowTransition(fromSubagentPlan, "code");
-  assert.deepEqual(code, { planMode: "normal", planExecutionMode: "main", buddyMode: "code" });
+  assert.deepEqual(code, { planMode: "normal", planExecutionMode: "main", buddyMode: "code", subagentsEnabled: false });
   assert.deepEqual(resolveBuddyWorkflowTransition(code, "off"), {
-    planMode: "normal", planExecutionMode: "main", buddyMode: "off",
+    planMode: "normal", planExecutionMode: "main", buddyMode: "off", subagentsEnabled: false,
   });
 
   const plan = resolveBuddyWorkflowTransition(code, "plan");
-  assert.deepEqual(plan, { planMode: "plan", planExecutionMode: "main", buddyMode: "plan" });
+  assert.deepEqual(plan, { planMode: "plan", planExecutionMode: "main", buddyMode: "plan", subagentsEnabled: false });
   assert.deepEqual(resolveBuddyWorkflowTransition(plan, "off"), {
-    planMode: "plan", planExecutionMode: "main", buddyMode: "off",
+    planMode: "plan", planExecutionMode: "main", buddyMode: "off", subagentsEnabled: false,
   });
   assert.deepEqual(resolveBuddyWorkflowTransition(fromSubagentPlan, "off"), fromSubagentPlan);
 });
@@ -113,6 +119,40 @@ test("Buddy reviewer guard enforces independence, the exact model, and one foreg
   assert.equal(modelRefsEqual(writer, reviewer), false);
 });
 
+test("default tool selection defers subagent tools but preserves other extensions and explicit opt-in", () => {
+  const extensions = ["Agent", "get_subagent_result", "steer_subagent", "extension_tool"];
+  assert.deepEqual(getDefaultActiveToolNames(extensions), ["read", "bash", "edit", "write", "extension_tool"]);
+  assert.deepEqual(includeDefaultExtensionTools(["read", "Agent"], extensions), ["read", "Agent", "extension_tool"]);
+  assert.deepEqual(includeDefaultExtensionTools([], extensions), []);
+});
+
+test("composer exposes session-scoped subagents mode and disables it when tools are unavailable", () => {
+  const available = buildWorkflowSlashCommands({
+    planMode: "normal",
+    planExecutionMode: "main",
+    planModeStatus: availableStatus,
+    buddyMode: "off",
+    subagentsEnabled: true,
+    t,
+  });
+  const subagents = available.find((item) => item.name === "subagents");
+  const normal = available.find((item) => item.name === "normal");
+  assert.equal(subagents?.active, true);
+  assert.equal(subagents?.disabled, false);
+  assert.equal(normal?.active, false);
+
+  const unavailable = buildWorkflowSlashCommands({
+    planMode: "normal",
+    planExecutionMode: "main",
+    planModeStatus: { ...availableStatus, subagentsAvailable: false, missingTools: ["Agent"] },
+    buddyMode: "off",
+    subagentsEnabled: false,
+    t,
+  }).find((item) => item.name === "subagents");
+  assert.equal(unavailable?.disabled, true);
+  assert.equal(unavailable?.disabledReason, "subagents-unavailable");
+});
+
 function createFakeSession() {
   const models = new Map([
     ["writer-provider/writer-model", { provider: "writer-provider", id: "writer-model" }],
@@ -141,7 +181,12 @@ function createFakeSession() {
     _baseSystemPrompt: "base prompt",
     getAllTools: () => allTools,
     getActiveToolNames: () => [...activeToolNames],
-    setActiveToolsByName: (names) => { activeToolNames = [...names]; },
+    setActiveToolsByName: (names) => {
+      activeToolNames = [...names];
+      const prompt = names.includes("Agent") ? "base prompt\nAgent extension guidance" : "base prompt";
+      inner._baseSystemPrompt = prompt;
+      state.systemPrompt = prompt;
+    },
     getContextUsage: () => undefined,
     dispose: () => {},
   };
@@ -176,6 +221,7 @@ test("RPC workflow state applies Buddy prompts/tools and restores the original s
   assert.equal(result.planMode, true);
   assert.equal(result.buddyMode, "plan");
   assert.match(fake.inner.agent.state.systemPrompt, /Buddy Plan rules/);
+  assert.equal(fake.inner.agent.state.systemPrompt.match(/Agent extension guidance/g)?.length, 1);
   assert.equal(fake.getActiveToolNames().includes("Agent"), true);
 
   result = await wrapper.send({
@@ -228,6 +274,35 @@ test("RPC workflow state applies Buddy prompts/tools and restores the original s
     buddyMode: "off",
   });
   assert.equal(result.planExecutionMode, "main");
+  assert.deepEqual(fake.getActiveToolNames(), ["read", "bash", "extension_tool"]);
+  assert.equal(fake.inner.agent.state.systemPrompt, "base prompt");
+});
+
+test("RPC subagents mode adds conditional guidance once and restores the configured baseline", async (t) => {
+  const fake = createFakeSession();
+  const wrapper = new AgentSessionWrapper(fake.inner);
+  t.after(() => wrapper.destroy());
+
+  let result = await wrapper.send({
+    type: "set_plan_mode",
+    enabled: false,
+    executionMode: "main",
+    buddyMode: "off",
+    subagentsEnabled: true,
+  });
+  assert.equal(result.subagentsEnabled, true);
+  assert.equal(fake.getActiveToolNames().includes("Agent"), true);
+  assert.equal(fake.inner.agent.state.systemPrompt.match(/Agent extension guidance/g)?.length, 1);
+  assert.equal(fake.inner.agent.state.systemPrompt.match(/Subagents Mode is active/g)?.length, 1);
+
+  result = await wrapper.send({
+    type: "set_plan_mode",
+    enabled: false,
+    executionMode: "main",
+    buddyMode: "off",
+    subagentsEnabled: false,
+  });
+  assert.equal(result.subagentsEnabled, false);
   assert.deepEqual(fake.getActiveToolNames(), ["read", "bash", "extension_tool"]);
   assert.equal(fake.inner.agent.state.systemPrompt, "base prompt");
 });

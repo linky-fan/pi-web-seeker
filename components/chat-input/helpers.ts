@@ -22,6 +22,7 @@ export interface WorkflowSlashCommandOption {
   mode: PlanMode;
   executionMode: PlanExecutionMode;
   buddyMode: BuddyMode;
+  subagentsEnabled: boolean;
   active: boolean;
   disabled: boolean;
   disabledReason: WorkflowCommandDisabledReason;
@@ -32,6 +33,7 @@ interface WorkflowSlashCommandOptions {
   planExecutionMode: PlanExecutionMode;
   planModeStatus?: PlanModeStatus | null;
   buddyMode: BuddyMode;
+  subagentsEnabled: boolean;
   buddyReviewerModel?: ModelRef | null;
   mainModel?: ModelRef | null;
   query?: string;
@@ -80,13 +82,14 @@ export function getBuddyReviewerControlPresentation(
 
 export function buildWorkflowSlashCommands(options: WorkflowSlashCommandOptions): WorkflowSlashCommandOption[] {
   const {
-    planMode, planExecutionMode, planModeStatus, buddyMode, buddyReviewerModel, mainModel, query, t,
+    planMode, planExecutionMode, planModeStatus, buddyMode, subagentsEnabled, buddyReviewerModel, mainModel, query, t,
   } = options;
   const buddyDisabledReason = getBuddyCommandDisabledReason(mainModel, buddyReviewerModel, planModeStatus);
   const commands: WorkflowSlashCommandOption[] = [
     {
       name: "plan", label: t("chat.slash.plan"), description: t("chat.slash.planDesc"),
       mode: "plan", executionMode: "main", buddyMode: "off",
+      subagentsEnabled: false,
       active: planMode === "plan" && planExecutionMode === "main" && buddyMode === "off",
       disabled: false, disabledReason: null,
     },
@@ -96,6 +99,7 @@ export function buildWorkflowSlashCommands(options: WorkflowSlashCommandOptions)
         ? t("chat.slash.planSubagentUnavailable", { tools: planModeStatus.missingTools.join(", ") || "Agent" })
         : t("chat.slash.planSubagentDesc"),
       mode: "plan", executionMode: "subagent", buddyMode: "off",
+      subagentsEnabled: false,
       active: planMode === "plan" && planExecutionMode === "subagent" && buddyMode === "off",
       disabled: Boolean(planModeStatus && !planModeStatus.subagentsAvailable),
       disabledReason: planModeStatus && !planModeStatus.subagentsAvailable ? "subagents-unavailable" : null,
@@ -103,17 +107,26 @@ export function buildWorkflowSlashCommands(options: WorkflowSlashCommandOptions)
     {
       name: "buddy-plan", label: t("chat.slash.buddyPlan"), description: t("chat.slash.buddyPlanDesc"),
       mode: "plan", executionMode: "main", buddyMode: "plan", active: buddyMode === "plan",
+      subagentsEnabled: false,
       disabled: buddyDisabledReason !== null, disabledReason: buddyDisabledReason,
     },
     {
       name: "buddy-code", label: t("chat.slash.buddyCode"), description: t("chat.slash.buddyCodeDesc"),
       mode: "normal", executionMode: "main", buddyMode: "code", active: buddyMode === "code",
+      subagentsEnabled: false,
       disabled: buddyDisabledReason !== null, disabledReason: buddyDisabledReason,
     },
     {
+      name: "subagents", label: t("chat.slash.subagents"), description: t("chat.slash.subagentsDesc"),
+      mode: "normal", executionMode: "main", buddyMode: "off", subagentsEnabled: true,
+      active: planMode === "normal" && buddyMode === "off" && subagentsEnabled,
+      disabled: Boolean(planModeStatus && !planModeStatus.subagentsAvailable),
+      disabledReason: planModeStatus && !planModeStatus.subagentsAvailable ? "subagents-unavailable" : null,
+    },
+    {
       name: "normal", label: t("chat.slash.normal"), description: t("chat.slash.normalDesc"),
-      mode: "normal", executionMode: "main", buddyMode: "off",
-      active: planMode === "normal" && buddyMode === "off", disabled: false, disabledReason: null,
+      mode: "normal", executionMode: "main", buddyMode: "off", subagentsEnabled: false,
+      active: planMode === "normal" && buddyMode === "off" && !subagentsEnabled, disabled: false, disabledReason: null,
     },
   ];
   return commands.filter((command) => !query || command.name.startsWith(query));

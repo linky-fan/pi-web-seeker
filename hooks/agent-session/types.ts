@@ -49,6 +49,7 @@ export type LiveAgentState = {
   planModeStatus?: PlanModeStatus;
   buddyMode?: BuddyMode;
   buddyReviewerModel?: ModelRef | null;
+  subagentsEnabled?: boolean;
 };
 
 export type AgentStateResponse = { running: boolean; state?: LiveAgentState };

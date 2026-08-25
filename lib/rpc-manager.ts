@@ -22,8 +22,8 @@ import {
   modelRefsEqual,
   PLAN_MODE_SUBAGENT_SYSTEM_PROMPT,
   PLAN_MODE_SYSTEM_PROMPT,
-  PLAN_SUBAGENT_OPTIONAL_TOOLS,
-  PLAN_SUBAGENT_REQUIRED_TOOLS,
+  SUBAGENTS_SYSTEM_PROMPT,
+  SUBAGENT_TOOL_NAMES,
   type BuddyMode,
   type ModelRef,
   type PlanExecutionMode,
@@ -33,7 +33,9 @@ import {
   BUILTIN_CODING_TOOL_NAMES,
   BUILTIN_CODING_TOOL_SET,
   filterKnownToolNames,
+  getDefaultActiveToolNames,
   getLoadedExtensionToolNames,
+  includeDefaultExtensionTools,
   readActiveTools,
   uniqueToolNames,
 } from "./tool-settings";
@@ -129,10 +131,7 @@ const MAX_FOREGROUND_TIMEOUT_SECONDS = 300;
 const LONG_TASK_TIMEOUT_SECONDS = 120;
 const RPC_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 const PLAN_MODE_MAIN_TOOL_NAMES = ["read", "bash", "grep", "find", "ls"];
-const PLAN_MODE_SUBAGENT_TOOL_NAMES = [
-  ...PLAN_SUBAGENT_REQUIRED_TOOLS,
-  ...PLAN_SUBAGENT_OPTIONAL_TOOLS,
-];
+const PLAN_MODE_SUBAGENT_TOOL_NAMES = [...SUBAGENT_TOOL_NAMES];
 
 function getRuntimeOsLabel(): string {
   switch (process.platform) {
@@ -174,19 +173,6 @@ function getPathStyleGuidance(): string {
   ].join("; ");
 }
 
-function buildSubagentsGuidance(): string[] {
-  return [
-    "",
-    "Subagents guidance:",
-    "- If subagent tools such as `Agent`, `get_subagent_result`, or `steer_subagent` are available, use them only when the task is complex or uncertain enough to benefit from parallel work.",
-    "- Good fits: large codebase exploration, cross-module changes, design tradeoff analysis, risk review, complex debugging, or investigation before implementation.",
-    "- Poor fits: simple questions, single-file edits, direct command requests, small obvious fixes, or any task where the user asks you not to use subagents.",
-    "- By default, start at most two background subagents. Useful pairings include Explore + Plan, Implement + Review, or Debug + Review.",
-    "- Give each subagent a narrow, concrete prompt with clear boundaries. Default subagent work to read-only unless the user explicitly asked for implementation.",
-    "- The main agent owns the final answer and any file edits: collect subagent results, resolve conflicts, and summarize the decision before concluding.",
-  ];
-}
-
 function buildRuntimeSystemPrompt(cwd: string): string {
   return [
     "Runtime context:",
@@ -208,7 +194,6 @@ function buildRuntimeSystemPrompt(cwd: string): string {
     "- For video or audio rendering, first render a small sample or still frame to estimate duration. Run the full render as a background job with a log file, then check progress periodically with short `tail`, `ps`, `ls`, or tool-specific status commands.",
     "- Keep individual bash timeouts modest unless the user explicitly asks to block. Prefer 10-60 seconds for status checks and avoid timeouts over 300 seconds for a single foreground command.",
     "- Do not print secrets from environment variables, auth files, or local config.",
-    ...buildSubagentsGuidance(),
   ].join("\n");
 }
 
@@ -345,16 +330,16 @@ function planModeToolBlockReason(planExecutionMode: PlanExecutionMode | null, bu
   ].join("\n");
 }
 
-function includeExtensionTools(requestedToolNames: string[], extensionToolNames: string[]): string[] {
-  return requestedToolNames.length === 0 ? [] : uniqueToolNames([...requestedToolNames, ...extensionToolNames]);
-}
-
 function parsePlanExecutionMode(value: unknown): PlanExecutionMode | undefined {
   return value === "subagent" || value === "main" ? value : undefined;
 }
 
 function parseBuddyMode(value: unknown): BuddyMode | undefined {
   return value === "off" || value === "plan" || value === "code" ? value : undefined;
+}
+
+function parseOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function parseModelRef(value: unknown): ModelRef | undefined {
@@ -390,9 +375,11 @@ export class AgentSessionWrapper {
   private planModeEnabled = false;
   private planExecutionMode: PlanExecutionMode = "main";
   private planModeSnapshot: PlanModeSnapshot | null = null;
+  private workflowBaseSystemPrompt: string | undefined;
   private buddyMode: BuddyMode = "off";
   private buddyReviewerModel: ModelRef | null = null;
   private buddyReviewCalls = 0;
+  private subagentsEnabled = false;
   private _alive = true;
 
   constructor(inner: AgentSessionLike, extensionLoadErrors: string[] = []) {
@@ -665,6 +652,7 @@ export class AgentSessionWrapper {
           executionMode,
           parseBuddyMode(command.buddyMode),
           parseModelRef(command.buddyReviewerModel),
+          parseOptionalBoolean(command.subagentsEnabled),
         );
         return {
           planMode: this.planModeEnabled,
@@ -672,6 +660,7 @@ export class AgentSessionWrapper {
           planModeStatus: this.getPlanModeStatus(),
           buddyMode: this.buddyMode,
           buddyReviewerModel: this.buddyReviewerModel,
+          subagentsEnabled: this.subagentsEnabled,
         };
       }
 
@@ -691,6 +680,7 @@ export class AgentSessionWrapper {
             parsePlanExecutionMode(command.planExecutionMode),
             parseBuddyMode(command.buddyMode),
             parseModelRef(command.buddyReviewerModel),
+            parseOptionalBoolean(command.subagentsEnabled),
           );
         }
         this.buddyReviewCalls = 0;
@@ -730,6 +720,7 @@ export class AgentSessionWrapper {
           planModeStatus: this.getPlanModeStatus(),
           buddyMode: this.buddyMode,
           buddyReviewerModel: this.buddyReviewerModel,
+          subagentsEnabled: this.subagentsEnabled,
         };
       }
 
@@ -816,7 +807,7 @@ export class AgentSessionWrapper {
 
       case "steer": {
         if (typeof command.planMode === "boolean") {
-          this.setWorkflowMode(command.planMode, parsePlanExecutionMode(command.planExecutionMode), parseBuddyMode(command.buddyMode), parseModelRef(command.buddyReviewerModel));
+          this.setWorkflowMode(command.planMode, parsePlanExecutionMode(command.planExecutionMode), parseBuddyMode(command.buddyMode), parseModelRef(command.buddyReviewerModel), parseOptionalBoolean(command.subagentsEnabled));
         }
         this.buddyReviewCalls = 0;
         const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
@@ -847,7 +838,7 @@ export class AgentSessionWrapper {
 
       case "follow_up": {
         if (typeof command.planMode === "boolean") {
-          this.setWorkflowMode(command.planMode, parsePlanExecutionMode(command.planExecutionMode), parseBuddyMode(command.buddyMode), parseModelRef(command.buddyReviewerModel));
+          this.setWorkflowMode(command.planMode, parsePlanExecutionMode(command.planExecutionMode), parseBuddyMode(command.buddyMode), parseModelRef(command.buddyReviewerModel), parseOptionalBoolean(command.subagentsEnabled));
         }
         this.buddyReviewCalls = 0;
         const followImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
@@ -880,7 +871,7 @@ export class AgentSessionWrapper {
           .getAllTools()
           .map((tool) => tool.name)
           .filter((name) => !BUILTIN_CODING_TOOL_SET.has(name));
-        this.inner.setActiveToolsByName(includeExtensionTools(knownRequestedToolNames, extensionToolNames));
+        this.inner.setActiveToolsByName(includeDefaultExtensionTools(knownRequestedToolNames, extensionToolNames));
         this.applyForcedEmptySystemPrompt();
         return null;
       }
@@ -915,11 +906,21 @@ export class AgentSessionWrapper {
     }
   }
 
-  private setWorkflowMode(enabled: boolean, executionMode?: PlanExecutionMode, buddyMode?: BuddyMode, reviewerModel?: ModelRef): void {
+  private setWorkflowMode(
+    enabled: boolean,
+    executionMode?: PlanExecutionMode,
+    buddyMode?: BuddyMode,
+    reviewerModel?: ModelRef,
+    subagentsEnabled?: boolean,
+  ): void {
     const nextExecutionMode = executionMode ?? this.planExecutionMode;
     const nextBuddyMode = buddyMode ?? this.buddyMode;
     const nextReviewerModel = reviewerModel ?? this.buddyReviewerModel;
+    const nextSubagentsEnabled = enabled || nextBuddyMode !== "off"
+      ? false
+      : subagentsEnabled ?? this.subagentsEnabled;
     if (enabled && nextExecutionMode === "subagent") this.assertPlanSubagentsAvailable();
+    if (nextSubagentsEnabled) this.assertPlanSubagentsAvailable();
     if (nextBuddyMode !== "off") {
       this.assertPlanSubagentsAvailable();
       if (!nextReviewerModel) throw new Error("Select a Buddy reviewer model before enabling Buddy Mode");
@@ -927,12 +928,13 @@ export class AgentSessionWrapper {
       if (nextBuddyMode === "plan" && !enabled) throw new Error("Buddy Plan requires Plan Mode");
       if (nextBuddyMode === "code" && enabled) throw new Error("Buddy Code cannot run inside read-only Plan Mode");
     }
-    const wasActive = this.planModeEnabled || this.buddyMode !== "off";
-    const willBeActive = enabled || nextBuddyMode !== "off";
+    const wasActive = this.isWorkflowActive();
+    const willBeActive = enabled || nextBuddyMode !== "off" || nextSubagentsEnabled;
     if (
       enabled === this.planModeEnabled &&
       nextExecutionMode === this.planExecutionMode &&
       nextBuddyMode === this.buddyMode &&
+      nextSubagentsEnabled === this.subagentsEnabled &&
       modelRefsEqual(nextReviewerModel, this.buddyReviewerModel)
     ) return;
 
@@ -942,6 +944,7 @@ export class AgentSessionWrapper {
       this.planModeEnabled = enabled;
       this.buddyMode = nextBuddyMode;
       this.buddyReviewerModel = nextReviewerModel;
+      this.subagentsEnabled = nextSubagentsEnabled;
       this.applyWorkflowTools();
       this.applyWorkflowSystemPrompt();
       return;
@@ -951,7 +954,19 @@ export class AgentSessionWrapper {
     this.planModeEnabled = false;
     this.planExecutionMode = "main";
     this.buddyMode = "off";
+    this.subagentsEnabled = false;
     this.planModeSnapshot = null;
+    this.workflowBaseSystemPrompt = undefined;
+  }
+
+  private isWorkflowActive(): boolean {
+    return this.planModeEnabled || this.buddyMode !== "off" || this.subagentsEnabled;
+  }
+
+  private workflowRequiresSubagents(): boolean {
+    return this.subagentsEnabled
+      || this.buddyMode !== "off"
+      || this.planModeEnabled && this.planExecutionMode === "subagent";
   }
 
   private createPlanModeSnapshot(): PlanModeSnapshot {
@@ -979,15 +994,18 @@ export class AgentSessionWrapper {
       ]);
     }
     this.inner.setActiveToolsByName(filterKnownToolNames(requested, allToolNames));
+    const inner = this.inner as AgentSessionPlanAccess;
+    this.workflowBaseSystemPrompt = inner._baseSystemPrompt ?? this.inner.agent.state?.systemPrompt;
   }
 
   private applyWorkflowSystemPrompt(): void {
     const inner = this.inner as AgentSessionPlanAccess;
     const snapshot = this.planModeSnapshot ?? this.createPlanModeSnapshot();
-    const base = snapshot.baseSystemPrompt ?? snapshot.stateSystemPrompt ?? "";
+    const base = this.workflowBaseSystemPrompt ?? snapshot.baseSystemPrompt ?? snapshot.stateSystemPrompt ?? "";
     const prompts: string[] = [];
     if (this.planModeEnabled) prompts.push(this.planExecutionMode === "subagent" ? PLAN_MODE_SUBAGENT_SYSTEM_PROMPT : PLAN_MODE_SYSTEM_PROMPT);
     if (this.buddyMode !== "off" && this.buddyReviewerModel) prompts.push(buildBuddySystemPrompt(this.buddyMode, this.buddyReviewerModel));
+    if (this.subagentsEnabled) prompts.push(SUBAGENTS_SYSTEM_PROMPT);
     const next = `${base}\n\n${prompts.join("\n\n")}`.trim();
     inner._baseSystemPrompt = next;
     if (this.inner.agent.state) this.inner.agent.state.systemPrompt = next;
@@ -1001,6 +1019,20 @@ export class AgentSessionWrapper {
     this.inner.setActiveToolsByName(filterKnownToolNames(snapshot.activeToolNames, allToolNames));
     inner._baseSystemPrompt = snapshot.baseSystemPrompt;
     if (this.inner.agent.state) this.inner.agent.state.systemPrompt = snapshot.stateSystemPrompt ?? "";
+    this.workflowBaseSystemPrompt = undefined;
+  }
+
+  private refreshWorkflowSnapshotAfterReload(): void {
+    const snapshot = this.planModeSnapshot;
+    if (!snapshot) return;
+    const inner = this.inner as AgentSessionPlanAccess;
+    const allToolNames = this.inner.getAllTools().map((tool) => tool.name);
+    const activeToolNames = filterKnownToolNames(snapshot.activeToolNames, allToolNames);
+    this.inner.setActiveToolsByName(activeToolNames);
+    snapshot.activeToolNames = activeToolNames;
+    snapshot.baseSystemPrompt = inner._baseSystemPrompt;
+    snapshot.stateSystemPrompt = this.inner.agent.state?.systemPrompt;
+    this.workflowBaseSystemPrompt = undefined;
   }
 
   private assertPlanSubagentsAvailable(): void {
@@ -1363,7 +1395,29 @@ export class AgentSessionWrapper {
       } else if (typeof this.inner.bindExtensions !== "function") {
         this.inner.extensionRunner?.setUIContext?.(this.createExtensionUiContext(), "rpc");
       }
-      this.applyForcedEmptySystemPrompt();
+      if (this.isWorkflowActive()) {
+        this.refreshWorkflowSnapshotAfterReload();
+        if (this.workflowRequiresSubagents() && !this.getPlanModeStatus().subagentsAvailable) {
+          this.planModeEnabled = false;
+          this.planExecutionMode = "main";
+          this.buddyMode = "off";
+          this.subagentsEnabled = false;
+          this.planModeSnapshot = null;
+          this.workflowBaseSystemPrompt = undefined;
+          this.applyForcedEmptySystemPrompt();
+          this.emit({
+            type: "extension_error",
+            extensionPath: "pi-subagents",
+            event: "workflow_disabled",
+            error: "Subagent workflow was disabled because its required tools are no longer available.",
+          });
+        } else {
+          this.applyWorkflowTools();
+          this.applyWorkflowSystemPrompt();
+        }
+      } else {
+        this.applyForcedEmptySystemPrompt();
+      }
     } catch (error) {
       if (this._alive) {
         this.emit({
@@ -1510,15 +1564,9 @@ export async function startRpcSession(
     // even when the saved activeTools list disables some or all extension tools.
     const extensionToolNames = getLoadedExtensionToolNames(resourceLoader);
     const registeredToolNames = uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES, ...extensionToolNames]);
-    let toolsOption: string[] | undefined;
-    if (toolNames !== undefined) {
-      // Register tools even when the requested active set is empty, then clear it below.
-      // Passing tools: [] makes pi create a session with no tool registry, so later
-      // switching back to Low/High cannot restore tools without recreating the session.
-      toolsOption = registeredToolNames;
-    } else if (savedActiveTools !== null) {
-      toolsOption = registeredToolNames;
-    }
+    // Register every available tool even when the active set is empty or deferred.
+    // This keeps extension tools discoverable so workflows can activate them later.
+    const toolsOption = registeredToolNames;
 
     const { session: inner } = await createAgentSession({
       cwd,
@@ -1526,24 +1574,25 @@ export async function startRpcSession(
       sessionManager,
       resourceLoader,
       modelRuntime,
-      ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
+      tools: toolsOption,
     });
 
     // Empty activeTools means all tools off, but available tools stay registered.
-    let appliedActiveToolNames: string[] | undefined;
+    let appliedActiveToolNames: string[];
     if (toolNames !== undefined) {
-      appliedActiveToolNames = includeExtensionTools(filterKnownToolNames(toolNames, registeredToolNames), extensionToolNames);
-      inner.setActiveToolsByName(appliedActiveToolNames);
+      appliedActiveToolNames = includeDefaultExtensionTools(filterKnownToolNames(toolNames, registeredToolNames), extensionToolNames);
     } else if (savedActiveTools !== null) {
       appliedActiveToolNames = filterKnownToolNames(savedActiveTools, registeredToolNames);
-      inner.setActiveToolsByName(appliedActiveToolNames);
+    } else {
+      appliedActiveToolNames = filterKnownToolNames(getDefaultActiveToolNames(extensionToolNames), registeredToolNames);
     }
+    inner.setActiveToolsByName(appliedActiveToolNames);
 
     // When all tools are disabled, clear the system prompt entirely.
     // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
     // keep this forced after extension resource discovery and reloads as well.
     const wrapper = new AgentSessionWrapper(inner, extensionLoadErrors);
-    if (appliedActiveToolNames?.length === 0) {
+    if (appliedActiveToolNames.length === 0) {
       wrapper.setForceEmptySystemPrompt(true);
     }
     installToolGuards(inner, () => wrapper.getWorkflowGuardState(), () => wrapper.recordBuddyReviewCall());
@@ -1558,7 +1607,7 @@ export async function startRpcSession(
 
     wrapper.onDestroy(() => registry.delete(realSessionId));
     registry.set(realSessionId, wrapper);
-    wrapper.beginExtensionBinding({ forceEmptySystemPrompt: appliedActiveToolNames?.length === 0 });
+    wrapper.beginExtensionBinding({ forceEmptySystemPrompt: appliedActiveToolNames.length === 0 });
 
     return { session: wrapper, realSessionId };
   })().finally(() => locks.delete(sessionId));

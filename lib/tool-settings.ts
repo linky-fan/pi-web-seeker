@@ -1,16 +1,33 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import { SUBAGENT_TOOL_NAMES } from "./plan-mode";
 
 export const BUILTIN_CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 export const DEFAULT_ACTIVE_TOOL_NAMES = ["read", "bash", "edit", "write"];
 export const BUILTIN_CODING_TOOL_SET = new Set(BUILTIN_CODING_TOOL_NAMES);
+export const SUBAGENT_TOOL_SET = new Set<string>(SUBAGENT_TOOL_NAMES);
 
 const SETTINGS_FILE = "settings.json";
 const ACTIVE_TOOLS_KEY = "activeTools";
 
 export function uniqueToolNames(names: string[]): string[] {
   return Array.from(new Set(names));
+}
+
+export function getDefaultActiveToolNames(extensionToolNames: string[]): string[] {
+  return uniqueToolNames([
+    ...DEFAULT_ACTIVE_TOOL_NAMES,
+    ...extensionToolNames.filter((name) => !SUBAGENT_TOOL_SET.has(name)),
+  ]);
+}
+
+export function includeDefaultExtensionTools(requestedToolNames: string[], extensionToolNames: string[]): string[] {
+  if (requestedToolNames.length === 0) return [];
+  return uniqueToolNames([
+    ...requestedToolNames,
+    ...extensionToolNames.filter((name) => !SUBAGENT_TOOL_SET.has(name)),
+  ]);
 }
 
 export function getLoadedExtensionToolNames(resourceLoader: DefaultResourceLoader): string[] {

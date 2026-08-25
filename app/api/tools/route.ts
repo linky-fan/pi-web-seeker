@@ -5,8 +5,8 @@ import { assertPathAllowed } from "@/lib/allowed-roots";
 import { createAppModelRuntime } from "@/lib/model-registry";
 import {
   BUILTIN_CODING_TOOL_NAMES,
-  DEFAULT_ACTIVE_TOOL_NAMES,
   filterKnownToolNames,
+  getDefaultActiveToolNames,
   getLoadedExtensionToolNames,
   readActiveTools,
   uniqueToolNames,
@@ -45,7 +45,7 @@ async function enumerateTools(cwd: string, agentDir: string): Promise<ToolToggle
     const savedActiveTools = readActiveTools(agentDir);
     const activeSet = new Set(
       savedActiveTools === null
-        ? filterKnownToolNames(uniqueToolNames([...DEFAULT_ACTIVE_TOOL_NAMES, ...extensionToolNames]), allToolNames)
+        ? filterKnownToolNames(getDefaultActiveToolNames(extensionToolNames), allToolNames)
         : filterKnownToolNames(savedActiveTools, allToolNames)
     );
 
