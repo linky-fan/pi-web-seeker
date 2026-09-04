@@ -2188,11 +2188,11 @@ html.dark .pi-quick-chat {
     transition: none !important;
   }
 }
-/* Browser tabs use the wider inspector tier as soon as the chat can retain a useful lane. */
+/* Active inspector tabs use the wider tier as soon as the chat can retain a useful lane. */
 
 @media (max-width: 640px) {
 
-  body:has(.right-panel-container.pi-browser-panel-active.right-panel-open) .pi-quick-chat {
+  body:has(.right-panel-container.pi-wide-panel-active.right-panel-open) .pi-quick-chat {
     display: none;
   }
 }
@@ -2325,18 +2325,18 @@ body:has(.pi-app-shell.pi-browser-focus-mode) .pi-quick-chat {
 }
 
 @media (min-width: 900px) {
-  html:not([data-ui="fluid"]) .right-panel-container.pi-browser-panel-active.right-panel-open {
+  html:not([data-ui="fluid"]) .right-panel-container.pi-wide-panel-active.right-panel-open {
     width: min(58vw, 860px);
     min-width: min(58vw, 860px);
   }
 
-  html:not([data-ui="fluid"]) .right-panel-container.pi-browser-panel-active.right-panel-open > * {
+  html:not([data-ui="fluid"]) .right-panel-container.pi-wide-panel-active.right-panel-open > * {
     width: auto;
   }
 }
 
 @media (min-width: 641px) {
-  html:not([data-ui="fluid"]) body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+  html:not([data-ui="fluid"]) body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
     right: calc(min(58vw, 860px) + 14px);
   }
 }

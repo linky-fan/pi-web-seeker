@@ -55,9 +55,9 @@ export function useInspectorController({
     const tabId = `file:${filePath}`;
     setTabs((current) => appendUniqueTab(current, { id: tabId, label: fileName, kind: "file", filePath }));
     setActiveTabId(tabId);
-    if (isFluid && !panelOpen) setFluidTier(1);
+    if (isFluid) setFluidTier(2);
     setPanelOpen(true);
-  }, [isFluid, panelOpen]);
+  }, [isFluid]);
 
   const openBrowserForSession = useCallback((agentSessionId: string | undefined) => {
     if (!agentSessionId) return;
@@ -108,7 +108,7 @@ export function useInspectorController({
   const selectTab = useCallback((tabId: string) => {
     setActiveTabId(tabId);
     const tab = tabs.find((candidate) => candidate.id === tabId);
-    if (isFluid && (tab?.kind === "browser" || tab?.kind === "remote")) setFluidTier(2);
+    if (isFluid && tab) setFluidTier(2);
   }, [isFluid, tabs]);
 
   const toggleMaximize = useCallback(() => {
@@ -137,8 +137,13 @@ export function useInspectorController({
       return;
     }
     if (!panelOpen) {
-      setFluidTier(1);
+      setFluidTier(activeTab ? 2 : 1);
       setPanelOpen(true);
+      return;
+    }
+    if (activeTab) {
+      setFluidTier(1);
+      setPanelOpen(false);
       return;
     }
     if (fluidTier === 1) {
@@ -147,7 +152,7 @@ export function useInspectorController({
     }
     setFluidTier(1);
     setPanelOpen(false);
-  }, [canUseTierTwo, fluidTier, isFluid, panelOpen]);
+  }, [activeTab, canUseTierTwo, fluidTier, isFluid, panelOpen]);
 
   useEffect(() => {
     if (!selectedSession?.id) return;
@@ -217,7 +222,7 @@ export function useInspectorController({
   const toggleTitle = isFluid
     ? !panelOpen
       ? "Show file panel"
-      : canUseTierTwo && fluidTier === 1 ? "Expand file panel" : "Hide file panel"
+      : activeTab ? "Hide file panel" : canUseTierTwo && fluidTier === 1 ? "Expand file panel" : "Hide file panel"
     : panelOpen ? "Hide file panel" : "Show file panel";
 
   return {

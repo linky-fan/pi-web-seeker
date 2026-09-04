@@ -41,9 +41,10 @@ interface InspectorProps {
 export const ShellInspector = memo(function ShellInspector(props: InspectorProps) {
   const { t } = useLocale();
   const interactive = props.activeTab?.kind === "browser" || props.activeTab?.kind === "remote";
+  const widePanel = props.activeTab !== null;
   return <>
     <div
-      className={`right-panel-container ${props.isFluid ? `pi-fluid-inspector pi-fluid-inspector-tier-${props.fluidTier}` : "pi-right-panel"}${props.panelOpen ? " right-panel-open" : " right-panel-closed"}${interactive ? " pi-browser-panel-active" : ""}${props.activeTab?.kind === "remote" ? " pi-remote-panel-active" : ""}${props.interactivePanelMaximized ? " pi-browser-panel-maximized" : ""}`}
+      className={`right-panel-container ${props.isFluid ? `pi-fluid-inspector pi-fluid-inspector-tier-${props.fluidTier}` : "pi-right-panel"}${props.panelOpen ? " right-panel-open" : " right-panel-closed"}${widePanel ? " pi-wide-panel-active" : ""}${interactive ? " pi-browser-panel-active" : ""}${props.activeTab?.kind === "remote" ? " pi-remote-panel-active" : ""}${props.interactivePanelMaximized ? " pi-browser-panel-maximized" : ""}`}
       style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid var(--border)", background: "var(--bg)" }}
     >
       <div className="pi-right-panel-header" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>

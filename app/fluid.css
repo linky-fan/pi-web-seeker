@@ -1298,6 +1298,10 @@ html[data-ui="fluid"] .pi-fluid-shell:has(.pi-fluid-inspector.right-panel-open) 
   right: var(--fluid-dock-width);
 }
 
+html[data-ui="fluid"] .pi-fluid-shell:has(.pi-fluid-drawer.sidebar-open) .pi-fluid-dock-handle {
+  z-index: 198;
+}
+
 html[data-ui="fluid"] .pi-fluid-dock-handle:hover,
 html[data-ui="fluid"] .pi-fluid-dock-handle[aria-pressed="true"] {
   color: var(--text);
@@ -2545,13 +2549,13 @@ html[data-ui="fluid"] .pi-fluid-env-open-panel {
 
 @media (min-width: 1100px) {
 
-html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized) {
+html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-wide-panel-active.right-panel-open:not(.pi-browser-panel-maximized) {
     width: var(--fluid-interactive-dock-width) !important;
     min-width: var(--fluid-interactive-dock-width) !important;
     max-width: var(--fluid-interactive-dock-width) !important;
   }
 
-html[data-ui="fluid"] .pi-fluid-shell:has(.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-fluid-dock-handle {
+html[data-ui="fluid"] .pi-fluid-shell:has(.pi-wide-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-fluid-dock-handle {
     right: var(--fluid-interactive-dock-width) !important;
   }
 }
@@ -2572,7 +2576,7 @@ html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel
 
 @media (max-width: 640px) {
 
-html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel-active.right-panel-open {
+html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-wide-panel-active.right-panel-open {
     position: fixed !important;
     z-index: 520 !important;
     height: 100dvh !important;
@@ -2586,14 +2590,14 @@ html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel
 
 @media (min-width: 641px) and (max-width: 1099px) {
 
-html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+html[data-ui="fluid"] body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
     right: 424px;
   }
 }
 
 @media (min-width: 1100px) {
 
-html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+html[data-ui="fluid"] body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
     right: calc(var(--fluid-interactive-dock-width) + 14px);
   }
 }
