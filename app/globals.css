@@ -2330,6 +2330,11 @@ body:has(.pi-app-shell.pi-browser-focus-mode) .pi-quick-chat {
     min-width: min(58vw, 860px);
   }
 
+  html:not([data-ui="fluid"]) .right-panel-container.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized) {
+    width: 50vw;
+    min-width: 50vw;
+  }
+
   html:not([data-ui="fluid"]) .right-panel-container.pi-wide-panel-active.right-panel-open > * {
     width: auto;
   }
@@ -2338,5 +2343,11 @@ body:has(.pi-app-shell.pi-browser-focus-mode) .pi-quick-chat {
 @media (min-width: 641px) {
   html:not([data-ui="fluid"]) body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
     right: calc(min(58vw, 860px) + 14px);
+  }
+}
+
+@media (min-width: 900px) {
+  html:not([data-ui="fluid"]) body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+    right: calc(50vw + 14px);
   }
 }

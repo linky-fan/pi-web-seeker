@@ -2320,7 +2320,8 @@ html[data-ui="fluid"] {
   --fluid-rail-width: 44px;
   --fluid-drawer-width: 316px;
   --fluid-dock-width: 410px;
-  --fluid-interactive-dock-width: clamp(560px, 36vw, 960px);
+  --fluid-file-dock-width: clamp(560px, 36vw, 960px);
+  --fluid-interactive-dock-width: 50vw;
   --fluid-interactive-max-width: min(70vw, calc(100vw - var(--fluid-rail-width) - 480px));
   --fluid-workspace-gutter: 24px;
   --fluid-header-height: 38px;
@@ -2550,12 +2551,22 @@ html[data-ui="fluid"] .pi-fluid-env-open-panel {
 @media (min-width: 1100px) {
 
 html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-wide-panel-active.right-panel-open:not(.pi-browser-panel-maximized) {
+    width: var(--fluid-file-dock-width) !important;
+    min-width: var(--fluid-file-dock-width) !important;
+    max-width: var(--fluid-file-dock-width) !important;
+  }
+
+html[data-ui="fluid"] .pi-fluid-shell:has(.pi-wide-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-fluid-dock-handle {
+    right: var(--fluid-file-dock-width) !important;
+  }
+
+html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized) {
     width: var(--fluid-interactive-dock-width) !important;
     min-width: var(--fluid-interactive-dock-width) !important;
     max-width: var(--fluid-interactive-dock-width) !important;
   }
 
-html[data-ui="fluid"] .pi-fluid-shell:has(.pi-wide-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-fluid-dock-handle {
+html[data-ui="fluid"] .pi-fluid-shell:has(.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-fluid-dock-handle {
     right: var(--fluid-interactive-dock-width) !important;
   }
 }
@@ -2598,6 +2609,10 @@ html[data-ui="fluid"] body:has(.right-panel-container.pi-wide-panel-active:not(.
 @media (min-width: 1100px) {
 
 html[data-ui="fluid"] body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+    right: calc(var(--fluid-file-dock-width) + 14px);
+  }
+
+html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
     right: calc(var(--fluid-interactive-dock-width) + 14px);
   }
 }
