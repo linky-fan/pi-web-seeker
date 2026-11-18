@@ -4,9 +4,10 @@ Repository: https://github.com/linky-fan/pi-web-seeker
 
 ## Commands
 
-- Dev: `npm run dev` on port 30141.
-- Typecheck: `node_modules/.bin/tsc --noEmit`.
+- Dev: `npm run dev` on port 30141; defaults to localhost.
+- Typecheck: `npm run typecheck` (or `node_modules/.bin/tsc --noEmit`).
 - Lint: `npm run lint`.
+- Tests: `npm test`.
 - AGENTS check: `node scripts/agents-md.mjs check --path AGENTS.md`.
 - Do not run `next build` during ordinary dev; it pollutes `.next/` and can break `npm run dev`.
 - If stale generated Next.js types mention a deleted route, remove `.next/types` or `.next/dev/types` and rerun typecheck.
@@ -29,8 +30,18 @@ Pi Web Seeker is a Next.js UI over Pi session files and in-process `AgentSession
 - Frontend structure is frozen at `2b259c4`: preserve the current AppShell, ChatInput, MessageView, ChatWindow, and AgentSession ownership boundaries. Do not split or merge components only to meet file-count, line-count, or bundle-size targets.
 - Add a controller, dynamic import, custom memo comparator, or cross-file UI boundary only for a demonstrated defect, an independent feature domain, a reproducible performance problem, or an async lifecycle race.
 - Preserve extension tools when changing tool presets; packages such as `pi-subagents` must not be hidden by built-in tool filtering.
-- For Docker/default workspace changes, keep host-mounted user data separate from app code and preserve LAN access behavior.
+- Non-loopback listeners require a non-empty `PI_WEB_ACCESS_TOKEN`; keep localhost as the default for local development.
+- Docker binds on the container network and therefore requires `PI_WEB_ACCESS_TOKEN`; keep host-mounted user data separate from app code and preserve LAN access behavior.
 - For Markdown math, remember `remark-math` can misread prices such as `$5` to `$10`; keep `singleDollarTextMath` disabled where configured.
+
+## Key Mechanisms
+
+- **Local request guard** (`lib/request-guard.ts`, wired in `proxy.ts`): without `PI_WEB_ACCESS_TOKEN`, requests must come from a loopback `Host`; mutating `/api/*` calls additionally reject a mismatched `Origin` or `Sec-Fetch-Site: cross-site`. Compare `Origin` against the `Host` header, not `req.url` — Next rewrites the URL host to `localhost`.
+- **Project Trust** (`lib/project-trust.ts`): the nearest path decision wins; a session deny beats a persisted allow at the same path. `reloadExtensionsAware()` re-applies trust to the live `SettingsManager` before pi reloads, because pi preserves the old flag.
+- **Session index** (`lib/session-index.ts`): session metadata is cached by file size/mtime and consumed byte offset. `force: true` bypasses it. Stale or truncated files are rescanned from the start.
+- **Model connection test** (`lib/model-test-runner.ts`): runs against a temporary empty credential store, so stored logins and environment keys are never used. Only a literal form key is sent; `!command` and `$VAR` values are rejected.
+- **Lazy loading**: Prism grammars load on first code block and `rehype-katex` on first `$$`. Never bundle the full language set or KaTeX eagerly.
+- **Message animation**: rows are keyed by position, not entry id. A live message gains its entry id after the session reloads, and keying by id remounted the row and replayed the entrance.
 
 ## Common Flows
 
@@ -54,7 +65,7 @@ Pi Web Seeker is a Next.js UI over Pi session files and in-process `AgentSession
 
 ## Verification
 
-- Small code/UI change: `node_modules/.bin/tsc --noEmit`, `npm run lint`, and a browser smoke test.
+- Small code/UI change: `npm run typecheck`, `npm run lint`, `npm test`, and a browser smoke test.
 - Docs or AGENTS change: `node scripts/agents-md.mjs check --path AGENTS.md` and `git diff --check`.
 - Model/provider change: run the Models panel test or `npm run test:context -- --provider <id> --model <id> --tokens 8192` when a real request is intended.
 - Docker/deploy change: verify compose startup, workspace permissions, persisted data paths, and LAN browser access.

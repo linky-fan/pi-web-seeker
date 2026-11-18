@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCachedSessionFile, resolveSessionPath } from "@/lib/session-reader";
 import { startRpcSession, getRpcSession } from "@/lib/rpc-manager";
+import { ProjectTrustRequiredError } from "@/lib/project-trust";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,12 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
+    if (error instanceof ProjectTrustRequiredError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code, cwd: error.cwd },
+        { status: 428 },
+      );
+    }
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }

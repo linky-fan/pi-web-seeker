@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { localRequestRejection } from "./lib/request-guard";
 
 const ACCESS_COOKIE = "pi_web_access_token";
 
@@ -42,6 +43,17 @@ function loginWithQueryToken(req: NextRequest, expected: string): NextResponse |
 
 export function proxy(req: NextRequest) {
   const expected = getAccessToken();
+  const rejected = localRequestRejection({
+    method: req.method,
+    url: req.url,
+    host: req.headers.get("host"),
+    origin: req.headers.get("origin"),
+    secFetchSite: req.headers.get("sec-fetch-site"),
+    accessTokenConfigured: Boolean(expected),
+  });
+  if (rejected) {
+    return NextResponse.json({ error: "Untrusted local request" }, { status: 403 });
+  }
   if (!expected) return NextResponse.next();
 
   const loginResponse = loginWithQueryToken(req, expected);

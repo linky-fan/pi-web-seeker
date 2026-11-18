@@ -13,6 +13,7 @@ export interface SessionData {
   filePath: string;
   tree: SessionTreeNode[];
   leafId: string | null;
+  sessionStats?: SessionStats | null;
   context: {
     messages: AgentMessage[];
     entryIds: string[];

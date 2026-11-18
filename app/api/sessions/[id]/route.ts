@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import path from "path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
+  calculateSessionUsage,
   resolveSessionPath,
   invalidateSessionPathCache,
   invalidateSessionFileCache,
@@ -11,10 +12,9 @@ import {
   getSessionParentId,
   invalidateSessionListCache,
 } from "@/lib/session-reader";
-import { getRpcSession } from "@/lib/rpc-manager";
+import { closeRemoteSessionIfLoaded, getRpcSession } from "@/lib/rpc-manager";
 import { areSameFilePath, isWindowsStylePath } from "@/lib/path-identity";
 import { compressSessionTree } from "@/lib/session-tree";
-import { getRemoteRuntime } from "@/pi-packages/pi-remote-exec/runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +77,7 @@ export async function GET(
       tree,
       leafId,
       context,
+      sessionStats: calculateSessionUsage(snapshot.entries),
       ...(agentState !== undefined ? { agentState } : {}),
     });
   } catch (error) {
@@ -155,7 +156,7 @@ export async function DELETE(
       }
     } catch { /* skip if dir unreadable */ }
 
-    await getRemoteRuntime().close(id, false);
+    await closeRemoteSessionIfLoaded(id, "session delete");
     getRpcSession(id)?.destroy();
     unlinkSync(filePath);
     invalidateSessionPathCache(id);

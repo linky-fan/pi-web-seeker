@@ -4,6 +4,7 @@ import { enableRemotePackage, remotePackageStatus } from "@/lib/remote-package";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { remoteSessionErrorStatus, requireRemoteSession } from "@/lib/remote-session";
 import { getRemoteRuntime } from "@/pi-packages/pi-remote-exec/runtime";
+import { projectTrustErrorResponse } from "@/lib/project-trust";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,6 +26,8 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: true, packagePath, ...(await remotePackageStatus(trustedCwd)) });
   } catch (error) {
+    const trustError = projectTrustErrorResponse(error);
+    if (trustError) return NextResponse.json(trustError.body, { status: trustError.status });
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: message === "Access denied" ? 403 : remoteSessionErrorStatus(error) === 404 ? 404 : 500 });
   }

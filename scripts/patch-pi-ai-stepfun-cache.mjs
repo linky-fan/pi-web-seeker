@@ -8,8 +8,16 @@ const targets = [
   "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js",
 ];
 
-const before = "rawUsage.prompt_tokens_details?.cached_tokens ?? rawUsage.prompt_cache_hit_tokens ?? 0";
-const after = "rawUsage.prompt_tokens_details?.cached_tokens ?? rawUsage.prompt_cache_hit_tokens ?? rawUsage.cached_tokens ?? rawUsage.cached_token ?? 0";
+const replacements = [
+  [
+    "rawUsage.prompt_tokens_details?.cached_tokens ?? rawUsage.prompt_cache_hit_tokens ?? rawUsage.cached_tokens ?? 0",
+    "rawUsage.prompt_tokens_details?.cached_tokens ?? rawUsage.prompt_cache_hit_tokens ?? rawUsage.cached_tokens ?? rawUsage.cached_token ?? 0",
+  ],
+  [
+    "rawUsage.prompt_tokens_details?.cached_tokens ?? rawUsage.prompt_cache_hit_tokens ?? 0",
+    "rawUsage.prompt_tokens_details?.cached_tokens ?? rawUsage.prompt_cache_hit_tokens ?? rawUsage.cached_tokens ?? rawUsage.cached_token ?? 0",
+  ],
+];
 
 let patched = 0;
 
@@ -18,14 +26,15 @@ for (const target of targets) {
   if (!existsSync(file)) continue;
 
   const original = readFileSync(file, "utf8");
-  if (original.includes(after)) continue;
+  if (replacements.some(([, after]) => original.includes(after))) continue;
 
-  if (!original.includes(before)) {
+  const replacement = replacements.find(([before]) => original.includes(before));
+  if (!replacement) {
     console.warn(`pi-web-seeker: skipped pi-ai cache patch; pattern not found in ${target}`);
     continue;
   }
 
-  writeFileSync(file, original.replace(before, after));
+  writeFileSync(file, original.replace(replacement[0], replacement[1]));
   patched += 1;
 }
 

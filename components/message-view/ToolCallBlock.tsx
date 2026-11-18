@@ -1,7 +1,8 @@
 "use client";
 
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n";
+import { drawCheck } from "@/lib/motion";
 import type { ToolCallContent, ToolExecutionStatus, ToolResultMessage } from "@/lib/types";
 import { formatDurationBrief, formatToolInput, getToolPreview, toolResultText, toolTimeoutSeconds } from "./helpers";
 
@@ -12,6 +13,9 @@ function ToolCallBlockImpl({ block, result, isRunning, liveStatus, duration, mis
   const [nowMs, setNowMs] = useState(0);
   const inputStr = formatToolInput(block.input);
   const timeout = toolTimeoutSeconds(block.input);
+  // A checkmark draws only on the running -> success transition, never on history.
+  const checkRef = useRef<SVGPathElement | null>(null);
+  const wasRunningRef = useRef(isRunning);
 
   useEffect(() => {
     if (!isRunning) {
@@ -34,6 +38,12 @@ function ToolCallBlockImpl({ block, result, isRunning, liveStatus, duration, mis
   const isError = result?.isError ?? false;
   const isTimedOut = Boolean(isError && resultText && /\btimed?\s*out\b|\btimeout\b/i.test(resultText));
   const isMissingResult = !result && !isRunning;
+
+  useEffect(() => {
+    const settledSuccessfully = wasRunningRef.current && !isRunning && !isError && !isMissingResult;
+    wasRunningRef.current = Boolean(isRunning);
+    if (settledSuccessfully) drawCheck(checkRef.current);
+  }, [isRunning, isError, isMissingResult]);
   const secondsSinceUpdate = isRunning && liveStatus?.updatedAt
     ? Math.max(0, Math.round(((nowMs || liveStatus.updatedAt) - liveStatus.updatedAt) / 1000))
     : 0;
@@ -64,6 +74,7 @@ function ToolCallBlockImpl({ block, result, isRunning, liveStatus, duration, mis
         fontSize: 12,
         border: `1px solid ${borderColor}`,
         background,
+        transition: "border-color 0.28s ease, background-color 0.28s ease",
       }}
     >
       {/* ── Tool call header ── */}
@@ -88,9 +99,21 @@ function ToolCallBlockImpl({ block, result, isRunning, liveStatus, duration, mis
           {block.toolName}
         </span>
         {isRunning && (
+          <span
+            aria-hidden
+            className="pi-tool-status-dot"
+            style={{ width: 6, height: 6, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }}
+          />
+        )}
+        {isRunning && (
           <span style={{ color: "var(--accent)", fontSize: 10, flexShrink: 0 }}>
             {t("message.tool.running")} {elapsed > 0 ? formatDurationBrief(elapsed) : ""}
           </span>
+        )}
+        {!isRunning && !isMissingResult && !isError && (
+          <svg aria-hidden width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <path ref={checkRef} d="M20 6 9 17l-5-5" />
+          </svg>
         )}
         {isMissingResult && (
           <span style={{ color: "#f59e0b", fontSize: 10, flexShrink: 0 }}>

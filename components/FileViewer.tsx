@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import { useEffect, useState, useRef, useCallback, useMemo, type HTMLProps } from "react";
+import { CodeHighlighter, normalizeLanguage, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -17,6 +15,7 @@ import { apiPath } from "@/lib/api-path";
 interface Props {
   filePath: string;
   cwd?: string;
+  lineNumber?: number;
 }
 
 interface FileData {
@@ -280,7 +279,12 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
   );
 }
 
-function PlainTextView({ content, wrapLines }: { content: string; wrapLines: boolean }) {
+function PlainTextView({ content, wrapLines, lineNumber, startLine = 1 }: {
+  content: string;
+  wrapLines: boolean;
+  lineNumber?: number;
+  startLine?: number;
+}) {
   return (
     <pre
       style={{
@@ -296,7 +300,22 @@ function PlainTextView({ content, wrapLines }: { content: string; wrapLines: boo
         minHeight: "100%",
       }}
     >
-      {content}
+      {lineNumber
+        ? content.split("\n").map((line, index) => {
+          const currentLine = startLine + index;
+          return (
+            <span
+              key={currentLine}
+              data-checker-line={currentLine === lineNumber ? currentLine : undefined}
+              style={currentLine === lineNumber
+                ? { display: "block", background: "rgba(250, 204, 21, 0.16)" }
+                : { display: "block" }}
+            >
+              {line || "\u00a0"}
+            </span>
+          );
+        })
+        : content}
     </pre>
   );
 }
@@ -552,17 +571,17 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
   );
 }
 
-export function FileViewer({ filePath, cwd }: Props) {
+export function FileViewer({ filePath, cwd, lineNumber }: Props) {
   if (isImagePath(filePath)) {
     return <ImageViewer filePath={filePath} cwd={cwd} />;
   }
   if (isAudioPath(filePath)) {
     return <AudioViewer filePath={filePath} cwd={cwd} />;
   }
-  return <TextFileViewer filePath={filePath} cwd={cwd} />;
+  return <TextFileViewer filePath={filePath} cwd={cwd} lineNumber={lineNumber} />;
 }
 
-function TextFileViewer({ filePath, cwd }: Props) {
+function TextFileViewer({ filePath, cwd, lineNumber }: Props) {
   const { isDark } = useTheme();
   const { t } = useLocale();
   const [data, setData] = useState<FileData | null>(null);
@@ -575,6 +594,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
   const [watching, setWatching] = useState(false);
   const [changeCount, setChangeCount] = useState(0);
   const esRef = useRef<EventSource | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const fetchContent = useCallback((filePath: string, isRefresh = false) => {
     const encoded = encodeFilePathForApi(filePath);
@@ -662,14 +682,34 @@ function TextFileViewer({ filePath, cwd }: Props) {
   const isLargeDiff = content.length > CODE_HIGHLIGHT_MAX_BYTES || (prevContent?.length ?? 0) > CODE_HIGHLIGHT_MAX_BYTES;
   const canShowDiff = hasDiff && !isLargeDiff;
   const shouldTruncateRaw = size > TEXT_TRUNCATE_BYTES && lines.length > TEXT_TRUNCATE_LINES;
-  const rawContent = useMemo(() => {
-    if (!shouldTruncateRaw) return content;
-    return lines.slice(0, TEXT_TRUNCATE_LINES).join("\n");
-  }, [content, lines, shouldTruncateRaw]);
+  const rawWindow = useMemo(() => {
+    if (!shouldTruncateRaw) return { content, startLine: 1 };
+    const maxStart = Math.max(0, lines.length - TEXT_TRUNCATE_LINES);
+    const requestedStart = lineNumber && lineNumber > TEXT_TRUNCATE_LINES
+      ? lineNumber - 1 - Math.floor(TEXT_TRUNCATE_LINES / 2)
+      : 0;
+    const start = Math.min(Math.max(0, requestedStart), maxStart);
+    return {
+      content: lines.slice(start, start + TEXT_TRUNCATE_LINES).join("\n"),
+      startLine: start + 1,
+    };
+  }, [content, lineNumber, lines, shouldTruncateRaw]);
+  const rawContent = rawWindow.content;
   const markdownContent = useMemo(() => {
     if (!isMarkdown || !previewMode || isMarkdownPreviewTooLarge) return "";
     return normalizeMarkdownMath(content);
   }, [content, isMarkdown, isMarkdownPreviewTooLarge, previewMode]);
+
+  const hasSourceData = Boolean(data);
+  useEffect(() => {
+    if (!lineNumber || !hasSourceData || previewMode || viewMode !== "source") return;
+    const frame = window.requestAnimationFrame(() => {
+      contentRef.current
+        ?.querySelector(`[data-checker-line="${lineNumber}"]`)
+        ?.scrollIntoView({ block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [data?.content, hasSourceData, lineNumber, previewMode, viewMode]);
 
   if (loading) {
     return (
@@ -834,7 +874,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
       </div>
 
       {/* Content area */}
-      <div style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
+      <div ref={contentRef} style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
         {(isLargeTextFile || shouldTruncateRaw || (isMarkdown && previewMode && isMarkdownPreviewTooLarge) || (hasDiff && isLargeDiff)) && (
           <div
             style={{
@@ -851,7 +891,13 @@ function TextFileViewer({ filePath, cwd }: Props) {
             {isLargeTextFile && <span>{t("viewer.largeFile")}</span>}
             {hasDiff && isLargeDiff && <span>{t("viewer.largeDiff")}</span>}
             {shouldTruncateRaw && viewMode === "source" && !previewMode && (
-              <span>{t("viewer.truncated", { shown: TEXT_TRUNCATE_LINES.toLocaleString(), total: lines.length.toLocaleString() })}</span>
+              <span>{rawWindow.startLine === 1
+                ? t("viewer.truncated", { shown: TEXT_TRUNCATE_LINES.toLocaleString(), total: lines.length.toLocaleString() })
+                : t("viewer.truncatedWindow", {
+                  start: rawWindow.startLine.toLocaleString(),
+                  end: Math.min(lines.length, rawWindow.startLine + TEXT_TRUNCATE_LINES - 1).toLocaleString(),
+                  total: lines.length.toLocaleString(),
+                })}</span>
             )}
             {isMarkdown && previewMode && isMarkdownPreviewTooLarge && (
               <span>{t("viewer.markdownTooLarge", { size: formatSize(MARKDOWN_PREVIEW_MAX_BYTES) })}</span>
@@ -875,12 +921,19 @@ function TextFileViewer({ filePath, cwd }: Props) {
             <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, markdownMathOptions]]} rehypePlugins={[rehypeKatex]}>{markdownContent}</ReactMarkdown>
           </div>
         ) : isLargeTextFile || shouldTruncateRaw ? (
-          <PlainTextView content={rawContent} wrapLines={wrapLines} />
+          <PlainTextView content={rawContent} wrapLines={wrapLines} lineNumber={lineNumber} startLine={rawWindow.startLine} />
         ) : (
-          <SyntaxHighlighter
-            language={language === "text" ? "plaintext" : language}
+          <CodeHighlighter
+            language={normalizeLanguage(language)}
             style={isDark ? vscDarkPlus : vs}
             showLineNumbers
+            wrapLines={Boolean(lineNumber)}
+            lineProps={(currentLine) => currentLine === lineNumber
+              ? ({
+                "data-checker-line": currentLine,
+                style: { background: "rgba(250, 204, 21, 0.16)", display: "block" },
+              } as HTMLProps<HTMLElement>)
+              : {}}
             lineNumberStyle={{
               color: "var(--text-dim)",
               fontStyle: "normal",
@@ -900,7 +953,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
             wrapLongLines={wrapLines}
           >
             {content}
-          </SyntaxHighlighter>
+          </CodeHighlighter>
         )}
       </div>
     </div>

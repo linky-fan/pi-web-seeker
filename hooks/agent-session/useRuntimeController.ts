@@ -4,9 +4,11 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { apiPath } from "@/lib/api-path";
 import {
+  agentRunCompletion,
   appendCompletedMessage,
   extensionCustomUiReducer,
   isAbortError,
+  isPromotingLiveStream,
   noticeReducer,
   runtimeErrorMessage,
   streamReducer,
@@ -32,6 +34,7 @@ interface RuntimeOptions {
   gate: {
     capture: () => { generation: number; identity: string };
     isCurrent: (token: { generation: number; identity: string }) => boolean;
+    mountedRef: React.MutableRefObject<boolean>;
   };
   loadSession: (sid: string, options?: { showLoading?: boolean; includeState?: boolean }) => Promise<AgentStateResponse | null | undefined>;
   applyPreferenceState: (state: LiveAgentState | undefined) => void;
@@ -62,6 +65,7 @@ export function useRuntimeController(options: RuntimeOptions) {
   const [extensionWidgets, setExtensionWidgets] = useState<Array<{ key: string; lines: string[]; placement?: "aboveEditor" | "belowEditor" }>>([]);
   const agentRunningRef = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const streamSessionRef = useRef<string | null>(null);
   const connectionGenerationRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
   const stateRequestRef = useRef<AbortController | null>(null);
@@ -80,6 +84,7 @@ export function useRuntimeController(options: RuntimeOptions) {
     reconnectTimerRef.current = null;
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
+    streamSessionRef.current = null;
     stateRequestRef.current?.abort();
     stateRequestRef.current = null;
   }, []);
@@ -141,6 +146,28 @@ export function useRuntimeController(options: RuntimeOptions) {
     }
   }, [addNotice, chatInputRef]);
 
+  const finalizeAgentRun = useCallback(() => {
+    updateRunning(false); setAgentPhase(null); setToolExecutionStatuses(new Map()); setRetryInfo(null);
+    dispatch({ type: "end" });
+    const sid = sessionIdRef.current;
+    if (sid) {
+      const token = gate.capture();
+      void loadSession(sid).then(() => {
+        if (!gate.isCurrent(token) || sid !== sessionIdRef.current) return;
+        stateRequestRef.current?.abort();
+        const controller = new AbortController();
+        stateRequestRef.current = controller;
+        fetch(apiPath(`agent/${encodeURIComponent(sid)}`), { signal: controller.signal })
+          .then((response) => response.json())
+          .then((result: AgentStateResponse) => {
+            if (gate.isCurrent(token) && sid === sessionIdRef.current && stateRequestRef.current === controller) applyAgentState(result);
+          })
+          .catch((caught) => { if (!isAbortError(caught)) console.error("Failed to refresh Agent state:", caught); });
+      });
+    }
+    onAgentEnd?.();
+  }, [applyAgentState, gate, loadSession, onAgentEnd, sessionIdRef, updateRunning]);
+
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     switch (event.type) {
       case "extension_ui_request": handleExtensionUiRequest(event as ExtensionUiRequest); break;
@@ -155,26 +182,17 @@ export function useRuntimeController(options: RuntimeOptions) {
         setTaskError(null); updateRunning(true); setAgentPhase({ kind: "waiting_model" });
         setToolExecutionStatuses(new Map()); dispatch({ type: "start" }); break;
       case "agent_end": {
-        updateRunning(false); setAgentPhase(null); setToolExecutionStatuses(new Map()); setRetryInfo(null); dispatch({ type: "end" });
-        const sid = sessionIdRef.current;
-        if (sid) {
-          const token = gate.capture();
-          void loadSession(sid).then(() => {
-            if (!gate.isCurrent(token) || sid !== sessionIdRef.current) return;
-            stateRequestRef.current?.abort();
-            const controller = new AbortController();
-            stateRequestRef.current = controller;
-            fetch(apiPath(`agent/${encodeURIComponent(sid)}`), { signal: controller.signal })
-              .then((response) => response.json())
-              .then((result: AgentStateResponse) => {
-                if (gate.isCurrent(token) && sid === sessionIdRef.current && stateRequestRef.current === controller) applyAgentState(result);
-              })
-              .catch((caught) => { if (!isAbortError(caught)) console.error("Failed to refresh Agent state:", caught); });
-          });
-        }
-        onAgentEnd?.();
+        // 1.4 emits agent_end per run inside a longer run: retries and queued
+        // continuations follow, and agent_settled marks the real end.
+        const completion = agentRunCompletion(event);
+        if (completion === "continue") break;
+        dispatch({ type: "end" });
+        setAgentPhase(null);
+        setToolExecutionStatuses(new Map());
+        if (completion === "settled") finalizeAgentRun();
         break;
       }
+      case "agent_settled": finalizeAgentRun(); break;
       case "message_start": case "message_update": {
         const message = event.message as Partial<AgentMessage> | undefined;
         if (message) {
@@ -227,17 +245,19 @@ export function useRuntimeController(options: RuntimeOptions) {
         else if (!event.aborted && sessionIdRef.current) void loadSession(sessionIdRef.current);
         break;
     }
-  }, [addNotice, applyAgentState, clearConnection, gate, handleExtensionUiRequest, loadSession, messagesRef, onAgentEnd, sessionIdRef, setMessages, updateRunning]);
+  }, [addNotice, clearConnection, finalizeAgentRun, handleExtensionUiRequest, loadSession, messagesRef, sessionIdRef, setMessages, updateRunning]);
   baseAgentEventHandlerRef.current = handleAgentEvent;
 
   const connectEvents = useCallback((sid: string, options: { syncOnConnect?: boolean } = {}) => {
     const syncOnConnect = options.syncOnConnect ?? true;
     clearConnection();
-    const lifecycleToken = gate.capture();
     const connectionGeneration = connectionGenerationRef.current;
     const source = new EventSource(apiPath(`agent/${encodeURIComponent(sid)}/events`));
     eventSourceRef.current = source;
-    const isCurrent = () => gate.isCurrent(lifecycleToken)
+    streamSessionRef.current = sid;
+    // The lifecycle identity flips from cwd:* to session:* when a new session is
+    // promoted, so gate on the live stream and session id instead of the identity token.
+    const isCurrent = () => gate.mountedRef.current
       && connectionGenerationRef.current === connectionGeneration
       && eventSourceRef.current === source
       && sessionIdRef.current === sid;
@@ -258,7 +278,7 @@ export function useRuntimeController(options: RuntimeOptions) {
       eventSourceRef.current = null;
       reconnectTimerRef.current = window.setTimeout(() => {
         reconnectTimerRef.current = null;
-        if (gate.isCurrent(lifecycleToken) && connectionGenerationRef.current === connectionGeneration && agentRunningRef.current && sessionIdRef.current === sid) {
+        if (gate.mountedRef.current && connectionGenerationRef.current === connectionGeneration && agentRunningRef.current && sessionIdRef.current === sid) {
           connectEvents(sid, { syncOnConnect: true });
         }
       }, 1000);
@@ -281,6 +301,10 @@ export function useRuntimeController(options: RuntimeOptions) {
   }, [sessionIdRef]);
 
   useEffect(() => {
+    // Promoting a new session changes the identity from cwd:* to session:<id> while
+    // the turn is still streaming. Keep that stream and its live state intact.
+    if (isPromotingLiveStream(identity, streamSessionRef.current, eventSourceRef.current !== null)) return clearConnection;
+
     clearConnection();
     updateRunning(false);
     dispatch({ type: "reset" });

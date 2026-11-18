@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentMessage, SessionInfo } from "@/lib/types";
-import { sendAgentCommand } from "@/lib/agent-client";
+import { AgentCommandError, isProjectTrustRequiredError, sendAgentCommand } from "@/lib/agent-client";
 import { apiPath } from "@/lib/api-path";
 import {
   BUDDY_MODE_STORAGE_PREFIX,
+  canRestoreQueuedInput,
   PLAN_EXECUTION_MODE_STORAGE_PREFIX,
   PLAN_MODE_STORAGE_PREFIX,
   SUBAGENTS_MODE_STORAGE_PREFIX,
@@ -41,6 +42,7 @@ interface CommandsOptions {
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
   pendingScrollToUserRef: React.MutableRefObject<boolean>;
+  insertComposerText?: (text: string) => void;
 }
 
 function persistMigratedMode(key: string, value: string | null) {
@@ -50,6 +52,12 @@ function persistMigratedMode(key: string, value: string | null) {
   } catch { /* localStorage may be unavailable */ }
 }
 
+export interface ProjectTrustPrompt {
+  cwd: string;
+  message: string;
+  images?: AttachedImage[];
+}
+
 export function useCommandsController(options: CommandsOptions) {
   const {
     identity, session, newSessionCwd, isNew, sessionIdRef, agentRunning, setAgentRunning,
@@ -57,9 +65,14 @@ export function useCommandsController(options: CommandsOptions) {
     setCompactError, loadSession, loadContext, setActiveLeafId, setPendingModel,
     connectEvents, newSessionModel, thinkingLevel, planMode, planExecutionMode,
     buddyMode, buddyReviewerModel, subagentsEnabled, onSessionCreated, onSessionForked, pendingScrollToUserRef,
+    insertComposerText,
   } = options;
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null);
+  const [trustPrompt, setTrustPrompt] = useState<ProjectTrustPrompt | null>(null);
+  const [trustResolving, setTrustResolving] = useState(false);
   const operationRef = useRef({ send: 0, fork: 0, compact: 0, navigate: 0 });
+  const restoredQueuedRef = useRef<(text: string) => void>(() => {});
+  restoredQueuedRef.current = (text) => insertComposerText?.(text);
 
   useEffect(() => {
     operationRef.current.send += 1;
@@ -98,8 +111,10 @@ export function useCommandsController(options: CommandsOptions) {
             ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
           }),
         });
-        const result = await response.json() as { sessionId?: string; error?: string };
-        if (!response.ok || result.error || !result.sessionId) throw new Error(result.error ?? `HTTP ${response.status}`);
+        const result = await response.json() as { sessionId?: string; error?: string; code?: string; cwd?: string };
+        if (!response.ok || result.error || !result.sessionId) {
+          throw new AgentCommandError(result.error ?? `HTTP ${response.status}`, response.status, result.code, result.cwd);
+        }
         if (operation !== operationRef.current.send) return false;
         const realId = result.sessionId;
         sessionIdRef.current = realId;
@@ -134,18 +149,63 @@ export function useCommandsController(options: CommandsOptions) {
       return operation === operationRef.current.send;
     } catch (caught) {
       if (operation !== operationRef.current.send) return false;
-      console.error("Failed to send message:", caught);
       setMessages((current) => current[current.length - 1] === userMessage ? current.slice(0, -1) : current);
       setAgentRunning(false); setAgentPhase(null); dispatch({ type: "end" });
+      if (isProjectTrustRequiredError(caught)) {
+        setTrustPrompt({ cwd: caught.cwd, message, ...(images?.length ? { images } : {}) });
+        return false;
+      }
+      console.error("Failed to send message:", caught);
       setTaskError(caught instanceof Error ? caught.message : String(caught));
       return false;
     }
   }, [agentRunning, buddyMode, buddyReviewerModel, connectEvents, dispatch, isNew, newSessionCwd, newSessionModel, onSessionCreated, pendingScrollToUserRef, planExecutionMode, planMode, session, sessionIdRef, setAgentPhase, setAgentRunning, setMessages, setPendingModel, setTaskError, subagentsEnabled, thinkingLevel]);
 
+  const sendRef = useRef(handleSend);
+  sendRef.current = handleSend;
+
+  const resolveProjectTrust = useCallback(async (trusted: boolean) => {
+    const pending = trustPrompt;
+    if (!pending || trustResolving) return false;
+    setTrustResolving(true);
+    try {
+      const response = await fetch(apiPath("workspaces/trust"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: pending.cwd, trusted }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok || result.error) {
+        throw new AgentCommandError(result.error ?? `HTTP ${response.status}`, response.status);
+      }
+      setTrustPrompt(null);
+      // Retry either way: a deny starts the session without project resources instead of blocking it.
+      return await sendRef.current(pending.message, pending.images);
+    } catch (caught) {
+      console.error("Failed to record project trust:", caught);
+      setTaskError(caught instanceof Error ? caught.message : String(caught));
+      return false;
+    } finally {
+      setTrustResolving(false);
+    }
+  }, [setTaskError, trustPrompt, trustResolving]);
+
+  const dismissProjectTrust = useCallback(() => {
+    if (!trustResolving) setTrustPrompt(null);
+  }, [trustResolving]);
+
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid) return;
-    try { await sendAgentCommand(sid, { type: "abort" }); }
+    try {
+      const result = await sendAgentCommand<{ queuedMessages?: { steering?: string[]; followUp?: string[] } } | null>(sid, { type: "abort" });
+      // Abort drops queued input; restore it so the user can resend. A response from a
+      // previous session must never land in the composer of the session now on screen.
+      if (!canRestoreQueuedInput(sid, sessionIdRef.current)) return;
+      const queued = result?.queuedMessages;
+      const restored = [...(queued?.steering ?? []), ...(queued?.followUp ?? [])].filter((text) => text.trim());
+      if (restored.length) restoredQueuedRef.current(restored.join("\n\n"));
+    }
     catch (caught) { if (sid === sessionIdRef.current) console.error("Failed to abort:", caught); }
   }, [sessionIdRef]);
 
@@ -228,5 +288,7 @@ export function useCommandsController(options: CommandsOptions) {
   return {
     forkingEntryId, setForkingEntryId, handleSend, handleAbort, handleFork, handleNavigate,
     handleLeafChange, handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
+    projectTrustPrompt: trustPrompt, projectTrustResolving: trustResolving,
+    resolveProjectTrust, dismissProjectTrust,
   };
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { appendUniqueTab, closeInspectorTab } = await import("../components/app-shell/inspector-state.ts");
+const { appendUniqueTab, closeInspectorTab, isInspectorMaximized } = await import("../components/app-shell/inspector-state.ts");
 const {
   buildFluidMetrics,
   normalizeExplorerMentionPath,
@@ -55,6 +55,19 @@ test("inspector tabs de-duplicate and select the last remaining tab on close", (
     activeTabId: null,
     panelOpen: false,
   });
+});
+
+test("inspector maximize applies uniformly to every tab kind", () => {
+  const tabs = [
+    { id: "file:/a", label: "a", kind: "file", filePath: "/a" },
+    { id: "checker:/work", label: "Checks", kind: "checker", cwd: "/work" },
+    { id: "browser:s1", label: "Browser", kind: "browser", agentSessionId: "s1", cwd: "/work" },
+    { id: "remote:s1", label: "Remote", kind: "remote", agentSessionId: "s1", cwd: "/work" },
+  ];
+
+  assert.equal(isInspectorMaximized(false, tabs[0]), false);
+  for (const tab of tabs) assert.equal(isInspectorMaximized(true, tab), true);
+  assert.equal(isInspectorMaximized(true, null), false);
 });
 
 test("header and explorer helpers normalize cross-platform values", () => {

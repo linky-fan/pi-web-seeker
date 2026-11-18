@@ -284,7 +284,9 @@ export function areMessageViewPropsEqual(previous: MessageViewProps, next: Messa
     || previous.onEditContent !== next.onEditContent
     || previous.showTimestamp !== next.showTimestamp
     || previous.prevTimestamp !== next.prevTimestamp
-    || previous.nextTimestamp !== next.nextTimestamp) return false;
+    || previous.nextTimestamp !== next.nextTimestamp
+    || previous.animateText !== next.animateText
+    || previous.animationToken !== next.animationToken) return false;
   if (previous.comsNetResponse?.peer !== next.comsNetResponse?.peer
     || previous.comsNetResponse?.msgId !== next.comsNetResponse?.msgId) return false;
   const ids = messageToolCallIds(previous.message);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { APP_NAME } from "@/lib/branding";
 import { useLocale } from "@/lib/i18n";
 import type { SessionInfo } from "@/lib/types";
@@ -431,13 +431,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onNewSession?.(tempId, selectedCwd);
   }, [selectedCwd, onNewSession]);
 
-  const recentCwds = singleWorkspace && defaultCwd ? [defaultCwd] : getRecentCwds(allSessions);
-  const filteredSessions = selectedCwd
-    ? allSessions.filter((s) => s.cwd === selectedCwd)
-    : allSessions;
-
-  // Build parent-child tree within the filtered set
-  const sessionTree = buildSessionTree(filteredSessions);
+  // These derive from the session list and the workspace filter; recomputing them
+  // on every keystroke or menu toggle was wasted work.
+  const recentCwds = useMemo(
+    () => (singleWorkspace && defaultCwd ? [defaultCwd] : getRecentCwds(allSessions)),
+    [allSessions, defaultCwd, singleWorkspace],
+  );
+  const filteredSessions = useMemo(
+    () => (selectedCwd ? allSessions.filter((s) => s.cwd === selectedCwd) : allSessions),
+    [allSessions, selectedCwd],
+  );
+  const sessionTree = useMemo(() => buildSessionTree(filteredSessions), [filteredSessions]);
 
   useEffect(() => {
     if (!dropdownOpen) return;

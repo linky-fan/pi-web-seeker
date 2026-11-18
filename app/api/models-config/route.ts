@@ -3,6 +3,7 @@ import { readFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { ensureModelsConfigCompatible, normalizeModelsJsonCompat, writeModelsJsonAtomic } from "@/lib/models-config-compat";
+import { invalidateModelsPayloadCache } from "@/lib/models-payload";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,7 @@ export async function PUT(req: Request) {
   try {
     const body = await req.json() as Record<string, unknown>;
     writeModelsJson(body);
-    // Model registry refreshes on each /api/models request (no local cache to invalidate)
+    invalidateModelsPayloadCache();
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

@@ -13,8 +13,9 @@ export interface ComposerActivity {
 
 export interface ChatInputHandle {
   insertText: (text: string) => void;
-  insertIfEmpty: (text: string) => void;
+  insertIfEmpty: (text: string) => boolean;
   addImages: (files: File[]) => void;
+  clearDraft: () => void;
 }
 
 export type ThinkingLevel = "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";

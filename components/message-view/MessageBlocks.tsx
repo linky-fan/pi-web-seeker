@@ -23,6 +23,8 @@ interface MessageBlockProps {
   streamingDuration?: number;
   toolDuration?: number;
   missingResultDuration?: number;
+  animateText?: boolean;
+  animationToken?: string;
 }
 
 function MessageBlockImpl({
@@ -33,8 +35,10 @@ function MessageBlockImpl({
   streamingDuration,
   toolDuration,
   missingResultDuration,
+  animateText,
+  animationToken,
 }: MessageBlockProps) {
-  if (block.type === "text") return <MarkdownContent block={block as TextContent} />;
+  if (block.type === "text") return <MarkdownContent block={block as TextContent} animate={animateText} animationToken={animationToken} />;
   if (block.type === "thinking") {
     return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} />;
   }
@@ -76,5 +80,7 @@ export const MessageBlock = memo(MessageBlockImpl, (previous, next) =>
     && previous.liveStatus === next.liveStatus
     && previous.streamingDuration === next.streamingDuration
     && previous.toolDuration === next.toolDuration
-    && previous.missingResultDuration === next.missingResultDuration,
+    && previous.missingResultDuration === next.missingResultDuration
+    && previous.animateText === next.animateText
+    && previous.animationToken === next.animationToken,
 );

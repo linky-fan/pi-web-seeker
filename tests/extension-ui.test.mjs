@@ -19,8 +19,8 @@ function createFakeSession(overrides = {}) {
     autoRetryEnabled: true,
     model: { provider: "test", id: "model" },
     modelRuntime: { getModel: () => undefined, getAvailableSnapshot: () => [] },
-    sessionManager: {},
-    settingsManager: {},
+    sessionManager: { getCwd: () => "/tmp/pi-web-extension-ui-test" },
+    settingsManager: { setProjectTrusted: () => {} },
     agent: { state: { systemPrompt: "test" } },
     getAllTools: () => allTools,
     getActiveToolNames: () => [...activeToolNames],
@@ -29,7 +29,7 @@ function createFakeSession(overrides = {}) {
       subscriber = listener;
       return () => { unsubscribeCalls += 1; subscriber = null; };
     },
-    prompt: async (_text, options) => { options?.preflightResult?.(true); },
+    prompt: async (_text, options) => { options?.preflightResult?.("started"); },
     reload: async (options) => {
       reloadCalls += 1;
       await options?.beforeSessionStart?.();
@@ -294,7 +294,7 @@ test("accepted prompt failures retire once while preflight errors stay reusable"
   t.mock.method(console, "error", () => {});
   const failedFake = createFakeSession({
     prompt: async (_text, options) => {
-      options?.preflightResult?.(true);
+      options?.preflightResult?.("started");
       throw new Error("agent loop failed");
     },
   });
@@ -315,8 +315,7 @@ test("accepted prompt failures retire once while preflight errors stay reusable"
   );
 
   const preflightFake = createFakeSession({
-    prompt: async (_text, options) => {
-      options?.preflightResult?.(false);
+    prompt: async () => {
       throw new Error("authentication required");
     },
   });

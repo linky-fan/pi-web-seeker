@@ -672,15 +672,16 @@ function targetCwdForManifest(manifest: DebugBundleManifest, create: boolean): s
   return target;
 }
 
-export function inspectDebugBundle(data: Buffer): DebugBundleSummary {
-  if (data.length > DEBUG_BUNDLE_MAX_BYTES) throw new Error("Debug bundle is too large");
-  const files = parseTarGz(data);
+function inspectDebugBundleFiles(files: Map<string, ParsedTarEntry>): {
+  summary: DebugBundleSummary;
+  parsedSession: ReturnType<typeof parseSessionJsonl>;
+} {
   const manifestEntry = files.get("manifest.json");
   const sessionEntry = files.get("session/session.jsonl");
   if (!manifestEntry || !sessionEntry) throw new Error("Debug bundle is missing manifest.json or session/session.jsonl");
   const manifest = parseManifest(JSON.parse(manifestEntry.data.toString("utf8")) as unknown);
-  const session = parseSessionJsonl(sessionEntry.data);
-  if (session.header.id !== manifest.session.originalId) {
+  const parsedSession = parseSessionJsonl(sessionEntry.data);
+  if (parsedSession.header.id !== manifest.session.originalId) {
     throw new Error("Debug bundle manifest/session id mismatch");
   }
   for (const media of manifest.media) {
@@ -700,15 +701,23 @@ export function inspectDebugBundle(data: Buffer): DebugBundleSummary {
     warnings.push(`Source platform is ${manifest.source.platform}; importing on ${process.platform}. Original absolute paths will be metadata only.`);
   }
   return {
-    manifest,
-    targetCwd: targetCwdForManifest(manifest, false),
-    sessionId: manifest.session.originalId,
-    fileCount: manifest.workspace.files.length,
-    fileBytes,
-    mediaCount: manifest.media.length,
-    mediaBytes,
-    warnings,
+    summary: {
+      manifest,
+      targetCwd: targetCwdForManifest(manifest, false),
+      sessionId: manifest.session.originalId,
+      fileCount: manifest.workspace.files.length,
+      fileBytes,
+      mediaCount: manifest.media.length,
+      mediaBytes,
+      warnings,
+    },
+    parsedSession,
   };
+}
+
+export function inspectDebugBundle(data: Buffer): DebugBundleSummary {
+  if (data.length > DEBUG_BUNDLE_MAX_BYTES) throw new Error("Debug bundle is too large");
+  return inspectDebugBundleFiles(parseTarGz(data)).summary;
 }
 
 function newSessionId(existingIds: Set<string>): string {
@@ -729,8 +738,9 @@ function timestampForFile(value: string): string {
 }
 
 export function importDebugBundle(data: Buffer, existingSessionIds: Set<string>): ImportedDebugBundle {
+  if (data.length > DEBUG_BUNDLE_MAX_BYTES) throw new Error("Debug bundle is too large");
   const files = parseTarGz(data);
-  const summary = inspectDebugBundle(data);
+  const { summary, parsedSession } = inspectDebugBundleFiles(files);
   const targetCwd = targetCwdForManifest(summary.manifest, true);
   fs.mkdirSync(targetCwd, { recursive: true });
 
@@ -755,14 +765,11 @@ export function importDebugBundle(data: Buffer, existingSessionIds: Set<string>)
     restoredBytes += item.data.length;
   }
 
-  const sessionEntry = files.get("session/session.jsonl");
-  if (!sessionEntry) throw new Error("Debug bundle session missing during import");
-  const parsed = parseSessionJsonl(sessionEntry.data);
-  const rehydratedEntries = rehydrateMedia(parsed.entries, files);
+  const rehydratedEntries = rehydrateMedia(parsedSession.entries, files);
   const header: SessionHeader = {
-    ...parsed.header,
+    ...parsedSession.header,
     cwd: targetCwd,
-    id: existingSessionIds.has(parsed.header.id) ? newSessionId(existingSessionIds) : parsed.header.id,
+    id: existingSessionIds.has(parsedSession.header.id) ? newSessionId(existingSessionIds) : parsedSession.header.id,
     parentSession: undefined,
   };
   existingSessionIds.add(header.id);

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, SessionInfo } from "@/lib/types";
 import { apiPath } from "@/lib/api-path";
 import { calculateSessionStats, isAbortError } from "./helpers";
-import type { AgentStateResponse, SessionData, ThinkingLevelOption } from "./types";
+import type { AgentStateResponse, SessionData, SessionStats, ThinkingLevelOption } from "./types";
 
 interface LifecycleGate {
   capture: () => { generation: number; identity: string };
@@ -26,6 +26,7 @@ export function useSessionDataController({
   const [entryIds, setEntryIds] = useState<string[]>([]);
   const [currentModelOverride, setCurrentModelOverride] = useState<{ provider: string; modelId: string } | null>(null);
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
+  const [sessionStatsFromServer, setSessionStatsFromServer] = useState<SessionStats | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const messagesRef = useRef<AgentMessage[]>([]);
   const sessionRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
@@ -43,6 +44,7 @@ export function useSessionDataController({
     setActiveLeafId(null);
     setMessages([]);
     setEntryIds([]);
+    setSessionStatsFromServer(null);
     setCurrentModelOverride(null);
     setPendingModel(null);
     setError(null);
@@ -89,6 +91,7 @@ export function useSessionDataController({
       setActiveLeafId(next.leafId);
       setMessages(next.context.messages);
       setEntryIds(next.context.entryIds ?? []);
+      setSessionStatsFromServer(next.sessionStats ?? null);
       setCurrentModelOverride(null);
       setError(null);
       return includeState ? next.agentState ?? null : undefined;
@@ -129,7 +132,12 @@ export function useSessionDataController({
     }
   }, [gate]);
 
-  const sessionStats = useMemo(() => calculateSessionStats(messages), [messages]);
+  // While the agent runs, streamed messages describe the live turn; otherwise the
+  // API value covers the whole session, including history compaction hid from view.
+  const sessionStats = useMemo(
+    () => sessionStatsFromServer?.tokens ? sessionStatsFromServer : calculateSessionStats(messages),
+    [messages, sessionStatsFromServer],
+  );
   const sessionThinkingLevel = data?.context.thinkingLevel as ThinkingLevelOption | undefined;
 
   return {

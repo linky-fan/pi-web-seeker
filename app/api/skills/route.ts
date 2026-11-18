@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { DefaultResourceLoader, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { assertPathAllowed, getAllowedRoots, isPathAllowed } from "@/lib/allowed-roots";
+import { createTrustAwareSettingsManager, reloadResourceLoaderWithTrust } from "@/lib/project-trust";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +21,13 @@ export async function GET(req: Request) {
     } catch {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
-    const loader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir() });
-    await loader.reload();
+    const agentDir = getAgentDir();
+    const loader = new DefaultResourceLoader({
+      cwd,
+      agentDir,
+      settingsManager: createTrustAwareSettingsManager(cwd, agentDir),
+    });
+    await reloadResourceLoaderWithTrust(loader, cwd);
     const { skills, diagnostics } = loader.getSkills();
     return NextResponse.json({ skills, diagnostics });
   } catch (e) {

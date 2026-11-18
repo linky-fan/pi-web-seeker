@@ -26,6 +26,10 @@ export interface MessageViewProps {
   showTimestamp?: boolean;
   prevTimestamp?: number;
   nextTimestamp?: number;
+  /** True once for rows that arrived after the conversation had settled. */
+  animateText?: boolean;
+  /** Stable identity used to deduplicate the entrance across remounts. */
+  animationToken?: string;
 }
 
 export type ComsNetDirection = "inbound" | "outbound" | "response-in" | "response-out";

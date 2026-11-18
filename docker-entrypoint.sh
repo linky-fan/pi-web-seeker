@@ -5,6 +5,14 @@ APP_UID="${PI_WEB_UID:-1000}"
 APP_GID="${PI_WEB_GID:-1000}"
 CHOWN_WORKSPACE="${PI_WEB_CHOWN_WORKSPACE:-1}"
 
+case "${PI_WEB_ACCESS_TOKEN:-}" in
+  *[![:space:]]*) ;;
+  *)
+    echo "PI_WEB_ACCESS_TOKEN must be set to a non-empty token in Docker." >&2
+    exit 1
+    ;;
+esac
+
 mkdir -p /home/piweb/.pi/agent /workspace
 
 # Mounted host config directories may be created as root by Docker. Fix only

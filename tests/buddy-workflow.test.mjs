@@ -11,7 +11,7 @@ const {
   getBuddyReviewerControlPresentation,
   shouldShowBuddyReviewerControl,
 } = await import("../components/chat-input/helpers.ts");
-const { AgentSessionWrapper } = await import("../lib/rpc-manager.ts");
+const { AgentSessionWrapper, createWorkflowPromptExtension } = await import("../lib/rpc-manager.ts");
 const {
   getDefaultActiveToolNames,
   includeDefaultExtensionTools,
@@ -21,6 +21,37 @@ const writer = { provider: "writer-provider", modelId: "writer-model" };
 const reviewer = { provider: "review-provider", modelId: "review-model" };
 const availableStatus = { subagentsAvailable: true, missingTools: [], installCommand: "install", loadErrors: [] };
 const t = (key) => key;
+
+test("workflow prompt extension applies only the current Plan and Buddy state", () => {
+  const state = {
+    planModeEnabled: true,
+    planExecutionMode: "main",
+    buddyMode: "plan",
+    buddyReviewerModel: reviewer,
+    subagentsEnabled: false,
+    forceEmptySystemPrompt: false,
+  };
+  const extension = createWorkflowPromptExtension(state);
+  let handleBeforeAgentStart;
+  extension.factory({ on: (event, handler) => {
+    assert.equal(event, "before_agent_start");
+    handleBeforeAgentStart = handler;
+  } });
+
+  const event = { systemPrompt: "base prompt", systemPromptOptions: { promptGuidelines: [] } };
+  assert.equal(handleBeforeAgentStart(event), undefined);
+  assert.match(event.systemPromptOptions.promptGuidelines.join("\n"), /Plan Mode is active/);
+  assert.match(event.systemPromptOptions.promptGuidelines.join("\n"), /Buddy Plan rules/);
+
+  state.planModeEnabled = false;
+  state.buddyMode = "off";
+  const normalEvent = { systemPrompt: "base prompt", systemPromptOptions: { promptGuidelines: [] } };
+  assert.equal(handleBeforeAgentStart(normalEvent), undefined);
+  assert.deepEqual(normalEvent.systemPromptOptions.promptGuidelines, []);
+
+  state.forceEmptySystemPrompt = true;
+  assert.deepEqual(handleBeforeAgentStart({ systemPrompt: "base prompt", systemPromptOptions: { promptGuidelines: [] } }), { systemPrompt: "" });
+});
 
 test("composer presents Buddy configuration separately from an active reviewer", () => {
   assert.equal(shouldShowBuddyReviewerControl(2, true), true);
@@ -163,6 +194,7 @@ function createFakeSession() {
     .map((name) => ({ name, description: name }));
   let activeToolNames = ["read", "bash", "extension_tool"];
   const state = { systemPrompt: "base prompt", thinkingLevel: "off" };
+  const queues = { steering: [], followUp: [] };
   const inner = {
     sessionId: "buddy-test",
     sessionFile: "/tmp/buddy-test.jsonl",
@@ -178,6 +210,7 @@ function createFakeSession() {
     sessionManager: {},
     settingsManager: {},
     agent: { state },
+    get systemPrompt() { return state.systemPrompt; },
     _baseSystemPrompt: "base prompt",
     getAllTools: () => allTools,
     getActiveToolNames: () => [...activeToolNames],
@@ -188,9 +221,19 @@ function createFakeSession() {
       state.systemPrompt = prompt;
     },
     getContextUsage: () => undefined,
+    getSteeringMessages: () => [...queues.steering],
+    getFollowUpMessages: () => [...queues.followUp],
+    get pendingMessageCount() { return queues.steering.length + queues.followUp.length; },
+    clearQueue: () => {
+      const cleared = { steering: [...queues.steering], followUp: [...queues.followUp] };
+      queues.steering.length = 0;
+      queues.followUp.length = 0;
+      return cleared;
+    },
+    abort: async () => {},
     dispose: () => {},
   };
-  return { inner, getActiveToolNames: () => activeToolNames };
+  return { inner, queues, getActiveToolNames: () => activeToolNames };
 }
 
 test("RPC workflow state applies Buddy prompts/tools and restores the original snapshot on full exit", async (t) => {
@@ -207,10 +250,26 @@ test("RPC workflow state applies Buddy prompts/tools and restores the original s
     buddyReviewerModel: reviewer,
   });
   assert.deepEqual(reviewerResult.buddyReviewerModel, reviewer);
+  fake.inner.messages = [{ role: "user", content: "one" }];
+  fake.queues.steering.push("queued steer");
+  fake.queues.followUp.push("queued follow-up");
   const configuredState = await wrapper.send({ type: "get_state" });
   assert.equal(configuredState.buddyMode, "off");
+  assert.equal(configuredState.messageCount, 1);
+  assert.equal(configuredState.pendingMessageCount, 2);
+  assert.deepEqual(configuredState.steeringMessages, ["queued steer"]);
+  assert.deepEqual(configuredState.followUpMessages, ["queued follow-up"]);
   assert.deepEqual(configuredState.buddyReviewerModel, reviewer);
-  assert.equal(fake.inner.agent.state.systemPrompt, "base prompt");
+  assert.equal((await wrapper.send({ type: "get_state" })).systemPrompt, "base prompt");
+
+  const aborted = await wrapper.send({ type: "abort" });
+  assert.deepEqual(aborted, {
+    queuedMessages: { steering: ["queued steer"], followUp: ["queued follow-up"] },
+  });
+  const afterAbort = await wrapper.send({ type: "get_state" });
+  assert.equal(afterAbort.pendingMessageCount, 0);
+  assert.deepEqual(afterAbort.steeringMessages, []);
+  assert.deepEqual(afterAbort.followUpMessages, []);
 
   let result = await wrapper.send({
     type: "set_plan_mode",
@@ -220,8 +279,9 @@ test("RPC workflow state applies Buddy prompts/tools and restores the original s
   });
   assert.equal(result.planMode, true);
   assert.equal(result.buddyMode, "plan");
-  assert.match(fake.inner.agent.state.systemPrompt, /Buddy Plan rules/);
-  assert.equal(fake.inner.agent.state.systemPrompt.match(/Agent extension guidance/g)?.length, 1);
+  const buddyPlanState = await wrapper.send({ type: "get_state" });
+  assert.match(buddyPlanState.systemPrompt, /Buddy Plan rules/);
+  assert.equal(buddyPlanState.systemPrompt.match(/Agent extension guidance/g)?.length, 1);
   assert.equal(fake.getActiveToolNames().includes("Agent"), true);
 
   result = await wrapper.send({
@@ -232,8 +292,9 @@ test("RPC workflow state applies Buddy prompts/tools and restores the original s
   });
   assert.equal(result.planMode, true);
   assert.equal(result.buddyMode, "off");
-  assert.doesNotMatch(fake.inner.agent.state.systemPrompt, /Buddy review is active/);
-  assert.match(fake.inner.agent.state.systemPrompt, /Plan Mode is active/);
+  const planState = await wrapper.send({ type: "get_state" });
+  assert.doesNotMatch(planState.systemPrompt, /Buddy review is active/);
+  assert.match(planState.systemPrompt, /Plan Mode is active/);
 
   result = await wrapper.send({
     type: "set_plan_mode",
@@ -245,7 +306,7 @@ test("RPC workflow state applies Buddy prompts/tools and restores the original s
   assert.equal(result.planExecutionMode, "main");
   assert.equal(result.buddyMode, "off");
   assert.deepEqual(fake.getActiveToolNames(), ["read", "bash", "extension_tool"]);
-  assert.equal(fake.inner.agent.state.systemPrompt, "base prompt");
+  assert.equal((await wrapper.send({ type: "get_state" })).systemPrompt, "base prompt");
 
   result = await wrapper.send({
     type: "set_plan_mode",
@@ -256,7 +317,7 @@ test("RPC workflow state applies Buddy prompts/tools and restores the original s
   });
   assert.equal(result.planMode, false);
   assert.equal(result.buddyMode, "code");
-  assert.match(fake.inner.agent.state.systemPrompt, /Buddy Code rules/);
+  assert.match((await wrapper.send({ type: "get_state" })).systemPrompt, /Buddy Code rules/);
   assert.equal(fake.getActiveToolNames().includes("extension_tool"), true);
   assert.equal(fake.getActiveToolNames().includes("Agent"), true);
 
@@ -265,7 +326,7 @@ test("RPC workflow state applies Buddy prompts/tools and restores the original s
     buddyReviewerModel: { provider: "review-provider", modelId: "alternate-review" },
   });
   assert.equal(reviewerResult.buddyReviewerModel.modelId, "alternate-review");
-  assert.match(fake.inner.agent.state.systemPrompt, /review-provider\/alternate-review/);
+  assert.match((await wrapper.send({ type: "get_state" })).systemPrompt, /review-provider\/alternate-review/);
 
   result = await wrapper.send({
     type: "set_plan_mode",
@@ -275,7 +336,7 @@ test("RPC workflow state applies Buddy prompts/tools and restores the original s
   });
   assert.equal(result.planExecutionMode, "main");
   assert.deepEqual(fake.getActiveToolNames(), ["read", "bash", "extension_tool"]);
-  assert.equal(fake.inner.agent.state.systemPrompt, "base prompt");
+  assert.equal((await wrapper.send({ type: "get_state" })).systemPrompt, "base prompt");
 });
 
 test("RPC subagents mode adds conditional guidance once and restores the configured baseline", async (t) => {
@@ -293,7 +354,10 @@ test("RPC subagents mode adds conditional guidance once and restores the configu
   assert.equal(result.subagentsEnabled, true);
   assert.equal(fake.getActiveToolNames().includes("Agent"), true);
   assert.equal(fake.inner.agent.state.systemPrompt.match(/Agent extension guidance/g)?.length, 1);
-  assert.equal(fake.inner.agent.state.systemPrompt.match(/Subagents Mode is active/g)?.length, 1);
+  assert.equal(
+    (await wrapper.send({ type: "get_state" })).systemPrompt.match(/Subagents Mode is active/g)?.length,
+    1,
+  );
 
   result = await wrapper.send({
     type: "set_plan_mode",

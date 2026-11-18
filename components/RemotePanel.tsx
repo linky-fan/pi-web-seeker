@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { apiPath } from "@/lib/api-path";
+import { AgentCommandError } from "@/lib/agent-client";
+import { ProjectTrustDialog } from "@/components/ProjectTrustDialog";
+import { usePackageTrustGate } from "@/hooks/usePackageTrustGate";
 import type { RemoteApprovalDecision, RemoteConnectionState, RemoteEvent, RemoteProfile } from "@/lib/remote-types";
 
 interface Props {
   agentSessionId: string;
   cwd: string;
-  maximized: boolean;
-  onToggleMaximize: () => void;
   onCloseTab: () => void;
 }
 
@@ -60,7 +61,7 @@ function TerminalIcon({ size = 15 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3M13 15h4" /></svg>;
 }
 
-export function RemotePanel({ agentSessionId, cwd, maximized, onToggleMaximize, onCloseTab }: Props) {
+export function RemotePanel({ agentSessionId, cwd, onCloseTab }: Props) {
   const [status, setStatus] = useState<RemoteStatus | null>(null);
   const [session, setSession] = useState<RemoteConnectionState | null>(null);
   const [profiles, setProfiles] = useState<RemoteProfile[]>([]);
@@ -73,6 +74,8 @@ export function RemotePanel({ agentSessionId, cwd, maximized, onToggleMaximize, 
   const [drawerView, setDrawerView] = useState<RemoteDrawerView>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const packageTrust = usePackageTrustGate();
+  const { cwd: packageTrustCwd, dismiss: dismissPackageTrust, resolve: resolvePackageTrustDecision, resolving: packageTrustResolving, runWithTrust } = packageTrust;
   const terminalHostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -138,6 +141,10 @@ export function RemotePanel({ agentSessionId, cwd, maximized, onToggleMaximize, 
     setSession(null);
     setEvents([]);
   }, [agentSessionId]);
+
+  useEffect(() => {
+    dismissPackageTrust();
+  }, [agentSessionId, cwd, dismissPackageTrust]);
 
   useEffect(() => {
     setPassword("");
@@ -258,13 +265,45 @@ export function RemotePanel({ agentSessionId, cwd, maximized, onToggleMaximize, 
     return value;
   }, [agentSessionId, isCurrentRequest]);
 
-  const enableTools = useCallback(async () => {
+  const enableToolsRequest = useCallback(async () => {
     const generation = requestGenerationRef.current;
-    setBusy("setup"); setError(null);
-    try { await request("/api/remote/setup", "POST", { cwd, agentSessionId }); await loadStatus(); }
-    catch (cause) { if (isCurrentRequest(agentSessionId, generation)) setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { if (isCurrentRequest(agentSessionId, generation)) setBusy(null); }
-  }, [agentSessionId, cwd, isCurrentRequest, loadStatus, request]);
+    setBusy("setup");
+    try {
+      const response = await fetch(apiPath("/api/remote/setup"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cwd, agentSessionId }),
+      });
+      const body = await response.json() as { error?: string; code?: string; cwd?: string };
+      if (response.status === 428 && body.code === "PROJECT_TRUST_REQUIRED" && body.cwd) {
+        throw new AgentCommandError(body.error ?? "Project trust required", response.status, body.code, body.cwd);
+      }
+      if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+      if (isCurrentRequest(agentSessionId, generation)) await loadStatus();
+    } finally {
+      if (isCurrentRequest(agentSessionId, generation)) setBusy(null);
+    }
+  }, [agentSessionId, cwd, isCurrentRequest, loadStatus]);
+
+  const enableTools = useCallback(async () => {
+    setError(null);
+    try {
+      await runWithTrust(cwd, enableToolsRequest);
+    } catch (cause) {
+      setBusy(null);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [cwd, enableToolsRequest, runWithTrust]);
+
+  const resolvePackageTrust = useCallback(async (trusted: boolean) => {
+    setError(null);
+    try {
+      await resolvePackageTrustDecision(trusted);
+    } catch (cause) {
+      setBusy(null);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [resolvePackageTrustDecision]);
 
   const saveProfile = useCallback(async (event: FormEvent) => {
     event.preventDefault();
@@ -367,7 +406,6 @@ export function RemotePanel({ agentSessionId, cwd, maximized, onToggleMaximize, 
             <button className={drawerView === "targets" ? "active" : ""} onClick={() => toggleDrawer("targets")} aria-expanded={drawerView === "targets"} aria-controls="pi-remote-drawer">Targets <small>{profiles.length}</small></button>
             <button className={drawerView === "activity" ? "active" : ""} onClick={() => toggleDrawer("activity")} aria-expanded={drawerView === "activity"} aria-controls="pi-remote-drawer">Activity <small>{activityCount}</small></button>
           </>}
-          <button onClick={onToggleMaximize} title={maximized ? "Restore" : "Maximize"}>{maximized ? "Restore" : "Maximize"}</button>
           <button onClick={onCloseTab}>Close</button>
         </div>
       </header>
@@ -445,6 +483,13 @@ export function RemotePanel({ agentSessionId, cwd, maximized, onToggleMaximize, 
           </aside>
         </div>}
       </div>}
+      {packageTrustCwd && <ProjectTrustDialog
+        cwd={packageTrustCwd}
+        resolving={packageTrustResolving}
+        purpose="package"
+        onResolve={(trusted) => { void resolvePackageTrust(trusted); }}
+        onClose={dismissPackageTrust}
+      />}
     </div>
   );
 }

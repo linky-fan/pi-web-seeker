@@ -5,6 +5,7 @@ import { AgentsMdStatus } from "../AgentsMdStatus";
 import { BrandTypewriterHeader } from "../BrandTypewriter";
 import { ChatInput } from "../ChatInput";
 import type { ChatInputHandle, ChatInputProps } from "../chat-input/types";
+import { QuickStartActions } from "./QuickStartActions";
 import { ExtensionWidgets } from "./ExtensionUi";
 import { areComposerSurfacePropsEqual } from "./memoComparators";
 import type { ExtensionWidget } from "./types";
@@ -39,6 +40,9 @@ function ComposerSurfaceImpl(props: ComposerSurfaceProps) {
       >
         <div className="w-full max-w-[820px]">
           <div className="mb-3" style={{ marginLeft: 16, marginRight: 52 }}><BrandTypewriterHeader /></div>
+          {props.activeCwd ? (
+            <QuickStartActions onPick={(prompt) => props.inputRef?.current?.insertIfEmpty(prompt)} />
+          ) : null}
           <ComposerContents {...props} />
         </div>
       </div>

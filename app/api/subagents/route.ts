@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { DefaultResourceLoader, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { isProjectTrustedForLoad, reloadResourceLoaderWithTrust } from "@/lib/project-trust";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,8 @@ function installCommands() {
 }
 
 function readConfiguredPackages(agentDir: string, cwd: string): string[] {
-  const files = [
-    join(agentDir, "settings.json"),
-    join(cwd, ".pi", "agent", "settings.json"),
-  ];
+  const files = [join(agentDir, "settings.json")];
+  if (isProjectTrustedForLoad(cwd)) files.push(join(cwd, ".pi", "agent", "settings.json"));
   const packages: string[] = [];
 
   for (const file of files) {
@@ -56,7 +55,7 @@ export async function GET(req: Request) {
     const agentDir = getAgentDir();
     const configuredPackages = readConfiguredPackages(agentDir, cwd);
     const loader = new DefaultResourceLoader({ cwd, agentDir });
-    await loader.reload();
+    await reloadResourceLoaderWithTrust(loader, cwd);
     const extensions = loader.getExtensions();
     const subagentExtensions = extensions.extensions
       .filter((extension) => isSubagentSource(extension.path) || isSubagentSource(extension.resolvedPath))

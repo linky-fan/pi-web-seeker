@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runNpx } from "@/lib/npx";
 import { assertPathAllowed } from "@/lib/allowed-roots";
+import { isSafePackageSpec } from "@/lib/cli-args";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,10 @@ export async function POST(req: Request) {
   try {
     const { package: pkg, scope, cwd } = await req.json() as { package?: string; scope?: string; cwd?: string };
     if (!pkg?.trim()) return NextResponse.json({ error: "package required" }, { status: 400 });
+    // Reject option-like specifiers so npx never interprets the package as a flag.
+    if (!isSafePackageSpec(pkg.trim())) {
+      return NextResponse.json({ error: "Invalid package specifier" }, { status: 400 });
+    }
 
     const isGlobal = scope !== "project";
     if (!isGlobal) {

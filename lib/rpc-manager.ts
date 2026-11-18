@@ -9,8 +9,15 @@ import {
   type ExtensionUIDialogOptions,
   type ExtensionUIContext,
   type ExtensionWidgetOptions,
+  type InlineExtension,
 } from "@earendil-works/pi-coding-agent";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
+import {
+  applyProjectTrustToSettings,
+  ProjectTrustRequiredError,
+  projectTrustState,
+  reloadResourceLoaderWithTrust,
+} from "./project-trust";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse } from "./types";
 import {
@@ -40,7 +47,6 @@ import {
   uniqueToolNames,
 } from "./tool-settings";
 import { createAppModelRuntime } from "./model-registry";
-import { getRemoteRuntime } from "../pi-packages/pi-remote-exec/runtime";
 
 // ============================================================================
 // Types
@@ -117,14 +123,17 @@ interface AgentWithToolHooks {
   beforeToolCall?: BeforeToolCallHook;
 }
 
-interface AgentSessionPlanAccess extends AgentSessionLike {
-  _baseSystemPrompt?: string;
-}
-
 interface PlanModeSnapshot {
   activeToolNames: string[];
-  baseSystemPrompt: string | undefined;
-  stateSystemPrompt: string | undefined;
+}
+
+interface WorkflowPromptState {
+  planModeEnabled: boolean;
+  planExecutionMode: PlanExecutionMode;
+  buddyMode: BuddyMode;
+  buddyReviewerModel: ModelRef | null;
+  subagentsEnabled: boolean;
+  forceEmptySystemPrompt: boolean;
 }
 
 const MAX_FOREGROUND_TIMEOUT_SECONDS = 300;
@@ -132,6 +141,39 @@ const LONG_TASK_TIMEOUT_SECONDS = 120;
 const RPC_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 const PLAN_MODE_MAIN_TOOL_NAMES = ["read", "bash", "grep", "find", "ls"];
 const PLAN_MODE_SUBAGENT_TOOL_NAMES = [...SUBAGENT_TOOL_NAMES];
+
+function workflowPromptAdditions(state: WorkflowPromptState): string[] {
+  const additions: string[] = [];
+  if (state.planModeEnabled) {
+    additions.push(state.planExecutionMode === "subagent" ? PLAN_MODE_SUBAGENT_SYSTEM_PROMPT : PLAN_MODE_SYSTEM_PROMPT);
+  }
+  if (state.buddyMode !== "off" && state.buddyReviewerModel) {
+    additions.push(buildBuddySystemPrompt(state.buddyMode, state.buddyReviewerModel));
+  }
+  if (state.subagentsEnabled) additions.push(SUBAGENTS_SYSTEM_PROMPT);
+  return additions;
+}
+
+function workflowSystemPrompt(base: string, state: WorkflowPromptState): string {
+  if (state.forceEmptySystemPrompt) return "";
+  const additions = workflowPromptAdditions(state);
+  return additions.length ? `${base}\n\n${additions.join("\n\n")}`.trim() : base;
+}
+
+export function createWorkflowPromptExtension(state: WorkflowPromptState): InlineExtension {
+  return {
+    name: "pi-web-workflow-prompt",
+    hidden: true,
+    factory: (pi) => {
+      pi.on("before_agent_start", (event) => {
+        if (state.forceEmptySystemPrompt) return { systemPrompt: "" };
+        const additions = workflowPromptAdditions(state);
+        if (additions.length === 0) return;
+        event.systemPromptOptions.promptGuidelines = [...event.systemPromptOptions.promptGuidelines, ...additions];
+      });
+    },
+  };
+}
 
 function getRuntimeOsLabel(): string {
   switch (process.platform) {
@@ -203,6 +245,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Closes a remote session without loading the remote runtime when it was never used.
+ * The runtime module pulls in ssh2 (~400ms to load), and it marks initialization by
+ * creating a global registry, so its absence means there is nothing to close.
+ */
+export async function closeRemoteSessionIfLoaded(sessionId: string, reason: string): Promise<void> {
+  if (!globalThis.__piWebRemoteRuntime) return;
+  try {
+    const { getRemoteRuntime } = await import("../pi-packages/pi-remote-exec/runtime");
+    await getRemoteRuntime().close(sessionId, false);
+  } catch (error) {
+    console.error(`[pi-web] failed to close Remote runtime during ${reason}:`, errorMessage(error));
+  }
 }
 
 function numberFromUnknown(value: unknown): number | undefined {
@@ -371,20 +428,37 @@ export class AgentSessionWrapper {
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
   private extensionBindingError: unknown = null;
-  private forceEmptySystemPrompt = false;
-  private planModeEnabled = false;
-  private planExecutionMode: PlanExecutionMode = "main";
+  private baseSystemPrompt = "";
+  private workflowPromptState: WorkflowPromptState;
   private planModeSnapshot: PlanModeSnapshot | null = null;
-  private workflowBaseSystemPrompt: string | undefined;
-  private buddyMode: BuddyMode = "off";
-  private buddyReviewerModel: ModelRef | null = null;
   private buddyReviewCalls = 0;
-  private subagentsEnabled = false;
   private _alive = true;
 
-  constructor(inner: AgentSessionLike, extensionLoadErrors: string[] = []) {
+  private get forceEmptySystemPrompt(): boolean { return this.workflowPromptState.forceEmptySystemPrompt; }
+  private set forceEmptySystemPrompt(value: boolean) { this.workflowPromptState.forceEmptySystemPrompt = value; }
+  private get planModeEnabled(): boolean { return this.workflowPromptState.planModeEnabled; }
+  private set planModeEnabled(value: boolean) { this.workflowPromptState.planModeEnabled = value; }
+  private get planExecutionMode(): PlanExecutionMode { return this.workflowPromptState.planExecutionMode; }
+  private set planExecutionMode(value: PlanExecutionMode) { this.workflowPromptState.planExecutionMode = value; }
+  private get buddyMode(): BuddyMode { return this.workflowPromptState.buddyMode; }
+  private set buddyMode(value: BuddyMode) { this.workflowPromptState.buddyMode = value; }
+  private get buddyReviewerModel(): ModelRef | null { return this.workflowPromptState.buddyReviewerModel; }
+  private set buddyReviewerModel(value: ModelRef | null) { this.workflowPromptState.buddyReviewerModel = value; }
+  private get subagentsEnabled(): boolean { return this.workflowPromptState.subagentsEnabled; }
+  private set subagentsEnabled(value: boolean) { this.workflowPromptState.subagentsEnabled = value; }
+
+  constructor(inner: AgentSessionLike, extensionLoadErrors: string[] = [], workflowPromptState?: WorkflowPromptState) {
     this.inner = inner;
     this.extensionLoadErrors = extensionLoadErrors;
+    this.workflowPromptState = workflowPromptState ?? {
+      planModeEnabled: false,
+      planExecutionMode: "main",
+      buddyMode: "off",
+      buddyReviewerModel: null,
+      subagentsEnabled: false,
+      forceEmptySystemPrompt: false,
+    };
+    this.baseSystemPrompt = inner.systemPrompt ?? inner.agent.state?.systemPrompt ?? "";
   }
 
   get sessionId(): string {
@@ -433,7 +507,9 @@ export class AgentSessionWrapper {
         if (!this._alive) return;
         this.resetIdleTimer();
         this.emit(event);
-        if (event.type === "agent_end") {
+        // agent_end fires per run; retries and queued continuations keep the run alive.
+        // Restarting the guide mid-run would fight that continuation, so wait for settle.
+        if (event.type === "agent_settled") {
           this.flushPendingGuideSoon();
         }
       });
@@ -446,7 +522,7 @@ export class AgentSessionWrapper {
 
   setForceEmptySystemPrompt(force: boolean): void {
     this.forceEmptySystemPrompt = force;
-    this.applyForcedEmptySystemPrompt();
+    this.syncBaseSystemPrompt();
   }
 
   beginExtensionBinding(options: ExtensionBindingOptions = {}): void {
@@ -467,7 +543,7 @@ export class AgentSessionWrapper {
   private ensureExtensionsBound(options: ExtensionBindingOptions = {}): Promise<void> {
     if (options.forceEmptySystemPrompt) this.forceEmptySystemPrompt = true;
     if (this.extensionsBound) {
-      this.applyForcedEmptySystemPrompt();
+      this.syncBaseSystemPrompt();
       return Promise.resolve();
     }
     if (this.extensionBindingPromise) return this.extensionBindingPromise;
@@ -499,7 +575,7 @@ export class AgentSessionWrapper {
         this.inner.extensionRunner?.setUIContext?.(uiContext, "rpc");
       }
       this.extensionsBound = true;
-      this.applyForcedEmptySystemPrompt();
+      this.syncBaseSystemPrompt();
     })().catch((error) => {
       this.extensionBindingError = error;
       throw error;
@@ -525,12 +601,6 @@ export class AgentSessionWrapper {
     return type === "prompt" || type === "steer" || type === "follow_up";
   }
 
-  private applyForcedEmptySystemPrompt(): void {
-    if (this.forceEmptySystemPrompt && this.inner.agent.state) {
-      this.inner.agent.state.systemPrompt = "";
-    }
-  }
-
   private emit(event: AgentEvent): void {
     for (const listener of [...this.listeners]) {
       try {
@@ -543,7 +613,7 @@ export class AgentSessionWrapper {
   }
 
   private submitPrompt(guide: PendingGuide): Promise<void> {
-    let preflightAccepted: boolean | null = null;
+    let preflightAccepted = false;
     let acceptanceSettled = false;
     let resolveAcceptance!: () => void;
     let rejectAcceptance!: (error: unknown) => void;
@@ -564,15 +634,15 @@ export class AgentSessionWrapper {
 
     void Promise.resolve().then(() => this.inner.prompt(guide.message, {
       ...(guide.images?.length ? { images: guide.images } : {}),
-      preflightResult: (accepted) => {
-        preflightAccepted = accepted;
-        if (accepted) resolveOnce();
+      preflightResult: () => {
+        preflightAccepted = true;
+        resolveOnce();
       },
     })).then(() => {
       // Extension commands and test doubles may finish without starting an Agent turn.
-      if (preflightAccepted !== false) resolveOnce();
+      if (!preflightAccepted) resolveOnce();
     }).catch((error) => {
-      if (preflightAccepted === true) {
+      if (preflightAccepted) {
         if (!this._alive) return;
         this.emit({
           type: "runtime_error",
@@ -669,7 +739,7 @@ export class AgentSessionWrapper {
         if (!reviewer) throw new Error("Buddy reviewer model is required");
         this.assertBuddyReviewer(reviewer);
         this.buddyReviewerModel = reviewer;
-        if (this.buddyMode !== "off") this.applyWorkflowSystemPrompt();
+        if (this.buddyMode !== "off") this.syncBaseSystemPrompt();
         return { buddyReviewerModel: reviewer };
       }
 
@@ -693,9 +763,12 @@ export class AgentSessionWrapper {
         return null;
       }
 
-      case "abort":
+      case "abort": {
+        // Return queued text so the composer can restore it; abort alone drops it.
+        const queued = this.inner.clearQueue?.();
         await this.inner.abort();
-        return null;
+        return queued ? { queuedMessages: queued } : null;
+      }
 
       case "get_state": {
         const model = this.inner.model;
@@ -708,12 +781,16 @@ export class AgentSessionWrapper {
           autoCompactionEnabled: this.inner.autoCompactionEnabled,
           autoRetryEnabled: this.inner.autoRetryEnabled,
           model: model ? { id: model.id, provider: model.provider } : undefined,
-          messageCount: 0,
-          pendingMessageCount: 0,
+          messageCount: this.inner.messages?.length ?? 0,
+          pendingMessageCount: this.inner.pendingMessageCount ?? 0,
+          steeringMessages: [...(this.inner.getSteeringMessages?.() ?? [])],
+          followUpMessages: [...(this.inner.getFollowUpMessages?.() ?? [])],
+          steeringMode: this.inner.steeringMode ?? "all",
+          followUpMode: this.inner.followUpMode ?? "all",
           contextUsage: contextUsage
             ? { percent: contextUsage.percent, contextWindow: contextUsage.contextWindow, tokens: contextUsage.tokens }
             : null,
-          systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
+          systemPrompt: workflowSystemPrompt(this.baseSystemPrompt, this.workflowPromptState),
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
           planMode: this.planModeEnabled,
           planExecutionMode: this.planExecutionMode,
@@ -771,7 +848,7 @@ export class AgentSessionWrapper {
 
       case "navigate_tree": {
         const result = await this.inner.navigateTree(command.targetId as string, {});
-        return { cancelled: result.cancelled };
+        return { cancelled: result.cancelled, ...(result.editorText !== undefined ? { editorText: result.editorText } : {}) };
       }
 
       case "set_thinking_level": {
@@ -864,7 +941,7 @@ export class AgentSessionWrapper {
         this.setForceEmptySystemPrompt(requestedToolNames.length === 0);
         if (exact) {
           this.inner.setActiveToolsByName(knownRequestedToolNames);
-          this.applyForcedEmptySystemPrompt();
+          this.syncBaseSystemPrompt();
           return null;
         }
         const extensionToolNames = this.inner
@@ -872,7 +949,7 @@ export class AgentSessionWrapper {
           .map((tool) => tool.name)
           .filter((name) => !BUILTIN_CODING_TOOL_SET.has(name));
         this.inner.setActiveToolsByName(includeDefaultExtensionTools(knownRequestedToolNames, extensionToolNames));
-        this.applyForcedEmptySystemPrompt();
+        this.syncBaseSystemPrompt();
         return null;
       }
 
@@ -946,7 +1023,7 @@ export class AgentSessionWrapper {
       this.buddyReviewerModel = nextReviewerModel;
       this.subagentsEnabled = nextSubagentsEnabled;
       this.applyWorkflowTools();
-      this.applyWorkflowSystemPrompt();
+      this.syncBaseSystemPrompt();
       return;
     }
 
@@ -956,7 +1033,7 @@ export class AgentSessionWrapper {
     this.buddyMode = "off";
     this.subagentsEnabled = false;
     this.planModeSnapshot = null;
-    this.workflowBaseSystemPrompt = undefined;
+    this.syncBaseSystemPrompt();
   }
 
   private isWorkflowActive(): boolean {
@@ -970,11 +1047,8 @@ export class AgentSessionWrapper {
   }
 
   private createPlanModeSnapshot(): PlanModeSnapshot {
-    const inner = this.inner as AgentSessionPlanAccess;
     return {
       activeToolNames: this.inner.getActiveToolNames(),
-      baseSystemPrompt: inner._baseSystemPrompt,
-      stateSystemPrompt: this.inner.agent.state?.systemPrompt,
     };
   }
 
@@ -994,45 +1068,30 @@ export class AgentSessionWrapper {
       ]);
     }
     this.inner.setActiveToolsByName(filterKnownToolNames(requested, allToolNames));
-    const inner = this.inner as AgentSessionPlanAccess;
-    this.workflowBaseSystemPrompt = inner._baseSystemPrompt ?? this.inner.agent.state?.systemPrompt;
   }
 
-  private applyWorkflowSystemPrompt(): void {
-    const inner = this.inner as AgentSessionPlanAccess;
-    const snapshot = this.planModeSnapshot ?? this.createPlanModeSnapshot();
-    const base = this.workflowBaseSystemPrompt ?? snapshot.baseSystemPrompt ?? snapshot.stateSystemPrompt ?? "";
-    const prompts: string[] = [];
-    if (this.planModeEnabled) prompts.push(this.planExecutionMode === "subagent" ? PLAN_MODE_SUBAGENT_SYSTEM_PROMPT : PLAN_MODE_SYSTEM_PROMPT);
-    if (this.buddyMode !== "off" && this.buddyReviewerModel) prompts.push(buildBuddySystemPrompt(this.buddyMode, this.buddyReviewerModel));
-    if (this.subagentsEnabled) prompts.push(SUBAGENTS_SYSTEM_PROMPT);
-    const next = `${base}\n\n${prompts.join("\n\n")}`.trim();
-    inner._baseSystemPrompt = next;
-    if (this.inner.agent.state) this.inner.agent.state.systemPrompt = next;
+  private syncBaseSystemPrompt(): void {
+    if (!this.inner.isStreaming && typeof this.inner.systemPrompt === "string") {
+      this.baseSystemPrompt = this.inner.systemPrompt;
+    }
   }
 
   private restorePlanModeSnapshot(): void {
     const snapshot = this.planModeSnapshot;
     if (!snapshot) return;
-    const inner = this.inner as AgentSessionPlanAccess;
     const allToolNames = this.inner.getAllTools().map((tool) => tool.name);
     this.inner.setActiveToolsByName(filterKnownToolNames(snapshot.activeToolNames, allToolNames));
-    inner._baseSystemPrompt = snapshot.baseSystemPrompt;
-    if (this.inner.agent.state) this.inner.agent.state.systemPrompt = snapshot.stateSystemPrompt ?? "";
-    this.workflowBaseSystemPrompt = undefined;
+    this.syncBaseSystemPrompt();
   }
 
   private refreshWorkflowSnapshotAfterReload(): void {
     const snapshot = this.planModeSnapshot;
     if (!snapshot) return;
-    const inner = this.inner as AgentSessionPlanAccess;
     const allToolNames = this.inner.getAllTools().map((tool) => tool.name);
     const activeToolNames = filterKnownToolNames(snapshot.activeToolNames, allToolNames);
     this.inner.setActiveToolsByName(activeToolNames);
     snapshot.activeToolNames = activeToolNames;
-    snapshot.baseSystemPrompt = inner._baseSystemPrompt;
-    snapshot.stateSystemPrompt = this.inner.agent.state?.systemPrompt;
-    this.workflowBaseSystemPrompt = undefined;
+    this.syncBaseSystemPrompt();
   }
 
   private assertPlanSubagentsAvailable(): void {
@@ -1363,12 +1422,14 @@ export class AgentSessionWrapper {
   }
 
   private async reloadExtensionsAware(): Promise<void> {
+    // Trust can change while a session is live (for example an in-app deny), and pi's
+    // reload preserves the SettingsManager trust flag. Recompute it and refuse to load
+    // project resources when trust is unresolved or denied.
+    const cwd = this.inner.sessionManager.getCwd();
+    applyProjectTrustToSettings(this.inner.settingsManager, cwd);
+
     this.customUiGeneration += 1;
-    try {
-      await getRemoteRuntime().close(this.sessionId, false);
-    } catch (error) {
-      console.error("[pi-web] failed to close Remote runtime during extension reload:", errorMessage(error));
-    }
+    await closeRemoteSessionIfLoaded(this.sessionId, "extension reload");
     this.extensionStatuses.clear();
     this.extensionWidgets.clear();
     for (const pending of [...this.pendingUiResponses.values()]) {
@@ -1398,13 +1459,13 @@ export class AgentSessionWrapper {
       if (this.isWorkflowActive()) {
         this.refreshWorkflowSnapshotAfterReload();
         if (this.workflowRequiresSubagents() && !this.getPlanModeStatus().subagentsAvailable) {
+          this.restorePlanModeSnapshot();
           this.planModeEnabled = false;
           this.planExecutionMode = "main";
           this.buddyMode = "off";
           this.subagentsEnabled = false;
           this.planModeSnapshot = null;
-          this.workflowBaseSystemPrompt = undefined;
-          this.applyForcedEmptySystemPrompt();
+          this.syncBaseSystemPrompt();
           this.emit({
             type: "extension_error",
             extensionPath: "pi-subagents",
@@ -1413,10 +1474,10 @@ export class AgentSessionWrapper {
           });
         } else {
           this.applyWorkflowTools();
-          this.applyWorkflowSystemPrompt();
+          this.syncBaseSystemPrompt();
         }
       } else {
-        this.applyForcedEmptySystemPrompt();
+        this.syncBaseSystemPrompt();
       }
     } catch (error) {
       if (this._alive) {
@@ -1441,13 +1502,7 @@ export class AgentSessionWrapper {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
-    try {
-      void getRemoteRuntime().close(this.sessionId, false).catch((error) => {
-        console.error("[pi-web] failed to close Remote runtime during session destroy:", errorMessage(error));
-      });
-    } catch (error) {
-      console.error("[pi-web] failed to start Remote runtime cleanup during session destroy:", errorMessage(error));
-    }
+    void closeRemoteSessionIfLoaded(this.sessionId, "session destroy");
     const unsubscribe = this.unsubscribe;
     this.unsubscribe = null;
     try {
@@ -1533,20 +1588,34 @@ export async function startRpcSession(
   if (inflight) return inflight;
 
   const starting = (async () => {
-    const { SessionManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
+    const { SessionManager, SettingsManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
     const agentDir = getAgentDir();
+    const trustState = projectTrustState(cwd);
+    if (trustState === "unresolved") throw new ProjectTrustRequiredError(cwd);
+    const trusted = trustState === "trusted";
     const modelRuntime = await createAppModelRuntime(join(agentDir, "models.json"));
 
     const sessionManager = sessionFile
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
 
+    const workflowPromptState: WorkflowPromptState = {
+      planModeEnabled: false,
+      planExecutionMode: "main",
+      buddyMode: "off",
+      buddyReviewerModel: null,
+      subagentsEnabled: false,
+      forceEmptySystemPrompt: false,
+    };
+    const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: trusted });
     const resourceLoader = new DefaultResourceLoader({
       cwd,
       agentDir,
+      settingsManager,
+      extensionFactories: [createWorkflowPromptExtension(workflowPromptState)],
       appendSystemPromptOverride: (base) => [...base, buildRuntimeSystemPrompt(cwd)],
     });
-    await resourceLoader.reload();
+    await reloadResourceLoaderWithTrust(resourceLoader, cwd);
     const extensionLoadErrors = resourceLoader.getExtensions().errors.map((error: unknown) => {
       if (isRecord(error)) {
         const path = typeof error.path === "string" ? error.path : "";
@@ -1591,7 +1660,7 @@ export async function startRpcSession(
     // When all tools are disabled, clear the system prompt entirely.
     // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
     // keep this forced after extension resource discovery and reloads as well.
-    const wrapper = new AgentSessionWrapper(inner, extensionLoadErrors);
+    const wrapper = new AgentSessionWrapper(inner, extensionLoadErrors, workflowPromptState);
     if (appliedActiveToolNames.length === 0) {
       wrapper.setForceEmptySystemPrompt(true);
     }

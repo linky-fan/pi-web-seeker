@@ -8,6 +8,14 @@ export interface FileTab {
   label: string;
   kind: "file";
   filePath: string;
+  lineNumber?: number;
+}
+
+export interface CheckerTab {
+  id: string;
+  label: string;
+  kind: "checker";
+  cwd: string;
 }
 
 export interface BrowserTab {
@@ -26,7 +34,7 @@ export interface RemoteTab {
   cwd: string;
 }
 
-export type Tab = FileTab | BrowserTab | RemoteTab;
+export type Tab = FileTab | BrowserTab | RemoteTab | CheckerTab;
 
 function BrowserTabIcon() {
   return (
@@ -42,6 +50,14 @@ function RemoteTabIcon() {
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <path d="m7 9 3 3-3 3M13 15h4" />
+    </svg>
+  );
+}
+
+function CheckerTabIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 4l-4 16" />
     </svg>
   );
 }
@@ -96,7 +112,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
             }}
           >
             <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7, display: "flex", alignItems: "center" }}>
-              {tab.kind === "browser" ? <BrowserTabIcon /> : tab.kind === "remote" ? <RemoteTabIcon /> : getFileIcon(tab.label, 13)}
+              {tab.kind === "browser" ? <BrowserTabIcon /> : tab.kind === "remote" ? <RemoteTabIcon /> : tab.kind === "checker" ? <CheckerTabIcon /> : getFileIcon(tab.label, 13)}
             </span>
             <span
               style={{

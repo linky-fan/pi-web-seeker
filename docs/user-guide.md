@@ -2,60 +2,61 @@
 
 本文介绍安装、启动、访问控制、工作区、本地构建和 Docker 部署。功能说明见[功能指南](features.md)。
 
-## 安装与启动
+## 本地源码启动
 
-npm 包要求 Node.js 22.19.0 或更高版本，项目官方开发和构建环境使用 Node.js 24.18.0。
+运行要求 Node.js 22.19.0 或更高版本；项目官方开发和构建环境使用 Node.js 24.18.0。
 
-无需安装即可运行最新正式版：
-
-```bash
-npx @linkyfan/pi-web
-```
-
-全局安装：
+在本地克隆的仓库目录中安装依赖并启动开发服务器：
 
 ```bash
-npm install -g @linkyfan/pi-web
-pi-web
+npm install
+npm run dev
 ```
 
-已发布的 npm 包包含 Next.js 生产产物。本地源码目录执行 `npm install` 不会自动构建，开发时应使用 `npm run dev`。
-
-需要直接运行 GitHub 最新源码时：
-
-```bash
-npx github:linky-fan/pi-web-seeker
-```
-
-首次从 GitHub 运行时，npm 会自动构建一次生产产物。
+开发服务器默认仅监听 `localhost:30141`。生产构建则先运行 `npm run build`，再运行 `npm run start`。
 
 ## 监听地址与访问控制
 
-默认监听 `0.0.0.0:30141`：
+监听参数通过环境变量配置。开发服务器默认仅监听本机 `localhost:30141`：
 
 - 本机：`http://localhost:30141`
-- 局域网：`http://<局域网 IP>:30141`
+- 局域网：显式设置非 loopback 地址并配置访问令牌
 
-CLI 和环境变量都可以覆盖监听参数：
-
-```bash
-pi-web --port 8080
-pi-web --hostname 127.0.0.1
-pi-web -p 8080 -H 127.0.0.1
-
-PORT=8080 pi-web
-PI_WEB_BIND_HOST=127.0.0.1 pi-web
-```
-
-开发服务器允许常见私网来源。如果局域网仍无法访问，请检查系统防火墙、虚拟机网络和容器端口映射。
-
-部署到不完全可信的网络时，应启用访问令牌：
+Bash：
 
 ```bash
-PI_WEB_ACCESS_TOKEN=your-long-random-token pi-web
+PORT=8080 npm run dev
+LAN_IP="<your-lan-ip>"
+PI_WEB_BIND_HOST="$LAN_IP" PI_WEB_ACCESS_TOKEN=<long-random-token> npm run dev
 ```
 
-首次打开 `http://<host>:30141/?token=your-long-random-token` 后，服务端写入 HttpOnly cookie 并跳转回普通页面。脚本访问 API 时可以使用：
+PowerShell：
+
+```powershell
+$env:PORT = "8080"
+$env:PI_WEB_BIND_HOST = "<your-lan-ip>"
+$env:PI_WEB_ACCESS_TOKEN = "<long-random-token>"
+npm run dev
+```
+
+cmd.exe：
+
+```bat
+set "PORT=8080"
+set "PI_WEB_BIND_HOST=<your-lan-ip>"
+set "PI_WEB_ACCESS_TOKEN=<long-random-token>"
+npm run dev
+```
+
+直接绑定非 loopback 地址但未配置非空令牌时，服务会拒绝启动。开发服务器允许常见私网来源；如果局域网仍无法访问，请检查系统防火墙、虚拟机网络和容器端口映射。
+
+需要访问控制时，也可以在 localhost 监听上启用访问令牌：
+
+```bash
+PI_WEB_ACCESS_TOKEN=<long-random-token> npm run dev
+```
+
+首次打开 `http://<host>:30141/?token=your-long-random-token` 后，服务端写入 HttpOnly cookie 并跳转回普通页面。初始 URL 会短暂携带令牌，可能进入浏览器或反向代理日志；普通 HTTP 也不会加密令牌，请勿在不可信网络直接暴露，局域网部署应使用 HTTPS 反向代理。脚本访问 API 时可以使用：
 
 ```text
 Authorization: Bearer <token>
@@ -84,6 +85,12 @@ Docker、Linux/headless 或局域网远程访问时，页面使用网页目录�
 
 手动输入路径也会先通过服务端验证目录存在且可访问，避免发送首条消息时才遇到 `Access denied`。
 
+## 语言检查器
+
+在右侧 Inspector 中打开“代码检查”，面板会扫描当前工作区并显示 Python、Java、C/C++、Go 和 Rust 项目。它只使用运行 Pi Web 的环境中已经安装的工具；Python 项目也会查找项目根目录下 `.venv` 或 `venv` 中的 Ruff/mypy。Docker 环境需要在容器内提供工具。Checkstyle 还可以通过 `PI_WEB_CHECKSTYLE_JAR` 指定可信的 JAR。
+
+选择检查器后，必须勾选面板中的确认框才能启动。检查进程有超时、并发和输出上限，但不是 sandbox；只对可信工作区执行。子进程只接收运行工具链所需的最小环境，不会继承 Pi Web 的 API key 或访问令牌。Pi Web 不会自动安装工具/依赖或启用检查器的自动修复；工具可能更新自己的缓存。Cargo 离线检查可能执行项目构建脚本。Go 和 Rust 检查在离线/只读依赖模式下运行，因此未缓存的依赖可能导致检查失败。C/C++ 检查需要项目内部有效的 `compile_commands.json`。
+
 ## 本地开发与构建
 
 ```bash
@@ -93,11 +100,13 @@ npm install
 npm run dev
 ```
 
-开发服务器默认监听 `0.0.0.0:30141`。常用检查：
+开发服务器默认仅监听 `localhost:30141`。若需局域网访问，设置 `PI_WEB_BIND_HOST=<局域网 IP>` 和 `PI_WEB_ACCESS_TOKEN=<长随机令牌>`。常用检查：
 
 ```bash
 node_modules/.bin/tsc --noEmit
+npm run typecheck
 npm run lint
+npm test
 npm run test:remote
 node scripts/agents-md.mjs check --path AGENTS.md
 ```
@@ -127,10 +136,10 @@ Windows 默认避开 webpack 扫描用户 profile 中兼容 junction 可能产�
 
 ## Docker
 
-个人使用可以直接运行：
+Docker 在容器网络内监听，因此必须提供非空访问令牌：
 
 ```bash
-docker compose up --build
+PI_WEB_ACCESS_TOKEN=your-long-random-token docker compose up --build
 ```
 
 启动后打开 `http://localhost:30141`。默认挂载：
@@ -141,11 +150,7 @@ docker compose up --build
 | `.pi-web-workspace` | `/workspace` | 默认单工作区 |
 | `~/.ssh` | `/home/piweb/.ssh:ro` | 只读 SSH 配置和密钥 |
 
-内网部署建议同时设置访问令牌：
-
-```bash
-PI_WEB_ACCESS_TOKEN=your-long-random-token docker compose up --build
-```
+未设置 `PI_WEB_ACCESS_TOKEN` 时，Compose 和容器入口都会拒绝启动。健康检查会通过 Bearer 请求头携带该令牌。
 
 使用外部数据目录或工作区：
 
@@ -172,6 +177,7 @@ PI_WEB_UID=$(id -u) PI_WEB_GID=$(id -g) docker compose up --build
 docker build -t pi-web-seeker:local .
 docker run --rm -it \
   -p 30141:30141 \
+  -e PI_WEB_ACCESS_TOKEN=your-long-random-token \
   -v "$PWD/.pi-web-data:/home/piweb/.pi" \
   -v "$PWD:/workspace" \
   -v "$HOME/.ssh:/home/piweb/.ssh:ro" \

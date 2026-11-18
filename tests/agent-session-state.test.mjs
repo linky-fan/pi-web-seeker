@@ -4,12 +4,16 @@ import test from "node:test";
 const {
   BUDDY_MODE_STORAGE_PREFIX,
   PLAN_MODE_STORAGE_PREFIX,
+  agentRunCompletion,
   appendCompletedMessage,
   calculateSessionStats,
+  canRestoreQueuedInput,
   extensionCustomUiReducer,
   isLifecycleTokenCurrent,
   isOperationCurrent,
+  isPromotingLiveStream,
   noticeReducer,
+  prefersAutoThinkingLevel,
   runtimeErrorMessage,
   sessionStorageKey,
   shouldFollowScroll,
@@ -92,6 +96,14 @@ test("stream and notice transitions retain existing public semantics", () => {
   assert.equal(noticeReducer(notices, { type: "dismiss", id: "n4" }).visible.some((notice) => notice.id === "n4"), false);
 });
 
+test("agent run completion distinguishes retries, run ends, and the final settle", () => {
+  assert.equal(agentRunCompletion({ type: "agent_end", willRetry: true }), "continue");
+  assert.equal(agentRunCompletion({ type: "agent_end", willRetry: false }), "ended");
+  assert.equal(agentRunCompletion({ type: "agent_end" }), "settled");
+  assert.equal(agentRunCompletion({ type: "agent_settled", aborted: false }), "settled");
+  assert.equal(agentRunCompletion({ type: "message_end" }), "continue");
+});
+
 test("custom extension panels preserve order across updates and reveal the previous panel on close", () => {
   const panelA = { type: "extension_ui_request", id: "panel-a", method: "custom", lines: ["A"] };
   const panelB = { type: "extension_ui_request", id: "panel-b", method: "custom", lines: ["B"] };
@@ -135,4 +147,26 @@ test("scroll following stops outside the threshold and resumes near the bottom",
   assert.equal(shouldFollowScroll(140), true);
   assert.equal(shouldFollowScroll(141), false);
   assert.equal(shouldFollowScroll(-20), true);
+});
+
+test("abort restores queued input only into the session still on screen", () => {
+  assert.equal(canRestoreQueuedInput("session-a", "session-a"), true);
+  assert.equal(canRestoreQueuedInput("session-a", "session-b"), false);
+  assert.equal(canRestoreQueuedInput("session-a", null), false);
+  assert.equal(canRestoreQueuedInput(null, null), false);
+});
+
+test("promoting a cwd identity to its newly created session keeps the live stream", () => {
+  assert.equal(isPromotingLiveStream("session:real-1", "real-1", true), true);
+  assert.equal(isPromotingLiveStream("session:real-1", "real-1", false), false);
+  assert.equal(isPromotingLiveStream("session:real-2", "real-1", true), false);
+  assert.equal(isPromotingLiveStream("cwd:/work", "real-1", true), false);
+  assert.equal(isPromotingLiveStream("session:real-1", null, true), false);
+});
+
+test("an explicit Auto thinking preference survives a concrete synced level", () => {
+  assert.equal(prefersAutoThinkingLevel("auto"), true);
+  assert.equal(prefersAutoThinkingLevel("high"), false);
+  assert.equal(prefersAutoThinkingLevel(null), false);
+  assert.equal(prefersAutoThinkingLevel(undefined), false);
 });

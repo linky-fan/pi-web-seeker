@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DefaultResourceLoader, SettingsManager, getAgentDir, type PackageSource } from "@earendil-works/pi-coding-agent";
+import { assertProjectTrustedForPackageEnable, createTrustAwareSettingsManager, reloadResourceLoaderWithTrust } from "./project-trust";
 
 const PACKAGE_ID = "pi-remote-exec";
 const PACKAGE_RELATIVE_PATH = "pi-packages/pi-remote-exec";
@@ -20,10 +21,10 @@ function isRemoteSource(value: string): boolean {
 
 export async function remotePackageStatus(cwd: string): Promise<{ configured: boolean; loaded: boolean; packageExists: boolean; errors: string[] }> {
   const agentDir = getAgentDir();
-  const settings = SettingsManager.create(cwd, agentDir);
+  const settings = createTrustAwareSettingsManager(cwd, agentDir);
   const configured = settings.getPackages().some((entry) => isRemoteSource(sourceValue(entry)));
-  const loader = new DefaultResourceLoader({ cwd, agentDir });
-  await loader.reload();
+  const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: settings });
+  await reloadResourceLoaderWithTrust(loader, cwd);
   const extensions = loader.getExtensions();
   const loaded = extensions.extensions.some((extension) => Array.from(extension.tools.keys()).some((name) => name.startsWith(TOOL_PREFIX)));
   const errors = extensions.errors.filter((error) => isRemoteSource(error.path) || isRemoteSource(error.error)).map((error) => `${error.path}: ${error.error}`);
@@ -33,6 +34,7 @@ export async function remotePackageStatus(cwd: string): Promise<{ configured: bo
 export async function enableRemotePackage(cwd: string): Promise<string> {
   const source = remotePackagePath();
   if (!existsSync(source)) throw new Error(`Built-in remote package not found: ${source}`);
+  assertProjectTrustedForPackageEnable(cwd);
   const settings = SettingsManager.create(cwd, getAgentDir(), { projectTrusted: true });
   const packages = settings.getPackages();
   if (!packages.some((entry) => isRemoteSource(sourceValue(entry)))) {

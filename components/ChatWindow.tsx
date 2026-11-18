@@ -13,6 +13,7 @@ import { ExtensionLayer } from "./chat-window/ExtensionUi";
 import { buildMessageProjection, buildPromptHistory } from "./chat-window/messageProjection";
 import type { ChatWindowProps } from "./chat-window/types";
 import { useChatWindowBridge } from "./chat-window/useChatWindowBridge";
+import { ProjectTrustDialog } from "./ProjectTrustDialog";
 
 export function ChatWindow({
   session,
@@ -192,6 +193,18 @@ export function ChatWindow({
       onDrop={handleDrop}
     >
       {isDragOver && <DragOverlay />}
+      {agent.projectTrustPrompt && (
+        <ProjectTrustDialog
+          cwd={agent.projectTrustPrompt.cwd}
+          resolving={agent.projectTrustResolving}
+          onResolve={(trusted) => {
+            void agent.resolveProjectTrust(trusted).then((sent) => {
+              if (sent) chatInputRef?.current?.clearDraft();
+            });
+          }}
+          onClose={agent.dismissProjectTrust}
+        />
+      )}
       <ExtensionLayer
         statuses={agent.extensionStatuses}
         notices={agent.notices}

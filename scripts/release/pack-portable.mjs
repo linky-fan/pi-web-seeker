@@ -8,6 +8,15 @@ import { fileURLToPath } from "node:url";
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const defaultNodeVersion = "24.18.0";
+export const PORTABLE_SCRIPTS = [
+  "scripts/agents-md.mjs",
+  "scripts/coms-net-server.mjs",
+  "scripts/model-context-test.mjs",
+  "scripts/next-build.mjs",
+  "scripts/prepare-github-install.js",
+  "scripts/patch-pi-ai-stepfun-cache.mjs",
+  "scripts/network-security.cjs",
+];
 
 function parseArgs(argv) {
   const options = {
@@ -181,6 +190,7 @@ async function copyRequired(source, destination, options = {}) {
   await cp(absoluteSource, destination, {
     recursive: true,
     force: true,
+    dereference: options.dereference ?? false,
     filter: options.filter,
   });
 }
@@ -192,18 +202,19 @@ async function copyOptional(source, destination, options = {}) {
   await cp(absoluteSource, destination, {
     recursive: true,
     force: true,
+    dereference: options.dereference ?? false,
     filter: options.filter,
   });
 }
 
-async function writeLaunchers(packageDir, options) {
+export async function writeLaunchers(packageDir, options) {
   const cmd = `@echo off
 setlocal
 set "APP_DIR=%~dp0"
 set "NODE=%APP_DIR%runtime\\node\\node.exe"
 set "PI_WEB_APP_ROOT=%APP_DIR%"
 if not defined PORT set "PORT=30141"
-if not defined PI_WEB_BIND_HOST set "PI_WEB_BIND_HOST=0.0.0.0"
+if not defined PI_WEB_BIND_HOST set "PI_WEB_BIND_HOST=localhost"
 "%NODE%" "%APP_DIR%bin\\pi-web.js" %*
 `;
 
@@ -212,7 +223,7 @@ $AppDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Node = Join-Path $AppDir "runtime\\node\\node.exe"
 $env:PI_WEB_APP_ROOT = $AppDir
 if (-not $env:PORT) { $env:PORT = "30141" }
-if (-not $env:PI_WEB_BIND_HOST) { $env:PI_WEB_BIND_HOST = "0.0.0.0" }
+if (-not $env:PI_WEB_BIND_HOST) { $env:PI_WEB_BIND_HOST = "localhost" }
 & $Node (Join-Path $AppDir "bin\\pi-web.js") @args
 exit $LASTEXITCODE
 `;
@@ -222,7 +233,7 @@ set -eu
 APP_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 export PI_WEB_APP_ROOT="$APP_DIR"
 : "\${PORT:=30141}"
-: "\${PI_WEB_BIND_HOST:=0.0.0.0}"
+: "\${PI_WEB_BIND_HOST:=localhost}"
 export PORT PI_WEB_BIND_HOST
 exec "$APP_DIR/runtime/node/bin/node" "$APP_DIR/bin/pi-web.js" "$@"
 `;
@@ -237,7 +248,7 @@ exec "$APP_DIR/runtime/node/bin/node" "$APP_DIR/bin/pi-web.js" "$@"
   }
 }
 
-async function writePortableReadme(packageDir, pkg, options) {
+export async function writePortableReadme(packageDir, pkg, options) {
   const launcher = options.platform === "win32" ? "start-pi-web.cmd" : "start-pi-web.command";
   const text = `Pi Web Seeker portable release
 Version: ${pkg.version}
@@ -249,9 +260,11 @@ Start:
 
 The launcher starts Pi Web Seeker on http://localhost:30141 and opens the browser.
 
+For LAN access, set both PI_WEB_BIND_HOST and PI_WEB_ACCESS_TOKEN before starting.
+
 Optional environment variables:
   PORT=8080
-  PI_WEB_BIND_HOST=127.0.0.1
+  PI_WEB_BIND_HOST=<your-lan-ip>
   PI_WEB_ACCESS_TOKEN=your-long-random-token
 
 This package does not include user data, API keys, sessions, .env files, or local workspaces.
@@ -296,7 +309,7 @@ async function main() {
   await mkdir(packageDir, { recursive: true });
 
   await copyRequired("bin", join(packageDir, "bin"));
-  await copyRequired(".next", join(packageDir, ".next"), { filter: shouldCopyNextPath });
+  await copyRequired(".next", join(packageDir, ".next"), { dereference: true, filter: shouldCopyNextPath });
   await copyRequired("node_modules", join(packageDir, "node_modules"));
   await copyRequired("next.config.mjs", join(packageDir, "next.config.mjs"));
   await copyRequired("package.json", join(packageDir, "package.json"));
@@ -306,14 +319,7 @@ async function main() {
   await copyOptional("public", join(packageDir, "public"));
 
   await mkdir(join(packageDir, "scripts"), { recursive: true });
-  for (const script of [
-    "scripts/agents-md.mjs",
-    "scripts/coms-net-server.mjs",
-    "scripts/model-context-test.mjs",
-    "scripts/next-build.mjs",
-    "scripts/prepare-github-install.js",
-    "scripts/patch-pi-ai-stepfun-cache.mjs",
-  ]) {
+  for (const script of PORTABLE_SCRIPTS) {
     await copyOptional(script, join(packageDir, script));
   }
 
@@ -332,7 +338,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}

@@ -4,6 +4,7 @@ import path from "path";
 import { promisify } from "util";
 import { NextResponse } from "next/server";
 import { assertPathAllowed } from "@/lib/allowed-roots";
+import { isSafeTemplateName } from "@/lib/cli-args";
 
 export const dynamic = "force-dynamic";
 
@@ -75,10 +76,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "action must be init, check, detect, or draft" }, { status: 400 });
     }
 
+    const template = body.template ?? "auto";
+    if (template !== "auto" && !isSafeTemplateName(template)) {
+      return NextResponse.json({ error: "Invalid template name" }, { status: 400 });
+    }
+
     const filePath = agentsPath(cwd);
     const args =
       action === "init"
-        ? ["init", "--template", body.template ?? "auto", "--dir", cwd, ...(body.force ? ["--force"] : [])]
+        ? ["init", "--template", template, "--dir", cwd, ...(body.force ? ["--force"] : [])]
         : action === "check"
           ? ["check", "--path", filePath, ...(body.strict ? ["--strict"] : [])]
           : [action, "--dir", cwd];

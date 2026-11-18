@@ -1,14 +1,39 @@
 import { NextResponse } from "next/server";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, chmodSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync, chmodSync } from "fs";
+import { dirname, join, resolve } from "path";
 import { homedir } from "os";
-import { DefaultResourceLoader, SettingsManager, getAgentDir, type PackageSource } from "@earendil-works/pi-coding-agent";
+import { DefaultResourceLoader, getAgentDir, type PackageSource } from "@earendil-works/pi-coding-agent";
+import { assertPathAllowed } from "@/lib/allowed-roots";
+import { ComsNetInputError, comsNetProjectDir } from "@/lib/coms-net-project";
+import { createScanCache } from "@/lib/scan-cache";
+import { isProjectTrustedForLoad, createTrustAwareSettingsManager, reloadResourceLoaderWithTrust } from "@/lib/project-trust";
 
 export const dynamic = "force-dynamic";
 
 const PACKAGE_ID = "pi-coms-net";
 const PACKAGE_RELATIVE_PATH = "pi-packages/pi-coms-net";
 const COMS_NET_TOOLS = new Set(["coms_net_list", "coms_net_send", "coms_net_get", "coms_net_await", "query_experts"]);
+const EXTENSION_SCAN_TTL_MS = 5_000;
+
+interface ComsNetExtensionScan {
+  extensions: Array<{ path: string; resolvedPath: string; tools: string[]; commands: string[] }>;
+  errors: Array<{ path: string; error: string }>;
+  cwd: string;
+}
+
+declare global {
+  // Reloading the resource loader re-resolves every package, so cache the scan briefly.
+  var __piComsNetExtensionCache: ReturnType<typeof createComsNetScanCache> | undefined;
+}
+
+function createComsNetScanCache() {
+  return createScanCache<ComsNetExtensionScan>(EXTENSION_SCAN_TTL_MS);
+}
+
+function extensionScanCache() {
+  if (!globalThis.__piComsNetExtensionCache) globalThis.__piComsNetExtensionCache = createComsNetScanCache();
+  return globalThis.__piComsNetExtensionCache;
+}
 
 interface ServerRegistry {
   project?: string;
@@ -42,16 +67,30 @@ function packageAlreadyEnabled(source: string, packages: PackageSource[]) {
   });
 }
 
-async function enableBuiltInPackage(cwd: string, agentDir: string) {
+async function enableBuiltInPackage(cwd: string, agentDir: string, confirmGlobal: boolean) {
   const source = packagePath();
   if (!existsSync(source)) throw new Error(`Built-in package not found: ${source}`);
-  const settings = SettingsManager.create(cwd, agentDir);
+  // Writes global settings only, so it does not create project resources that need trust.
+  const settings = createTrustAwareSettingsManager(cwd, agentDir);
   const packages = settings.getPackages();
   if (!packageAlreadyEnabled(source, packages)) {
+    if (!confirmGlobal) {
+      // Enabling changes every workspace on this server, so require an explicit acknowledgement.
+      throw new GlobalActionConfirmationError();
+    }
     settings.setPackages([...packages, source]);
     await settings.flush();
   }
   return source;
+}
+
+class GlobalActionConfirmationError extends Error {
+  readonly code = "GLOBAL_CONFIRMATION_REQUIRED";
+
+  constructor() {
+    super("Enabling coms-net updates global settings for every workspace on this server");
+    this.name = "GlobalActionConfirmationError";
+  }
 }
 
 function hubCommands() {
@@ -69,10 +108,8 @@ function hubCommands() {
 }
 
 function readConfiguredPackages(agentDir: string, cwd: string): string[] {
-  const files = [
-    join(agentDir, "settings.json"),
-    join(cwd, ".pi", "agent", "settings.json"),
-  ];
+  const files = [join(agentDir, "settings.json")];
+  if (isProjectTrustedForLoad(cwd)) files.push(join(cwd, ".pi", "agent", "settings.json"));
   const packages: string[] = [];
 
   for (const file of files) {
@@ -98,8 +135,12 @@ function isComsNetSource(value: string): boolean {
   return value.includes(PACKAGE_ID) || value.includes(PACKAGE_RELATIVE_PATH) || value.includes("coms-net");
 }
 
+function projectsRoot(): string {
+  return join(homedir(), ".pi", "coms-net", "projects");
+}
+
 function readRegistry(project = "default"): ServerRegistry | null {
-  const file = join(homedir(), ".pi", "coms-net", "projects", project, "server.json");
+  const file = join(comsNetProjectDir(projectsRoot(), project), "server.json");
   if (!existsSync(file)) return null;
   try {
     return JSON.parse(readFileSync(file, "utf8")) as ServerRegistry;
@@ -109,13 +150,25 @@ function readRegistry(project = "default"): ServerRegistry | null {
 }
 
 function readClient(project = "default"): { server_url?: string } | null {
-  const file = join(homedir(), ".pi", "coms-net", "projects", project, "client.json");
+  const file = join(comsNetProjectDir(projectsRoot(), project), "client.json");
   if (!existsSync(file)) return null;
   try {
     return JSON.parse(readFileSync(file, "utf8")) as { server_url?: string };
   } catch {
     return null;
   }
+}
+
+async function assertWorkspaceCwd(cwd: string): Promise<string> {
+  const resolved = resolve(cwd);
+  if (!existsSync(resolved)) throw new ComsNetInputError("cwd does not exist");
+  if (!statSync(resolved).isDirectory()) throw new ComsNetInputError("cwd is not a directory");
+  try {
+    await assertPathAllowed(resolved);
+  } catch {
+    throw new ComsNetInputError("Access denied");
+  }
+  return resolved;
 }
 
 function writeJsonAtomic(filePath: string, data: unknown, mode: number) {
@@ -127,10 +180,15 @@ function writeJsonAtomic(filePath: string, data: unknown, mode: number) {
 }
 
 function saveClientConfig(project: string, serverUrl: string, authToken: string) {
-  const url = new URL(serverUrl);
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Hub URL must start with http:// or https://");
-  if (!authToken.trim()) throw new Error("Auth token is required");
-  const dir = join(homedir(), ".pi", "coms-net", "projects", project);
+  let url: URL;
+  try {
+    url = new URL(serverUrl);
+  } catch {
+    throw new ComsNetInputError("Hub URL is not a valid URL");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new ComsNetInputError("Hub URL must start with http:// or https://");
+  if (!authToken.trim()) throw new ComsNetInputError("Auth token is required");
+  const dir = comsNetProjectDir(projectsRoot(), project);
   writeJsonAtomic(join(dir, "client.json"), { project, server_url: url.toString().replace(/\/$/, "") }, 0o644);
   writeJsonAtomic(join(dir, "client.secret.json"), { token: authToken.trim() }, 0o600);
 }
@@ -156,27 +214,54 @@ async function checkHub(registry: ServerRegistry | null) {
   }
 }
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const cwd = searchParams.get("cwd");
-  if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+/** Cache key covers everything the scan depends on, including the trust decision. */
+function extensionScanKey(cwd: string, agentDir: string): string {
+  return extensionScanCache().key([agentDir, cwd, isProjectTrustedForLoad(cwd)]);
+}
 
-  try {
-    const project = searchParams.get("project") || "default";
-    const agentDir = getAgentDir();
-    const configuredPackages = readConfiguredPackages(agentDir, cwd);
-    const loader = new DefaultResourceLoader({ cwd, agentDir });
-    await loader.reload();
-    const extensions = loader.getExtensions();
-    const comsNetExtensions = extensions.extensions
+/** Drops cached scans for one workspace, or every workspace when cwd is omitted. */
+export function forgetComsNetExtensionScan(cwd?: string): void {
+  extensionScanCache().forget(cwd);
+}
+
+async function scanComsNetExtensions(cwd: string, agentDir: string, force = false): Promise<ComsNetExtensionScan> {
+  const cache = extensionScanCache();
+  const key = extensionScanKey(cwd, agentDir);
+  if (!force) {
+    const cached = cache.get(key);
+    if (cached) return cached;
+  }
+
+  const loader = new DefaultResourceLoader({ cwd, agentDir });
+  await reloadResourceLoaderWithTrust(loader, cwd);
+  const extensions = loader.getExtensions();
+  const scan: ComsNetExtensionScan = {
+    extensions: extensions.extensions
       .filter((extension) => isComsNetSource(extension.path) || isComsNetSource(extension.resolvedPath) || Array.from(extension.tools.keys()).some((tool) => COMS_NET_TOOLS.has(tool)))
       .map((extension) => ({
         path: extension.path,
         resolvedPath: extension.resolvedPath,
         tools: Array.from(extension.tools.keys()),
         commands: Array.from(extension.commands.keys()),
-      }));
-    const comsNetErrors = extensions.errors.filter((error) => isComsNetSource(error.path) || isComsNetSource(error.error));
+      })),
+    errors: extensions.errors.filter((error) => isComsNetSource(error.path) || isComsNetSource(error.error)),
+    cwd,
+  };
+  extensionScanCache().set(key, scan);
+  return scan;
+}
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const rawCwd = searchParams.get("cwd");
+  if (!rawCwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+
+  try {
+    const cwd = await assertWorkspaceCwd(rawCwd);
+    const project = searchParams.get("project") || "default";
+    const agentDir = getAgentDir();
+    const configuredPackages = readConfiguredPackages(agentDir, cwd);
+    const { extensions: comsNetExtensions, errors: comsNetErrors } = await scanComsNetExtensions(cwd, agentDir, searchParams.has("refresh"));
     const configured = configuredPackages.some(isComsNetSource);
     const registry = readRegistry(project);
     const client = readClient(project);
@@ -207,32 +292,46 @@ export async function GET(req: Request) {
       },
     });
   } catch (e) {
+    if (e instanceof ComsNetInputError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
     return NextResponse.json({ error: String(e), installCommands: installCommands(), hubCommands: hubCommands() }, { status: 500 });
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { action?: string; cwd?: string; project?: string; serverUrl?: string; authToken?: string };
-    const cwd = body.cwd;
-    if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+    const body = await req.json() as { action?: string; cwd?: string; project?: string; serverUrl?: string; authToken?: string; confirmGlobal?: boolean };
+    if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+    const cwd = await assertWorkspaceCwd(body.cwd);
     const agentDir = getAgentDir();
+    const confirmGlobal = body.confirmGlobal === true;
 
     if (body.action === "enable") {
-      const source = await enableBuiltInPackage(cwd, agentDir);
+      const source = await enableBuiltInPackage(cwd, agentDir, confirmGlobal);
+      // Settings changed, so the cached scan no longer reflects what would load.
+      forgetComsNetExtensionScan(cwd);
       return NextResponse.json({ ok: true, packagePath: source });
     }
 
     if (body.action === "connect") {
       const project = body.project?.trim() || "default";
       if (!body.serverUrl) return NextResponse.json({ error: "serverUrl required" }, { status: 400 });
+      // Enable first so a missing global acknowledgement writes no hub credentials.
+      await enableBuiltInPackage(cwd, agentDir, confirmGlobal);
+      forgetComsNetExtensionScan(cwd);
       saveClientConfig(project, body.serverUrl, body.authToken ?? "");
-      await enableBuiltInPackage(cwd, agentDir);
       return NextResponse.json({ ok: true, project });
     }
 
     return NextResponse.json({ error: "unknown action" }, { status: 400 });
   } catch (e) {
+    if (e instanceof GlobalActionConfirmationError) {
+      return NextResponse.json({ error: e.message, code: e.code }, { status: 409 });
+    }
+    if (e instanceof ComsNetInputError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

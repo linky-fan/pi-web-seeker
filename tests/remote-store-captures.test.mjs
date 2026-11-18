@@ -22,6 +22,7 @@ const security = await import("../lib/remote-security.ts");
 const store = await import("../lib/remote-store.ts");
 const captures = await import("../lib/remote-captures.ts");
 const remotePackage = await import("../lib/remote-package.ts");
+const projectTrust = await import("../lib/project-trust.ts");
 const sessionReader = await import("../lib/session-reader.ts");
 const remoteSession = await import("../lib/remote-session.ts");
 const sessionExport = await import("../lib/session-export.ts");
@@ -161,7 +162,9 @@ test("stores profiles atomically with mode 0600 and never persists submitted sec
   assert.equal(store.listRemoteProfiles()[0].id, profile.id);
   const raw = readFileSync(store.remoteProfilesPath(), "utf8");
   assert.doesNotMatch(raw, /must-not-persist/);
-  assert.equal(lstatSync(store.remoteProfilesPath()).mode & 0o777, 0o600);
+  if (process.platform !== "win32") {
+    assert.equal(lstatSync(store.remoteProfilesPath()).mode & 0o777, 0o600);
+  }
   assert.throws(() => store.saveRemoteProfile({ ...profile, id: undefined, name: "Unsafe Telnet", protocol: "telnet", port: 23, telnetEnabled: false }), /explicitly enabled/);
 });
 
@@ -169,10 +172,13 @@ test("stores known host fingerprints without exposing key material", () => {
   const profile = store.listRemoteProfiles()[0];
   store.trustHostFingerprint(profile, "SHA256:test-fingerprint");
   assert.equal(store.getKnownHostFingerprint(profile), "SHA256:test-fingerprint");
-  assert.equal(lstatSync(store.remoteKnownHostsPath()).mode & 0o777, 0o600);
+  if (process.platform !== "win32") {
+    assert.equal(lstatSync(store.remoteKnownHostsPath()).mode & 0o777, 0o600);
+  }
 });
 
 test("loads the built-in package and registers all Remote tools", async () => {
+  projectTrust.recordProjectTrust(workspace, true);
   await remotePackage.enableRemotePackage(workspace);
   const status = await remotePackage.remotePackageStatus(workspace);
   assert.equal(status.configured, true);
@@ -194,7 +200,14 @@ test("pages, searches, and safely exports captures inside allowed roots", async 
   assert.doesNotMatch(result.preview, /\u001b/);
   const captureRoot = join(agentDir, "remote-captures");
   const captureDir = join(captureRoot, readdirSync(captureRoot)[0]);
-  const captureFile = join(captureDir, readdirSync(captureDir).find((file) => file.startsWith(result.id)));
+  const captureFile = join(captureDir, `${result.id}.json`);
+  const summaryFile = `${captureFile}.summary`;
+  const listed = captures.listRemoteCaptures("agent-test");
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].id, result.id);
+  unlinkSync(summaryFile);
+  assert.equal(captures.listRemoteCaptures("agent-test")[0].id, result.id);
+  assert.ok(statSync(summaryFile).isFile());
   const beforeRead = statSync(captureFile).mtimeMs;
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(captures.readRemoteCapture("agent-test", result.id, 0, 8).text, "port1 up");
@@ -206,7 +219,7 @@ test("pages, searches, and safely exports captures inside allowed roots", async 
   assert.rejects(() => captures.exportRemoteCapture("agent-test", result.id, workspace, "analysis/device.txt"), /already exists/);
 
   const link = join(workspace, "escape");
-  symlinkSync(outside, link, "dir");
+  symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir");
   assert.rejects(() => captures.exportRemoteCapture("agent-test", result.id, workspace, "escape/leak.txt"), /Access denied/);
   chmodSync(exported, 0o600);
 });

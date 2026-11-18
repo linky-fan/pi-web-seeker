@@ -1,8 +1,26 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const configDir = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const { assertNetworkAccessConfigured } = require("./scripts/network-security.cjs");
+
+function requestedHostname(args) {
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === "-H" || args[i] === "--hostname") return args[i + 1];
+    if (args[i].startsWith("--hostname=")) return args[i].slice("--hostname=".length);
+  }
+  return undefined;
+}
+
+const nextArgs = process.argv.slice(2);
+const nextCommand = nextArgs.find((arg) => arg === "dev" || arg === "start");
+if (nextCommand) {
+  const hostname = requestedHostname(nextArgs) ?? process.env.PI_WEB_BIND_HOST ?? "localhost";
+  assertNetworkAccessConfigured(hostname, process.env.PI_WEB_ACCESS_TOKEN);
+}
 
 const { version } = JSON.parse(readFileSync(join(configDir, "package.json"), "utf8"));
 let piVersion = "unknown";

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiPath } from "@/lib/api-path";
+import { literalCredentialRejection, nonLiteralHeaderName } from "@/lib/model-test-credentials";
+import { KNOWN_API_PROTOCOLS, applyHeaderEdit, isCustomApiProtocol } from "@/lib/provider-config";
 import { MotionModal } from "./MotionModal";
 import {
   AnthropicIcon,
@@ -163,7 +165,9 @@ type Selection =
   | { type: "oauth"; providerId: string }
   | { type: "apikey"; providerId: string };
 
-const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] as const;
+// Every protocol pi-ai can speak. The four common ones are listed first.
+const API_OPTIONS = KNOWN_API_PROTOCOLS;
+const CUSTOM_API = "__custom__";
 type TranslateFn = ReturnType<typeof useLocale>["t"];
 const COST_LABEL_KEYS: Record<keyof NonNullable<ModelEntry["cost"]>, string> = {
   input: "stats.input",
@@ -403,13 +407,21 @@ function NumInput({ value, onChange, placeholder }: { value: string; onChange: (
   return <input type="number" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={inputStyle} />;
 }
 
-function Select({ value, onChange, options, required }: { value: string; onChange: (v: string) => void; options: readonly string[]; required?: boolean }) {
+function Select({ value, onChange, options, required, extra }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: readonly string[];
+  required?: boolean;
+  /** Extra entry appended after the known options, e.g. a custom-value choice. */
+  extra?: { value: string; label: string };
+}) {
   const { t } = useLocale();
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}
       style={{ ...inputStyle, color: value ? "var(--text)" : "var(--text-dim)" }}>
       {!required && <option value="">{t("models.inheritNone")}</option>}
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {extra && <option value={extra.value}>{extra.label}</option>}
     </select>
   );
 }
@@ -438,6 +450,10 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete }: {
   const { t } = useLocale();
   useEffect(() => setEditingName(name), [name]);
   const set = <K extends keyof ProviderEntry>(k: K, v: ProviderEntry[K]) => onChange({ ...provider, [k]: v });
+
+  // A value outside the known list is an explicitly typed protocol.
+  const [customApi, setCustomApi] = useState(isCustomApiProtocol(provider.api));
+  const apiValue = customApi ? CUSTOM_API : (provider.api ?? "openai-completions");
 
   useEffect(() => {
     if (!provider.api) onChange({ ...provider, api: "openai-completions" });
@@ -478,9 +494,83 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete }: {
       </Field>
 
       <Field label={t("models.api")}>
-        <Select value={provider.api ?? "openai-completions"} onChange={(v) => set("api", v)} options={API_OPTIONS} required />
+        <Select
+          value={apiValue}
+          onChange={(v) => {
+            if (v === CUSTOM_API) {
+              setCustomApi(true);
+              return;
+            }
+            setCustomApi(false);
+            set("api", v);
+          }}
+          options={API_OPTIONS}
+          required
+          extra={{ value: CUSTOM_API, label: t("models.apiCustom") }}
+        />
+        {customApi && (
+          <TextInput
+            value={provider.api && provider.api !== CUSTOM_API ? provider.api : ""}
+            onChange={(v) => set("api", v || undefined)}
+            placeholder="custom-protocol-name"
+            mono
+          />
+        )}
       </Field>
+
+      <HeaderFields
+        headers={provider.headers}
+        onChange={(headers) => set("headers", headers)}
+      />
     </div>
+  );
+}
+
+/** Editable key/value list for provider request headers. */
+function HeaderFields({ headers, onChange }: {
+  headers?: Record<string, string>;
+  onChange: (headers: Record<string, string> | undefined) => void;
+}) {
+  const { t } = useLocale();
+  const rows = Object.entries(headers ?? {});
+
+  const update = (index: number, key: string, value: string) => {
+    onChange(applyHeaderEdit(headers, { index, key, value }));
+  };
+
+  const remove = (index: number) => {
+    onChange(applyHeaderEdit(headers, { remove: index }));
+  };
+
+  return (
+    <Field label={t("models.headers")}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {rows.map(([key, value], index) => (
+          <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6 }}>
+            <TextInput value={key} onChange={(v) => update(index, v, value)} placeholder="X-Custom-Header" mono />
+            <TextInput value={value} onChange={(v) => update(index, key, v)} placeholder={t("models.headerValuePlaceholder")} mono />
+            <button
+              type="button"
+              onClick={() => remove(index)}
+              title={t("models.headerRemove")}
+              style={{ width: 28, border: "1px solid var(--border)", borderRadius: 4, background: "none", color: "var(--text-dim)", cursor: "pointer" }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => onChange(applyHeaderEdit(headers, {}))}
+          style={{ alignSelf: "flex-start", padding: "3px 8px", border: "1px solid var(--border)", borderRadius: 4, background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
+        >
+          {t("models.headerAdd")}
+        </button>
+        <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+          {t("models.headersHint", { bang: "!" })}
+        </span>
+      </div>
+    </Field>
   );
 }
 
@@ -662,6 +752,8 @@ function ModelDetail({
   onDelete: () => void;
 }) {
   const [testState, setTestState] = useState<ModelTestState>({ phase: "idle" });
+  // Keyless local endpoints (Ollama, LM Studio) opt in explicitly instead of leaving the key blank.
+  const [noAuthEndpoint, setNoAuthEndpoint] = useState(false);
   const { t } = useLocale();
   const set = <K extends keyof ModelEntry>(k: K, v: ModelEntry[K]) => onChange({ ...model, [k]: v });
   const costVal = (k: keyof NonNullable<ModelEntry["cost"]>) => model.cost?.[k] !== undefined ? String(model.cost[k]) : "";
@@ -684,16 +776,25 @@ function ModelDetail({
 
   useEffect(() => {
     setTestState({ phase: "idle" });
-  }, [providerName, provider.baseUrl, provider.api, provider.apiKey, model.id, model.api]);
+  }, [providerName, provider.baseUrl, provider.api, provider.apiKey, model.id, model.api, noAuthEndpoint]);
 
   const handleTest = useCallback(async () => {
     if (!model.id.trim() || testState.phase === "testing") return;
+    const keyRejection = literalCredentialRejection(provider.apiKey ?? "");
+    if (keyRejection && !(noAuthEndpoint && keyRejection === "empty")) {
+      setTestState({ phase: "error", message: t("models.testNeedsLiteralKey") });
+      return;
+    }
+    if (nonLiteralHeaderName(provider, model)) {
+      setTestState({ phase: "error", message: t("models.testNeedsLiteralHeaders") });
+      return;
+    }
     setTestState({ phase: "testing" });
     try {
       const res = await fetch(apiPath("models-config/test"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerName, provider, model }),
+        body: JSON.stringify({ providerName, provider, model, ...(noAuthEndpoint ? { allowNoAuth: true } : {}) }),
       });
       const d = await res.json() as {
         ok?: boolean;
@@ -720,7 +821,7 @@ function ModelDetail({
     } catch (e) {
       setTestState({ phase: "error", message: e instanceof Error ? e.message : String(e) });
     }
-  }, [model, provider, providerName, testState.phase]);
+  }, [model, noAuthEndpoint, provider, providerName, t, testState.phase]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -749,6 +850,15 @@ function ModelDetail({
             >
               {testSummary}
             </span>
+          )}
+          {!(provider.apiKey ?? "").trim() && (
+            <label
+              title={t("models.noAuthEndpointHint")}
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}
+            >
+              <input type="checkbox" checked={noAuthEndpoint} onChange={(e) => setNoAuthEndpoint(e.target.checked)} />
+              {t("models.noAuthEndpoint")}
+            </label>
           )}
           <button
             onClick={handleTest}

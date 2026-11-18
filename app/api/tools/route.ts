@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
-import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { DefaultResourceLoader, createAgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { assertPathAllowed } from "@/lib/allowed-roots";
+import { createTrustAwareSettingsManager, reloadResourceLoaderWithTrust } from "@/lib/project-trust";
 import { createAppModelRuntime } from "@/lib/model-registry";
 import {
   BUILTIN_CODING_TOOL_NAMES,
@@ -24,8 +25,9 @@ interface ToolToggleEntry {
 async function enumerateTools(cwd: string, agentDir: string): Promise<ToolToggleEntry[]> {
   if (!cwd || !existsSync(cwd)) return [];
 
-  const resourceLoader = new DefaultResourceLoader({ cwd, agentDir });
-  await resourceLoader.reload();
+  const settingsManager = createTrustAwareSettingsManager(cwd, agentDir);
+  const resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+  await reloadResourceLoaderWithTrust(resourceLoader, cwd);
   const extensionToolNames = getLoadedExtensionToolNames(resourceLoader);
   const registeredToolNames = uniqueToolNames([...BUILTIN_CODING_TOOL_NAMES, ...extensionToolNames]);
   const sessionManager = SessionManager.create(cwd, undefined);
@@ -35,6 +37,7 @@ async function enumerateTools(cwd: string, agentDir: string): Promise<ToolToggle
     agentDir,
     sessionManager,
     resourceLoader,
+    settingsManager,
     modelRuntime,
     tools: registeredToolNames,
   });

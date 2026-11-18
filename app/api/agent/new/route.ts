@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { assertPathAllowed } from "@/lib/allowed-roots";
+import { ProjectTrustRequiredError } from "@/lib/project-trust";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,12 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, sessionId: realSessionId, data: result });
   } catch (error) {
+    if (error instanceof ProjectTrustRequiredError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code, cwd: error.cwd },
+        { status: 428 },
+      );
+    }
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }

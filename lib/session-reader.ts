@@ -1,10 +1,10 @@
-import { SessionManager, buildSessionContext as piBuildSessionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { SessionManager, buildSessionContext as piBuildSessionContext, buildSessionProjection as piBuildSessionProjection, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { statSync } from "fs";
 import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, AssistantMessage, SessionHeader } from "./types";
-import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
+import type { SessionEntry as PiSessionEntry } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
-import { normalizePathForComparison } from "./path-identity";
 import { normalizeSubagentRecordsForContext } from "./subagents";
+import { buildSessionIndex } from "./session-index";
 
 export { getAgentDir };
 
@@ -19,35 +19,14 @@ interface CachedSessionListIndex {
 
 const SESSION_LIST_CACHE_TTL_MS = 5_000;
 
-async function buildSessionListIndex(): Promise<CachedSessionListIndex> {
-  const piSessions: PiSessionInfo[] = await SessionManager.listAll();
-  const pathToId = new Map<string, string>();
-  for (const s of piSessions) pathToId.set(normalizePathForComparison(s.path), s.id);
-
+// Session metadata comes from an incremental on-disk index rather than reading
+// every file: pi's own listAll streams whole files, which is slow when a session
+// grows large.
+async function buildSessionListIndex(force = false): Promise<CachedSessionListIndex> {
+  const index = await buildSessionIndex(force);
   const cache = getPathCache();
-  const idToPath = new Map<string, string>();
-  const parentById = new Map<string, string>();
-  const cwdRoots = new Set<string>();
-  const sessions = piSessions.map((s) => {
-    // Populate path cache so resolveSessionPath works without a full scan
-    cache.set(s.id, s.path);
-    idToPath.set(s.id, s.path);
-    if (s.cwd) cwdRoots.add(s.cwd);
-    const parentSessionId = s.parentSessionPath ? pathToId.get(normalizePathForComparison(s.parentSessionPath)) : undefined;
-    if (parentSessionId) parentById.set(s.id, parentSessionId);
-    return {
-      path: s.path,
-      id: s.id,
-      cwd: s.cwd,
-      name: s.name,
-      created: s.created instanceof Date ? s.created.toISOString() : String(s.created),
-      modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
-      messageCount: s.messageCount,
-      firstMessage: s.firstMessage || "(no messages)",
-      parentSessionId,
-    };
-  });
-  return { sessions, idToPath, pathToId, parentById, cwdRoots, expiresAt: Date.now() + SESSION_LIST_CACHE_TTL_MS };
+  for (const [id, path] of index.idToPath) cache.set(id, path);
+  return { ...index, expiresAt: Date.now() + SESSION_LIST_CACHE_TTL_MS };
 }
 
 export async function getSessionListIndex(options: { force?: boolean } = {}): Promise<CachedSessionListIndex> {
@@ -56,7 +35,7 @@ export async function getSessionListIndex(options: { force?: boolean } = {}): Pr
   if (!options.force && cached && cached.expiresAt > now) return cached;
   if (!options.force && globalThis.__piSessionListCachePromise) return globalThis.__piSessionListCachePromise;
 
-  const promise = buildSessionListIndex();
+  const promise = buildSessionListIndex(options.force === true);
   globalThis.__piSessionListCachePromise = promise;
   try {
     const index = await promise;
@@ -132,6 +111,43 @@ export interface CachedSessionFile {
   contexts: Map<string, SessionContext>;
 }
 
+export interface SessionUsageStats {
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  cost: number;
+}
+
+interface UsageLike {
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  cost?: { total?: number };
+}
+
+/**
+ * Aggregate token usage across the whole session, matching pi's getSessionStats:
+ * includes compacted-away history and usage entries, not just visible messages.
+ */
+export function calculateSessionUsage(entries: SessionEntry[]): SessionUsageStats | null {
+  const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  let cost = 0;
+  const add = (usage: UsageLike | undefined) => {
+    if (!usage) return;
+    tokens.input += usage.input ?? 0;
+    tokens.output += usage.output ?? 0;
+    tokens.cacheRead += usage.cacheRead ?? 0;
+    tokens.cacheWrite += usage.cacheWrite ?? 0;
+    cost += usage.cost?.total ?? 0;
+  };
+  for (const entry of entries) {
+    const record = entry as unknown as { type: string; usage?: UsageLike; message?: { usage?: UsageLike } };
+    if (record.type === "usage") add(record.usage);
+    else if (record.type === "message") add(record.message?.usage);
+    else if (record.type === "compaction" || record.type === "branch_summary") add(record.usage);
+  }
+  return tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite > 0 ? { tokens, cost } : null;
+}
+
 const SESSION_FILE_CACHE_MAX = 50;
 
 function getFileCache(): Map<string, CachedSessionFile> {
@@ -183,10 +199,6 @@ function contextCacheKey(leafId?: string | null): string {
   return `leaf:${leafId}`;
 }
 
-function isContextMessageEntry(entry: SessionEntry): boolean {
-  return entry.type === "message" || entry.type === "custom_message" || entry.type === "branch_summary";
-}
-
 export function getCachedSessionContext(snapshot: CachedSessionFile, leafId?: string | null): SessionContext {
   const key = contextCacheKey(leafId);
   const cached = snapshot.contexts.get(key);
@@ -205,55 +217,18 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
   const piEntries = contextEntries as unknown as PiSessionEntry[];
   const piCtx = piBuildSessionContext(piEntries, leafId, byId as unknown as Map<string, PiSessionEntry>);
 
-  // Build entryIds: parallel array to messages[], mapping each message back to its entry id.
-  // Needed for fork and navigate_tree calls from the UI.
-  let targetLeaf: SessionEntry | undefined;
   if (leafId === null) {
     return { messages: [], entryIds: [], thinkingLevel: piCtx.thinkingLevel, model: piCtx.model };
   }
-  if (leafId) targetLeaf = byId.get(leafId);
-  if (!targetLeaf) targetLeaf = contextEntries[contextEntries.length - 1];
-  if (!targetLeaf) {
-    return { messages: [], entryIds: [], thinkingLevel: piCtx.thinkingLevel, model: piCtx.model };
-  }
 
-  // Walk path from target leaf to root
-  const path: SessionEntry[] = [];
-  let cur: SessionEntry | undefined = targetLeaf;
-  while (cur) {
-    path.unshift(cur);
-    cur = cur.parentId ? byId.get(cur.parentId) : undefined;
-  }
-
-  // Find the last compaction on path (mirrors pi's buildSessionContext logic)
-  let compactionId: string | undefined;
-  let firstKeptEntryId: string | undefined;
-  for (const e of path) {
-    if (e.type === "compaction") {
-      compactionId = e.id;
-      firstKeptEntryId = (e as { firstKeptEntryId: string }).firstKeptEntryId;
-    }
-  }
-
+  // Map each model-visible message to the entry that produced it, for fork and
+  // navigate_tree. The projection already applies compaction ranges and
+  // context_edit omissions/replacements, so counts line up with piCtx.messages.
+  const projection = piBuildSessionProjection(piEntries, leafId, byId as unknown as Map<string, PiSessionEntry>);
   const entryIds: string[] = [];
-  if (compactionId) {
-    // The first message in piCtx.messages is the synthetic compaction summary — map to compaction entry id
-    entryIds.push(compactionId);
-    const compactionIdx = path.findIndex((e) => e.id === compactionId);
-    const firstKeptIdx = firstKeptEntryId
-      ? path.findIndex((e, i) => i < compactionIdx && e.id === firstKeptEntryId)
-      : -1;
-    const startIdx = firstKeptIdx >= 0 ? firstKeptIdx : compactionIdx;
-    for (let i = startIdx; i < compactionIdx; i++) {
-      if (isContextMessageEntry(path[i])) entryIds.push(path[i].id);
-    }
-    for (let i = compactionIdx + 1; i < path.length; i++) {
-      if (isContextMessageEntry(path[i])) entryIds.push(path[i].id);
-    }
-  } else {
-    for (const e of path) {
-      if (isContextMessageEntry(e)) entryIds.push(e.id);
-    }
+  for (const projected of projection.entries) {
+    if (projected.messages.length === 0) continue;
+    for (let i = 0; i < projected.messages.length; i += 1) entryIds.push(projected.sourceEntry.id);
   }
 
   // pi injects compaction summary as {role:"compactionSummary", summary, tokensBefore}.

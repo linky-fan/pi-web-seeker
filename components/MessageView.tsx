@@ -32,6 +32,8 @@ function MessageViewImpl({
   showTimestamp,
   prevTimestamp,
   nextTimestamp,
+  animateText,
+  animationToken,
 }: MessageViewProps) {
   if (message.role === "user") {
     const legacyComsNetEvent = parseLegacyComsNetUserMessage(message as UserMessage);
@@ -85,6 +87,8 @@ function MessageViewImpl({
         showTimestamp={showTimestamp}
         prevTimestamp={prevTimestamp}
         nextTimestamp={nextTimestamp}
+        animateText={animateText}
+        animationToken={animationToken}
       />
     );
   }

@@ -2550,30 +2550,30 @@ html[data-ui="fluid"] .pi-fluid-env-open-panel {
 
 @media (min-width: 1100px) {
 
-html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-wide-panel-active.right-panel-open:not(.pi-browser-panel-maximized) {
+html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-wide-panel-active.right-panel-open:not(.pi-inspector-maximized) {
     width: var(--fluid-file-dock-width) !important;
     min-width: var(--fluid-file-dock-width) !important;
     max-width: var(--fluid-file-dock-width) !important;
   }
 
-html[data-ui="fluid"] .pi-fluid-shell:has(.pi-wide-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-fluid-dock-handle {
+html[data-ui="fluid"] .pi-fluid-shell:has(.pi-wide-panel-active.right-panel-open:not(.pi-inspector-maximized)) .pi-fluid-dock-handle {
     right: var(--fluid-file-dock-width) !important;
   }
 
-html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized) {
+html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel-active.right-panel-open:not(.pi-inspector-maximized) {
     width: var(--fluid-interactive-dock-width) !important;
     min-width: var(--fluid-interactive-dock-width) !important;
     max-width: var(--fluid-interactive-dock-width) !important;
   }
 
-html[data-ui="fluid"] .pi-fluid-shell:has(.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized)) .pi-fluid-dock-handle {
+html[data-ui="fluid"] .pi-fluid-shell:has(.pi-browser-panel-active.right-panel-open:not(.pi-inspector-maximized)) .pi-fluid-dock-handle {
     right: var(--fluid-interactive-dock-width) !important;
   }
 }
 
 @media (min-width: 1100px) {
 
-html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel-maximized.right-panel-open {
+html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-inspector-maximized.right-panel-open {
     position: relative !important;
     inset: auto !important;
     z-index: 180 !important;
@@ -2601,25 +2601,25 @@ html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-wide-panel-ac
 
 @media (min-width: 641px) and (max-width: 1099px) {
 
-html[data-ui="fluid"] body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+html[data-ui="fluid"] body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-inspector-maximized)) .pi-quick-chat {
     right: 424px;
   }
 }
 
 @media (min-width: 1100px) {
 
-html[data-ui="fluid"] body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+html[data-ui="fluid"] body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-inspector-maximized)) .pi-quick-chat {
     right: calc(var(--fluid-file-dock-width) + 14px);
   }
 
-html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+html[data-ui="fluid"] body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-inspector-maximized)) .pi-quick-chat {
     right: calc(var(--fluid-interactive-dock-width) + 14px);
   }
 }
 
 @media (max-width: 1099px) {
 
-html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-browser-panel-maximized.right-panel-open {
+html[data-ui="fluid"] .right-panel-container.pi-fluid-inspector.pi-inspector-maximized.right-panel-open {
     position: fixed !important;
     inset: 0 !important;
     z-index: 520 !important;

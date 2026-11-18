@@ -12,6 +12,8 @@ const { parseArgs } = require("util");
 
 const pkgDir = path.join(__dirname, "..");
 const nextDir = path.join(pkgDir, ".next");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { assertNetworkAccessConfigured, browserLaunchUrl } = require(path.join(pkgDir, "scripts", "network-security.cjs"));
 
 // Resolve next's CLI entry directly to avoid relying on .bin symlinks (which
 // may not exist when installed via npx).
@@ -37,7 +39,14 @@ const { values: cliArgs } = parseArgs({
 });
 
 const port     = cliArgs.port     ?? process.env.PORT             ?? "30141";
-const hostname = cliArgs.hostname ?? process.env.PI_WEB_BIND_HOST ?? "0.0.0.0";
+const hostname = cliArgs.hostname ?? process.env.PI_WEB_BIND_HOST ?? "localhost";
+
+try {
+  assertNetworkAccessConfigured(hostname, process.env.PI_WEB_ACCESS_TOKEN);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
 
 if (!fs.existsSync(nextDir)) {
   console.error([
@@ -65,12 +74,11 @@ if (hostname) nextArgs.push("-H", hostname);
 const child = spawn(process.execPath, [nextBin, ...nextArgs], {
   cwd: pkgDir,
   stdio: ["inherit", "pipe", "inherit"],
-  env: { ...process.env, PI_WEB_APP_ROOT: pkgDir },
+  env: { ...process.env, PI_WEB_APP_ROOT: pkgDir, PI_WEB_BIND_HOST: hostname },
 });
 
 let browserOpened = false;
-const openHost = hostname === "0.0.0.0" || hostname === "::" ? "localhost" : hostname;
-const url = `http://${openHost}:${port}`;
+const url = browserLaunchUrl(hostname, port, process.env.PI_WEB_ACCESS_TOKEN);
 
 child.stdout.on("data", (chunk) => {
   const text = chunk.toString();
@@ -79,8 +87,11 @@ child.stdout.on("data", (chunk) => {
     browserOpened = true;
     const isWindows = process.platform === "win32";
     const isMac = process.platform === "darwin";
-    const openCmd = isWindows ? "start" : isMac ? "open" : "xdg-open";
-    spawn(openCmd, [url], { shell: isWindows, stdio: "ignore", detached: true }).unref();
+    const openCmd = isWindows
+      ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "rundll32.exe")
+      : isMac ? "open" : "xdg-open";
+    const openArgs = isWindows ? ["url.dll,FileProtocolHandler", url] : [url];
+    spawn(openCmd, openArgs, { stdio: "ignore", detached: true }).unref();
   }
 });
 

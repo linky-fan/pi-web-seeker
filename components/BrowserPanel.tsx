@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { apiPath } from "@/lib/api-path";
+import { AgentCommandError } from "@/lib/agent-client";
+import { ProjectTrustDialog } from "@/components/ProjectTrustDialog";
+import { usePackageTrustGate } from "@/hooks/usePackageTrustGate";
 import type {
   BrowserApprovalDecision,
   BrowserEvent,
@@ -19,8 +22,6 @@ interface BrowserStatusResponse extends BrowserRuntimeStatus {
 interface Props {
   agentSessionId: string;
   cwd: string;
-  maximized: boolean;
-  onToggleMaximize: () => void;
   onCloseTab: () => void;
 }
 
@@ -54,7 +55,7 @@ function eventLabel(event: BrowserEvent): string {
   return event.summary || event.error || event.action || event.type.replaceAll("_", " ");
 }
 
-export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize, onCloseTab }: Props) {
+export function BrowserPanel({ agentSessionId, cwd, onCloseTab }: Props) {
   const { t } = useLocale();
   const [status, setStatus] = useState<BrowserStatusResponse | null>(null);
   const [session, setSession] = useState<BrowserSessionState | null>(null);
@@ -62,6 +63,8 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const packageTrust = usePackageTrustGate();
+  const { cwd: packageTrustCwd, dismiss: dismissPackageTrust, resolve: resolvePackageTrustDecision, resolving: packageTrustResolving, runWithTrust } = packageTrust;
   const addressFocusedRef = useRef(false);
 
   const loadStatus = useCallback(async (force = false) => {
@@ -86,6 +89,10 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
     setError(null);
     void Promise.all([loadStatus(), loadSession()]).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   }, [loadSession, loadStatus]);
+
+  useEffect(() => {
+    dismissPackageTrust();
+  }, [agentSessionId, cwd, dismissPackageTrust]);
 
   useEffect(() => {
     const source = new EventSource(apiPath(`/api/browser/sessions/${encodeURIComponent(agentSessionId)}/events`));
@@ -125,24 +132,42 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
     }
   }, [agentSessionId, loadSession]);
 
-  const enableTools = useCallback(async () => {
+  const enableToolsRequest = useCallback(async () => {
     setBusy("setup");
-    setError(null);
     try {
       const response = await fetch(apiPath("/api/browser/setup"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ cwd, agentSessionId }),
       });
-      const body = await response.json() as { error?: string };
+      const body = await response.json() as { error?: string; code?: string; cwd?: string };
+      if (response.status === 428 && body.code === "PROJECT_TRUST_REQUIRED" && body.cwd) {
+        throw new AgentCommandError(body.error ?? "Project trust required", response.status, body.code, body.cwd);
+      }
       if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
       await loadStatus(true);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(null);
     }
   }, [agentSessionId, cwd, loadStatus]);
+
+  const enableTools = useCallback(async () => {
+    setError(null);
+    try {
+      await runWithTrust(cwd, enableToolsRequest);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [cwd, enableToolsRequest, runWithTrust]);
+
+  const resolvePackageTrust = useCallback(async (trusted: boolean) => {
+    setError(null);
+    try {
+      await resolvePackageTrustDecision(trusted);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [resolvePackageTrustDecision]);
 
   const recheckStatus = useCallback(async () => {
     setBusy("status");
@@ -246,9 +271,6 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
         </button>
         <button className="pi-browser-icon-button" onClick={() => void runCommand(session?.status === "paused" ? "resume" : "pause")} disabled={setupBlocked || busy !== null} title={session?.status === "paused" ? t("browser.resume") : t("browser.pause")} aria-label={session?.status === "paused" ? t("browser.resume") : t("browser.pause")}>
           {session?.status === "paused" ? <span className="pi-browser-play">▶</span> : <span className="pi-browser-pause">Ⅱ</span>}
-        </button>
-        <button className="pi-browser-icon-button" onClick={onToggleMaximize} title={maximized ? t("browser.restore") : t("browser.maximize")} aria-label={maximized ? t("browser.restore") : t("browser.maximize")}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{maximized ? <><path d="M8 3H3v5M16 21h5v-5M3 16v5h5M21 8V3h-5"/></> : <><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></>}</svg>
         </button>
       </div>
 
@@ -378,6 +400,13 @@ export function BrowserPanel({ agentSessionId, cwd, maximized, onToggleMaximize,
         <button onClick={() => void runCommand("close")} disabled={busy !== null}>{t("browser.closeSession")}</button>
         <button onClick={onCloseTab}>{t("browser.hideTab")}</button>
       </div>
+      {packageTrustCwd && <ProjectTrustDialog
+        cwd={packageTrustCwd}
+        resolving={packageTrustResolving}
+        purpose="package"
+        onResolve={(trusted) => { void resolvePackageTrust(trusted); }}
+        onClose={dismissPackageTrust}
+      />}
     </section>
   );
 }

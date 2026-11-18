@@ -6,6 +6,7 @@ import {
   getAgentDir,
   type PackageSource,
 } from "@earendil-works/pi-coding-agent";
+import { assertProjectTrustedForPackageEnable, createTrustAwareSettingsManager, reloadResourceLoaderWithTrust } from "./project-trust";
 
 const PACKAGE_ID = "pi-opencli";
 const PACKAGE_RELATIVE_PATH = "pi-packages/pi-opencli";
@@ -25,10 +26,10 @@ function isBrowserPackageSource(value: string): boolean {
 
 export async function browserPackageStatus(cwd: string): Promise<{ configured: boolean; loaded: boolean; packageExists: boolean; errors: string[] }> {
   const agentDir = getAgentDir();
-  const settings = SettingsManager.create(cwd, agentDir);
+  const settings = createTrustAwareSettingsManager(cwd, agentDir);
   const configured = settings.getPackages().some((entry) => isBrowserPackageSource(packageSourceValue(entry)));
-  const loader = new DefaultResourceLoader({ cwd, agentDir });
-  await loader.reload();
+  const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: settings });
+  await reloadResourceLoaderWithTrust(loader, cwd);
   const extensions = loader.getExtensions();
   const loaded = extensions.extensions.some((extension) => Array.from(extension.tools.keys()).some((name) => name.startsWith(TOOL_PREFIX)));
   const errors = extensions.errors
@@ -40,6 +41,7 @@ export async function browserPackageStatus(cwd: string): Promise<{ configured: b
 export async function enableBrowserPackage(cwd: string): Promise<string> {
   const source = browserPackagePath();
   if (!existsSync(source)) throw new Error(`Built-in browser package not found: ${source}`);
+  assertProjectTrustedForPackageEnable(cwd);
   const settings = SettingsManager.create(cwd, getAgentDir(), { projectTrusted: true });
   const packages = settings.getPackages();
   if (!packages.some((entry) => isBrowserPackageSource(packageSourceValue(entry)))) {

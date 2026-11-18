@@ -1,35 +1,22 @@
 import { NextResponse } from "next/server";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { createAppModelRuntime } from "@/lib/model-registry";
-import { normalizeModelsJsonCompat } from "@/lib/models-config-compat";
+import { literalCredentialRejection, nonLiteralHeaderName } from "@/lib/model-test-credentials";
+import { runModelConnectionTest } from "@/lib/model-test-runner";
 
 export const dynamic = "force-dynamic";
-
-const TEST_TIMEOUT_MS = 20_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function getAssistantText(message: AssistantMessage): string {
-  return message.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("");
+function credentialErrorMessage(rejection: "empty" | "command" | "env-reference", subject: string): string {
+  if (rejection === "empty") return `${subject} must be entered in this form to run a connection test`;
+  if (rejection === "command") return `${subject} cannot run a shell command during a connection test; enter the literal value`;
+  return `${subject} cannot reference an environment variable during a connection test; enter the literal value`;
 }
 
 export async function POST(req: Request) {
-  let tempDir: string | undefined;
-
   try {
-    const body = await req.json() as { providerName?: unknown; provider?: unknown; model?: unknown };
+    const body = await req.json() as { providerName?: unknown; provider?: unknown; model?: unknown; allowNoAuth?: unknown };
     const providerName = typeof body.providerName === "string" ? body.providerName.trim() : "";
     if (!providerName) return NextResponse.json({ ok: false, error: "providerName is required" }, { status: 400 });
     if (!isRecord(body.provider)) return NextResponse.json({ ok: false, error: "provider is required" }, { status: 400 });
@@ -38,71 +25,28 @@ export async function POST(req: Request) {
     const modelId = typeof body.model.id === "string" ? body.model.id.trim() : "";
     if (!modelId) return NextResponse.json({ ok: false, error: "Model ID is required" }, { status: 400 });
 
-    tempDir = mkdtempSync(join(tmpdir(), "pi-web-model-test-"));
-    const modelsPath = join(tempDir, "models.json");
-    const normalized = normalizeModelsJsonCompat({
-      providers: {
-        [providerName]: {
-          ...body.provider,
-          models: [{ ...body.model, id: modelId }],
-        },
-      },
-    });
-    writeFileSync(modelsPath, JSON.stringify(normalized.value, null, 2), "utf8");
-
-    const runtime = await createAppModelRuntime(modelsPath);
-    const loadError = runtime.getError();
-    if (loadError) return NextResponse.json({ ok: false, error: loadError });
-
-    const model = runtime.getModel(providerName, modelId);
-    if (!model) return NextResponse.json({ ok: false, error: `Model not found: ${providerName}/${modelId}` });
-
-    const auth = await runtime.getAuth(model);
-    if (!auth) return NextResponse.json({ ok: false, error: `No API key found for "${providerName}"` });
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS);
-    let status: number | undefined;
-    const startedAt = Date.now();
-
-    try {
-      const message = await runtime.completeSimple(model, {
-        messages: [{
-          role: "user",
-          content: "Reply with OK only.",
-          timestamp: Date.now(),
-        }],
-      }, {
-        maxTokens: 16,
-        timeoutMs: TEST_TIMEOUT_MS,
-        maxRetries: 0,
-        cacheRetention: "none",
-        signal: controller.signal,
-        onResponse: (response) => { status = response.status; },
-      });
-
-      const latencyMs = Date.now() - startedAt;
-      if (message.stopReason === "error" || message.stopReason === "aborted") {
-        return NextResponse.json({
-          ok: false,
-          error: message.errorMessage ?? (controller.signal.aborted ? "Test timed out" : "Model returned an error"),
-          latencyMs,
-          status,
-        });
-      }
-
-      return NextResponse.json({
-        ok: true,
-        latencyMs,
-        status,
-        responseText: getAssistantText(message).slice(0, 300),
-      });
-    } finally {
-      clearTimeout(timeout);
+    const apiKey = typeof body.provider.apiKey === "string" ? body.provider.apiKey : "";
+    const allowNoAuth = body.allowNoAuth === true;
+    const keyRejection = literalCredentialRejection(apiKey);
+    // A keyless endpoint may send no key at all, but a typed key is still never resolved.
+    if (keyRejection && !(allowNoAuth && keyRejection === "empty")) {
+      return NextResponse.json({ ok: false, error: credentialErrorMessage(keyRejection, "API key") }, { status: 400 });
     }
+
+    const headerName = nonLiteralHeaderName(body.provider, body.model);
+    if (headerName) {
+      return NextResponse.json({
+        ok: false,
+        error: `Header "${headerName}" cannot use shell commands or environment variables during a connection test; enter a literal value`,
+      }, { status: 400 });
+    }
+
+    const result = await runModelConnectionTest({ providerName, provider: body.provider, model: body.model, apiKey, allowNoAuth });
+    if (result.ok) return NextResponse.json(result);
+    const { httpStatus, ...failure } = result;
+    return NextResponse.json(failure, httpStatus ? { status: httpStatus } : undefined);
   } catch (error) {
-    return NextResponse.json({ ok: false, error: errorMessage(error) }, { status: 500 });
-  } finally {
-    if (tempDir) rmSync(tempDir, { recursive: true, force: true });
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

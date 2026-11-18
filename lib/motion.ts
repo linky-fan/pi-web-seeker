@@ -95,6 +95,44 @@ export function popOnce(element: Element | null) {
   );
 }
 
+/**
+ * One-shot entrance for a message row. Streaming updates must not replay it, so
+ * the caller runs this once per row rather than on every render.
+ */
+export function enterMessage(element: Element | null) {
+  if (!element || prefersReducedMotion()) return undefined;
+  return gsap.fromTo(
+    element,
+    { autoAlpha: 0, y: 18, scale: 0.985 },
+    {
+      autoAlpha: 1,
+      y: 0,
+      scale: 1,
+      duration: 0.32,
+      ease: "power3.out",
+      overwrite: "auto",
+      clearProps: "opacity,visibility,transform",
+    }
+  );
+}
+
+/** Draws a checkmark once, used when a running tool reports success. */
+export function drawCheck(path: Element | null) {
+  if (!path || prefersReducedMotion()) return undefined;
+  return gsap.fromTo(
+    path,
+    { strokeDasharray: 18, strokeDashoffset: 18, opacity: 0 },
+    {
+      strokeDashoffset: 0,
+      opacity: 1,
+      duration: 0.32,
+      ease: "power2.out",
+      overwrite: "auto",
+      clearProps: "strokeDasharray,strokeDashoffset",
+    }
+  );
+}
+
 export function animateModalIn(overlay: Element | null, panel: Element | null) {
   if (!overlay || !panel) return undefined;
   if (prefersReducedMotion()) {

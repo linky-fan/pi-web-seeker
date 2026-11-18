@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n";
 import { apiPath } from "@/lib/api-path";
 import { MotionModal } from "./MotionModal";
@@ -40,6 +40,8 @@ export function NetworkConfig({
   const [error, setError] = useState<string | null>(null);
   const [serverUrl, setServerUrl] = useState("");
   const [authToken, setAuthToken] = useState("");
+  const [pendingGlobal, setPendingGlobal] = useState<{ body: Record<string, unknown>; mode: "enable" | "connect" } | null>(null);
+  const seededServerUrl = useRef(false);
 
   const loadStatus = useCallback(() => {
     let cancelled = false;
@@ -50,7 +52,11 @@ export function NetworkConfig({
       .then((data: NetworkStatus) => {
         if (cancelled) return;
         setStatus(data);
-        if (!serverUrl && data.hub?.client?.server_url) setServerUrl(data.hub.client.server_url);
+        // Seed the form once; typing a hub URL must not trigger another status load.
+        if (!seededServerUrl.current && data.hub?.client?.server_url) {
+          seededServerUrl.current = true;
+          setServerUrl(data.hub.client.server_url);
+        }
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message);
@@ -59,21 +65,26 @@ export function NetworkConfig({
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [cwd, serverUrl]);
+  }, [cwd]);
 
   useEffect(() => loadStatus(), [loadStatus]);
 
-  const postAction = useCallback(async (body: Record<string, unknown>, mode: "enable" | "connect") => {
+  const postAction = useCallback(async (body: Record<string, unknown>, mode: "enable" | "connect", confirmGlobal = false) => {
     setSaving(mode);
     setError(null);
     try {
       const res = await fetch(apiPath("coms-net"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, ...body }),
+        body: JSON.stringify({ cwd, confirmGlobal, ...body }),
       });
-      const data = await res.json() as { error?: string };
+      const data = await res.json() as { error?: string; code?: string };
+      if (res.status === 409 && data.code === "GLOBAL_CONFIRMATION_REQUIRED") {
+        setPendingGlobal({ body, mode });
+        return;
+      }
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setPendingGlobal(null);
       loadStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -93,6 +104,17 @@ export function NetworkConfig({
   const packageReady = status?.loaded || status?.installed || status?.configured;
   const hubReady = status?.hub?.running === true;
 
+  const refresh = useCallback(() => {
+    // Status is cached server-side for a few seconds; refresh drops that cache.
+    setLoading(true);
+    setError(null);
+    fetch(apiPath(`coms-net?cwd=${encodeURIComponent(cwd)}&refresh=1`))
+      .then((res) => res.json())
+      .then((data: NetworkStatus) => setStatus(data))
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [cwd]);
+
   return (
     <MotionModal onClose={onClose} closeSignal={closeSignal} overlayStyle={overlayStyle} panelStyle={panelStyle}>
       {(close) => (
@@ -103,6 +125,14 @@ export function NetworkConfig({
             <div style={{ fontSize: 15, fontWeight: 650 }}>{t("network.title")}</div>
             <div style={mutedLineStyle}>{cwd}</div>
           </div>
+          <button
+            onClick={refresh}
+            disabled={loading || saving !== null}
+            title={t("network.refresh")}
+            style={{ ...closeButtonStyle, fontSize: 14, cursor: loading || saving !== null ? "not-allowed" : "pointer" }}
+          >
+            ⟳
+          </button>
           <button onClick={close} title={t("common.close")} style={closeButtonStyle}>x</button>
         </div>
 
@@ -156,6 +186,25 @@ export function NetworkConfig({
               </button>
             </div>
           </section>
+
+          {pendingGlobal ? (
+            <div role="alertdialog" style={confirmStyle}>
+              <div style={{ fontSize: 12, lineHeight: 1.5 }}>{t("network.confirmGlobal")}</div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button type="button" onClick={() => setPendingGlobal(null)} disabled={saving !== null} style={secondaryButtonStyle}>
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => postAction(pendingGlobal.body, pendingGlobal.mode, true)}
+                  disabled={saving !== null}
+                  style={primaryButtonStyle}
+                >
+                  {saving ? t("network.enabling") : t("network.confirmGlobalAction")}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {status?.hub?.url ? (
             <div style={hintStyle}>
@@ -227,6 +276,8 @@ const sectionTextStyle = { fontSize: 12, lineHeight: 1.45, color: "var(--text-di
 const primaryButtonStyle = { minHeight: 32, border: "none", borderRadius: 6, background: "var(--accent)", color: "#fff", padding: "0 12px", cursor: "pointer", fontSize: 12, fontWeight: 650 } as const;
 const inputStyle = { width: "100%", height: 32, border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", color: "var(--text)", padding: "0 9px", fontSize: 12 } as const;
 const hintStyle = { color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5, border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--bg)" } as const;
+const confirmStyle = { display: "flex", flexDirection: "column", gap: 10, border: "1px solid rgba(245,158,11,0.45)", borderRadius: 7, padding: 12, background: "rgba(245,158,11,0.08)", color: "var(--text)" } as const;
+const secondaryButtonStyle = { minHeight: 32, border: "1px solid var(--border)", borderRadius: 6, background: "none", color: "var(--text-muted)", padding: "0 12px", cursor: "pointer", fontSize: 12 } as const;
 const runtimeStyle = { display: "grid", gridTemplateColumns: "110px minmax(0, 1fr)", gap: "5px 8px", fontSize: 11, color: "var(--text-dim)" } as const;
 const monoStyle = { fontFamily: "var(--font-mono)", fontSize: 11 } as const;
 const monoEllipsisStyle = { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", color: "var(--text-muted)" } as const;

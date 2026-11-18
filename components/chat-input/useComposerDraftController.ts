@@ -161,9 +161,10 @@ export function useComposerDraftController(options: Options) {
 
   const insertIfEmpty = useCallback((text: string) => {
     const textarea = textareaRef.current;
-    if ((textarea?.value ?? valueRef.current).trim()) return;
+    if ((textarea?.value ?? valueRef.current).trim()) return false;
     setInputValue(text);
     requestAnimationFrame(() => textarea?.focus());
+    return true;
   }, [setInputValue]);
 
   const insertSnippet = useCallback((text: string) => {
@@ -297,7 +298,16 @@ export function useComposerDraftController(options: Options) {
     };
   }, []);
 
-  const imperativeHandle = useMemo<ChatInputHandle>(() => ({ insertText, insertIfEmpty, addImages: processImageFiles }), [insertIfEmpty, insertText, processImageFiles]);
+  const clearComposer = useCallback(() => {
+    clearDraft();
+    setInputValue("");
+    clearImages();
+  }, [clearDraft, clearImages, setInputValue]);
+
+  const imperativeHandle = useMemo<ChatInputHandle>(
+    () => ({ insertText, insertIfEmpty, addImages: processImageFiles, clearDraft: clearComposer }),
+    [clearComposer, insertIfEmpty, insertText, processImageFiles],
+  );
 
   return {
     value, setValue, attachedImages, canSend, textareaRef, fileInputRef, imperativeHandle,

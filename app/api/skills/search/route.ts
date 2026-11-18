@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runNpx } from "@/lib/npx";
+import { isSafeCliArgument } from "@/lib/cli-args";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,9 @@ export async function POST(req: Request) {
   try {
     const { query, limit: rawLimit } = await req.json() as { query?: string; limit?: unknown };
     if (!query?.trim()) return NextResponse.json({ error: "query required" }, { status: 400 });
+    if (!isSafeCliArgument(query.trim())) {
+      return NextResponse.json({ error: "Invalid query" }, { status: 400 });
+    }
     const limit = parseLimit(rawLimit);
 
     try {

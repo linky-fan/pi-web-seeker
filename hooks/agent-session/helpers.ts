@@ -15,6 +15,7 @@ export const PLAN_EXECUTION_MODE_STORAGE_PREFIX = "pi-web.planExecutionMode";
 export const BUDDY_MODE_STORAGE_PREFIX = "pi-web.buddyMode";
 export const SUBAGENTS_MODE_STORAGE_PREFIX = "pi-web.subagentsMode";
 export const BUDDY_REVIEWER_STORAGE_PREFIX = "pi-web.buddyReviewer";
+export const THINKING_LEVEL_STORAGE_PREFIX = "pi-web.thinkingLevel";
 
 export function streamReducer(state: StreamingState, action: StreamAction): StreamingState {
   switch (action.type) {
@@ -25,6 +26,19 @@ export function streamReducer(state: StreamingState, action: StreamAction): Stre
     case "reset": return { isStreaming: false, streamingMessage: null };
     default: return state;
   }
+}
+
+/**
+ * pi 1.4 emits agent_end for each run inside one continuous run (retries, queued
+ * continuations) and agent_settled once at the true end. Only a settle finalizes
+ * the turn; an agent_end just stops the current stream so the next run can start.
+ * An agent_end without willRetry predates that split and is itself the end.
+ */
+export function agentRunCompletion(event: { type: string; willRetry?: unknown }): "continue" | "ended" | "settled" {
+  if (event.type === "agent_settled") return "settled";
+  if (event.type !== "agent_end") return "continue";
+  if (event.willRetry === true) return "continue";
+  return typeof event.willRetry === "boolean" ? "ended" : "settled";
 }
 
 export function runtimeErrorMessage(event: unknown): string {
@@ -166,6 +180,32 @@ export function isOperationCurrent(
 export function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError"
     || error instanceof Error && error.name === "AbortError";
+}
+
+/**
+ * pi reports a concrete thinking level, which would otherwise erase an explicit
+ * "Auto" choice after each sync. Remembers Auto so the selector keeps showing it.
+ */
+export function prefersAutoThinkingLevel(stored: string | null | undefined): boolean {
+  return stored === "auto";
+}
+
+/** Queued input from an abort may only be restored into the session still on screen. */
+export function canRestoreQueuedInput(capturedSessionId: string | null, currentSessionId: string | null): boolean {
+  return capturedSessionId !== null && capturedSessionId === currentSessionId;
+}
+
+/**
+ * When cwd:* is promoted to session:<id> after the first send, the just-connected
+ * stream must survive the identity change instead of being torn down and reset.
+ */
+export function isPromotingLiveStream(
+  identity: string,
+  streamSessionId: string | null,
+  hasOpenStream: boolean,
+): boolean {
+  if (!hasOpenStream || streamSessionId === null) return false;
+  return identity === `session:${streamSessionId}`;
 }
 
 export function shouldFollowScroll(distanceFromBottom: number): boolean {

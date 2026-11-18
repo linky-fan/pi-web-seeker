@@ -521,7 +521,8 @@ span.linenumber {
    the active theme tokens. Classic mode keeps the baseline styles above. */
 
 /* Controlled browser inspector */
-.pi-browser-open-tab {
+.pi-browser-open-tab,
+.pi-inspector-maximize-button {
   width: 36px;
   height: 36px;
   flex: 0 0 36px;
@@ -536,12 +537,14 @@ span.linenumber {
   transition: color 140ms ease, background 140ms ease;
 }
 
-.pi-browser-open-tab:hover:not(:disabled) {
+.pi-browser-open-tab:hover:not(:disabled),
+.pi-inspector-maximize-button:hover:not(:disabled) {
   color: var(--text);
   background: var(--bg-hover);
 }
 
-.pi-browser-open-tab:disabled {
+.pi-browser-open-tab:disabled,
+.pi-inspector-maximize-button:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
@@ -1047,19 +1050,19 @@ span.linenumber {
 }
 
 @media (min-width: 1100px) {
-  .pi-app-shell.pi-classic-shell.pi-browser-focus-mode > .sidebar-container {
+  .pi-app-shell.pi-classic-shell.pi-inspector-focus-mode > .sidebar-container {
     width: 0 !important;
     min-width: 0 !important;
     border-right: 0 !important;
     transition: none !important;
   }
 
-  .pi-app-shell.pi-browser-focus-mode .pi-center-pane {
+  .pi-app-shell.pi-inspector-focus-mode .pi-center-pane {
     flex: 1 1 480px !important;
     min-width: 480px !important;
   }
 
-  .right-panel-container.pi-browser-panel-maximized.right-panel-open {
+  .right-panel-container.pi-inspector-maximized.right-panel-open {
     position: relative !important;
     inset: auto !important;
     z-index: 180 !important;
@@ -1075,7 +1078,7 @@ span.linenumber {
     box-shadow: none !important;
   }
 
-  .right-panel-container.pi-browser-panel-maximized.right-panel-open > * {
+  .right-panel-container.pi-inspector-maximized.right-panel-open > * {
     width: auto !important;
     min-width: 0 !important;
   }
@@ -1093,7 +1096,7 @@ span.linenumber {
 
 @media (max-width: 640px) {
   .right-panel-container.pi-browser-panel-active.right-panel-open,
-.right-panel-container.pi-browser-panel-maximized.right-panel-open {
+.right-panel-container.pi-inspector-maximized.right-panel-open {
     position: fixed !important;
     inset: 0 !important;
     z-index: 520 !important;
@@ -2198,7 +2201,7 @@ html.dark .pi-quick-chat {
 }
 
 body:has(.right-panel-container.pi-remote-panel-active.right-panel-open) .pi-quick-chat,
-body:has(.pi-app-shell.pi-browser-focus-mode) .pi-quick-chat {
+body:has(.pi-app-shell.pi-inspector-focus-mode) .pi-quick-chat {
   display: none;
 }
 
@@ -2302,7 +2305,7 @@ body:has(.pi-app-shell.pi-browser-focus-mode) .pi-quick-chat {
 }
 
 @media (max-width: 1099px) {
-  .right-panel-container.pi-browser-panel-maximized.right-panel-open {
+  .right-panel-container.pi-inspector-maximized.right-panel-open {
     position: fixed !important;
     inset: 0 !important;
     z-index: 520 !important;
@@ -2318,7 +2321,7 @@ body:has(.pi-app-shell.pi-browser-focus-mode) .pi-quick-chat {
     box-shadow: none !important;
   }
 
-  .right-panel-container.pi-browser-panel-maximized.right-panel-open > * {
+  .right-panel-container.pi-inspector-maximized.right-panel-open > * {
     width: auto !important;
     min-width: 0 !important;
   }
@@ -2330,7 +2333,7 @@ body:has(.pi-app-shell.pi-browser-focus-mode) .pi-quick-chat {
     min-width: min(58vw, 860px);
   }
 
-  html:not([data-ui="fluid"]) .right-panel-container.pi-browser-panel-active.right-panel-open:not(.pi-browser-panel-maximized) {
+  html:not([data-ui="fluid"]) .right-panel-container.pi-browser-panel-active.right-panel-open:not(.pi-inspector-maximized) {
     width: 50vw;
     min-width: 50vw;
   }
@@ -2341,13 +2344,30 @@ body:has(.pi-app-shell.pi-browser-focus-mode) .pi-quick-chat {
 }
 
 @media (min-width: 641px) {
-  html:not([data-ui="fluid"]) body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+  html:not([data-ui="fluid"]) body:has(.right-panel-container.pi-wide-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-inspector-maximized)) .pi-quick-chat {
     right: calc(min(58vw, 860px) + 14px);
   }
 }
 
 @media (min-width: 900px) {
-  html:not([data-ui="fluid"]) body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-browser-panel-maximized)) .pi-quick-chat {
+  html:not([data-ui="fluid"]) body:has(.right-panel-container.pi-browser-panel-active:not(.pi-remote-panel-active).right-panel-open:not(.pi-inspector-maximized)) .pi-quick-chat {
     right: calc(50vw + 14px);
+  }
+}
+
+/* Running tool indicator: a slow pulse that reads as "in progress" without
+   competing with streaming text. */
+@keyframes pi-tool-status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+.pi-tool-status-dot {
+  animation: pi-tool-status-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pi-tool-status-dot {
+    animation: none;
   }
 }

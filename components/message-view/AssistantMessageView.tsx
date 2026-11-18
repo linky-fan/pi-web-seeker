@@ -24,6 +24,8 @@ interface AssistantMessageViewProps {
   showTimestamp?: boolean;
   prevTimestamp?: number;
   nextTimestamp?: number;
+  animateText?: boolean;
+  animationToken?: string;
 }
 
 function AssistantMessageViewImpl({
@@ -36,6 +38,8 @@ function AssistantMessageViewImpl({
   showTimestamp,
   prevTimestamp,
   nextTimestamp,
+  animateText,
+  animationToken,
 }: AssistantMessageViewProps) {
   const blocks = useMemo(() => message.content ?? [], [message.content]);
   const [hovered, setHovered] = useState(false);
@@ -103,6 +107,8 @@ function AssistantMessageViewImpl({
               <MessageBlock
                 key={index}
                 block={block}
+                animateText={animateText}
+                animationToken={animationToken}
                 streamingDuration={block.type === "thinking"
                   ? streamingDurations.get(index) ?? thinkingDurationFromFile
                   : undefined}

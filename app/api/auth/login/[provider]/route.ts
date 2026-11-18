@@ -1,5 +1,6 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { createAppModelRuntime } from "@/lib/model-registry";
+import { invalidateModelsPayloadCache } from "@/lib/models-payload";
 
 export const dynamic = "force-dynamic";
 
@@ -183,6 +184,7 @@ export async function GET(
           signal: abort.signal,
         });
 
+        invalidateModelsPayloadCache();
         send(controller, { type: "success" });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

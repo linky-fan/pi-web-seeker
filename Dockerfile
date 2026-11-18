@@ -8,6 +8,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
+COPY scripts/ ./scripts/
 RUN npm ci
 
 FROM deps AS builder
@@ -39,6 +40,7 @@ COPY --from=builder --chown=1000:1000 /app/package.json /app/package-lock.json .
 COPY --from=deps --chown=1000:1000 /app/node_modules ./node_modules
 COPY --from=builder --chown=1000:1000 /app/.next ./.next
 COPY --from=builder --chown=1000:1000 /app/next.config.mjs ./next.config.mjs
+COPY --from=builder --chown=1000:1000 /app/scripts/network-security.cjs ./scripts/network-security.cjs
 COPY --chown=1000:1000 docker-entrypoint.sh /usr/local/bin/pi-web-docker-entrypoint
 RUN chmod +x /usr/local/bin/pi-web-docker-entrypoint \
   && test -x node_modules/.bin/next
@@ -46,7 +48,7 @@ RUN chmod +x /usr/local/bin/pi-web-docker-entrypoint \
 EXPOSE 30141
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||30141)).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||30141),{headers:{Authorization:'Bearer '+(process.env.PI_WEB_ACCESS_TOKEN||'')}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["pi-web-docker-entrypoint"]
 CMD ["sh", "-c", "exec node_modules/.bin/next start -p ${PORT:-30141} -H ${PI_WEB_BIND_HOST:-0.0.0.0}"]

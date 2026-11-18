@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { assertPathAllowed } from "@/lib/allowed-roots";
 import { enableBrowserPackage, browserPackageStatus } from "@/lib/browser-package";
 import { getRpcSession } from "@/lib/rpc-manager";
+import { projectTrustErrorResponse } from "@/lib/project-trust";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,6 +22,8 @@ export async function POST(req: Request) {
     const status = await browserPackageStatus(cwd);
     return NextResponse.json({ ok: true, packagePath, ...status });
   } catch (error) {
+    const trustError = projectTrustErrorResponse(error);
+    if (trustError) return NextResponse.json(trustError.body, { status: trustError.status });
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: message === "Access denied" ? 403 : 500 });
   }

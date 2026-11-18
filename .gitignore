@@ -35,6 +35,9 @@
 .DS_Store
 *.pem
 
+# local manual smoke-test fixtures (generated sessions)
+/.smoke/
+
 # debug
 npm-debug.log*
 yarn-debug.log*

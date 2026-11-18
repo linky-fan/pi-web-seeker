@@ -1,6 +1,7 @@
 import { getCachedSessionFile, resolveSessionPath } from "@/lib/session-reader";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
 import { createAgentEventStream } from "@/lib/agent-event-stream";
+import { ProjectTrustRequiredError } from "@/lib/project-trust";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,9 @@ export async function GET(
     try {
       ({ session } = await startRpcSession(id, filePath, cwd));
     } catch (error) {
+      if (error instanceof ProjectTrustRequiredError) {
+        return new Response(`Project trust required for ${cwd}`, { status: 428 });
+      }
       return new Response(`Failed to start agent: ${error}`, { status: 500 });
     }
   }

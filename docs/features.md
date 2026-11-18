@@ -83,6 +83,8 @@ Remote 捕获以及 `remote_session`、`remote_execute`、`remote_capture` 的�
 
 导入分为 inspect 和 import：先校验包并展示目标 sandbox、数量、大小和警告，确认后才恢复会话和工作区。恢复后的 cwd 会指向新的 sandbox，不默认写回原始绝对路径。
 
+Debug Bundle 可能包含完整提示词与模型回复、工具输入和输出、图片或其他媒体，以及选中的工作区文件内容；这些内容可能带有专有代码、日志或用户数据。工作区排除规则会过滤常见凭据文件名，但这是启发式检查，并不会完整扫描文件内容中的密码、令牌或其他秘密。分享前请在本地检查 `.tar.gz` 中的 `session/`、`media/` 和 `workspace/` 内容，并移除不应外传的信息。
+
 默认工作区范围为 Git tracked 文件和未忽略的 untracked 文件。以下内容不会进入 bundle：
 
 - `.git`、`.pi`、`.pi-remote`、`node_modules`、`.next` 和构建缓存
@@ -106,6 +108,24 @@ npm run agents:check -- --path /path/to/project/AGENTS.md
 ```
 
 内置模板包括 `auto`、`standard`、`next-app`、`python` 和 `docker-service`。检查器会报告长度、章节、疑似密钥、无效命令、大文件树和过长代码块；`--strict` 可以用于 CI。
+
+## 模块化语言检查器
+
+Inspector 的代码检查面板会扫描当前工作区中受支持的项目，并按语言列出本机可用的检查器：
+
+| 语言 | 检查器 |
+| :--- | :--- |
+| Python | Ruff、mypy |
+| Java | Checkstyle |
+| C / C++ | clang-tidy（需要项目内的 `compile_commands.json`） |
+| Go | `go vet` |
+| Rust | Clippy |
+
+面板只做有界项目发现，不会自动安装工具或依赖。发现的检查器默认勾选，但只有用户勾选明确的信任确认后才会运行；诊断项可以跳转到对应文件和行。Ruff、mypy、Checkstyle 和 clang-tidy 不会启用自动修复。Go 检查以只读模块模式并关闭代理，Cargo 使用 offline/locked 模式且把 target 输出放到系统临时目录。子进程只继承工具链所需的最小环境变量，不传递 Pi Web 的 API key 和访问令牌。Cargo 项目的构建脚本仍可能执行，因此这不是进程 sandbox，只应对可信工作区运行。
+
+检查器必须安装在运行 Pi Web 的机器或容器中。Python 项目根目录下的 `.venv` / `venv` 工具也会被发现。Checkstyle 可以从 `PATH` 查找，也可以通过 `PI_WEB_CHECKSTYLE_JAR` 指向可信 JAR。Docker 用户要在容器运行环境提供相应工具。C/C++ 项目必须提供位于项目目录内部的有效编译数据库；扫描和诊断路径都会限制在已允许的工作区及项目根目录内。
+
+新增语言时，在 `lib/checkers/adapters/` 添加独立适配器，实现发现、可用性、固定参数构建和输出解析，再在 `lib/checkers/index.ts` 注册，并为输出解析、安全边界和发现规则添加测试。前端无需按语言增加专属组件。
 
 ## Subagents
 

@@ -1,4 +1,5 @@
 import { createAppModelRuntime } from "@/lib/model-registry";
+import { invalidateModelsPayloadCache } from "@/lib/models-payload";
 
 export const dynamic = "force-dynamic";
 
@@ -12,5 +13,6 @@ export async function POST(
     return Response.json({ error: `Unknown provider: ${provider}` }, { status: 400 });
   }
   await runtime.logout(provider);
+  invalidateModelsPayloadCache();
   return Response.json({ ok: true });
 }

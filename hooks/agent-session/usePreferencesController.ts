@@ -16,9 +16,12 @@ import {
   isAbortError,
   PLAN_EXECUTION_MODE_STORAGE_PREFIX,
   PLAN_MODE_STORAGE_PREFIX,
+  prefersAutoThinkingLevel,
   sessionStorageKey,
   SUBAGENTS_MODE_STORAGE_PREFIX,
+  THINKING_LEVEL_STORAGE_PREFIX,
 } from "./helpers";
+import { effectiveAutoThinkingLevel } from "@/lib/thinking-level";
 import type { LiveAgentState, ModelListItem, ThinkingLevelOption } from "./types";
 
 interface PreferencesOptions {
@@ -62,6 +65,8 @@ export function usePreferencesController(options: PreferencesOptions) {
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});
   const [newSessionModel, setNewSessionModelState] = useState<{ provider: string; modelId: string } | null>(null);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
+  const [modelThinkingDefaults, setModelThinkingDefaults] = useState<Record<string, string>>({});
+  const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<string | null>(null);
   const [planMode, setPlanMode] = useState<PlanMode>("normal");
   const [planExecutionMode, setPlanExecutionMode] = useState<PlanExecutionMode>("main");
   const [planModeStatus, setPlanModeStatus] = useState<PlanModeStatus | null>(null);
@@ -83,6 +88,8 @@ export function usePreferencesController(options: PreferencesOptions) {
   const buddyReviewerStorageKey = sessionCwd || newSessionCwd
     ? `${BUDDY_REVIEWER_STORAGE_PREFIX}:cwd:${newSessionCwd ?? sessionCwd}`
     : BUDDY_REVIEWER_STORAGE_PREFIX;
+  // Auto is remembered per workspace: it describes a preference, not a pi state.
+  const thinkingLevelStorageKey = `${THINKING_LEVEL_STORAGE_PREFIX}:cwd:${newSessionCwd ?? sessionCwd ?? ""}`;
 
   useEffect(() => {
     operationRef.current.mode += 1;
@@ -109,9 +116,35 @@ export function usePreferencesController(options: PreferencesOptions) {
     }
   }, [buddyModeStorageKey, buddyReviewerStorageKey, planExecutionModeStorageKey, planModeStorageKey, subagentsModeStorageKey]);
 
+  const displayModel = isNew ? newSessionModel : currentModelOverride ?? contextModel ?? pendingModel ?? null;
+
   useEffect(() => {
-    if (contextThinkingLevel && contextThinkingLevel !== "off") setThinkingLevel(contextThinkingLevel);
-  }, [contextThinkingLevel]);
+    // A workspace that prefers Auto must not adopt the concrete synced level after switching.
+    if (prefersAutoThinkingLevel(window.localStorage.getItem(thinkingLevelStorageKey))) {
+      setThinkingLevel("auto");
+    }
+  }, [thinkingLevelStorageKey]);
+
+  const appliedAutoRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!prefersAutoThinkingLevel(window.localStorage.getItem(thinkingLevelStorageKey))) {
+      appliedAutoRef.current = null;
+      if (contextThinkingLevel && contextThinkingLevel !== "off") setThinkingLevel(contextThinkingLevel);
+      return;
+    }
+    // Re-apply Auto so pi runs the level this workspace expects rather than an explicit
+    // selection carried over from the previously viewed session.
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    const target = effectiveAutoThinkingLevel(displayModel, modelThinkingDefaults, defaultThinkingLevel);
+    const appliedKey = `${sid}:${target}`;
+    if (appliedAutoRef.current === appliedKey) return;
+    appliedAutoRef.current = appliedKey;
+    void sendAgentCommand(sid, { type: "set_thinking_level", level: target }).catch((caught) => {
+      if (appliedAutoRef.current === appliedKey) appliedAutoRef.current = null;
+      if (sid === sessionIdRef.current) console.error("Failed to restore thinking level:", caught);
+    });
+  }, [contextThinkingLevel, defaultThinkingLevel, displayModel, modelThinkingDefaults, sessionIdRef, thinkingLevelStorageKey]);
 
   const persistModes = useCallback((nextPlan: PlanMode, nextExecution: PlanExecutionMode, nextBuddy: BuddyMode, nextSubagents: boolean) => {
     writeStorage(planModeStorageKey, nextPlan === "plan" ? "plan" : null);
@@ -123,8 +156,6 @@ export function usePreferencesController(options: PreferencesOptions) {
   const persistReviewer = useCallback((model: ModelRef | null) => {
     writeStorage(buddyReviewerStorageKey, model ? JSON.stringify(model) : null);
   }, [buddyReviewerStorageKey]);
-
-  const displayModel = isNew ? newSessionModel : currentModelOverride ?? contextModel ?? pendingModel ?? null;
 
   const handlePlanModeChange = useCallback(async (mode: PlanMode, executionMode: PlanExecutionMode = "main") => {
     if (agentRunningRef.current) return false;
@@ -284,27 +315,36 @@ export function usePreferencesController(options: PreferencesOptions) {
 
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevelOption) => {
     setThinkingLevel(level);
-    if (level === "auto") return;
+    writeStorage(thinkingLevelStorageKey, level === "auto" ? "auto" : null);
     const sid = sessionIdRef.current;
     if (!sid) return;
+    // Auto must still send pi the concrete level it would choose; leaving it untouched
+    // would keep whatever the previous explicit selection set.
+    const target = level === "auto"
+      ? effectiveAutoThinkingLevel(displayModel, modelThinkingDefaults, defaultThinkingLevel)
+      : level;
     const operation = ++operationRef.current.thinking;
     try {
-      await sendAgentCommand(sid, { type: "set_thinking_level", level });
+      await sendAgentCommand(sid, { type: "set_thinking_level", level: target });
     } catch (caught) {
       if (operation === operationRef.current.thinking && sid === sessionIdRef.current) console.error("Failed to set thinking level:", caught);
     }
-  }, [sessionIdRef]);
+  }, [defaultThinkingLevel, displayModel, modelThinkingDefaults, sessionIdRef, thinkingLevelStorageKey]);
 
   const applyPreferenceState = useCallback((state: LiveAgentState | undefined) => {
     if (!state) return;
-    if (state.thinkingLevel !== undefined) setThinkingLevel((state.thinkingLevel as ThinkingLevelOption) ?? "auto");
+    // Keep showing Auto instead of overwriting it with the concrete level pi applied.
+    const stored = window.localStorage.getItem(thinkingLevelStorageKey);
+    if (state.thinkingLevel !== undefined && !prefersAutoThinkingLevel(stored)) {
+      setThinkingLevel((state.thinkingLevel as ThinkingLevelOption) ?? "auto");
+    }
     if (state.planMode !== undefined) setPlanMode(state.planMode ? "plan" : "normal");
     if (state.planExecutionMode === "main" || state.planExecutionMode === "subagent") setPlanExecutionMode(state.planExecutionMode);
     if (state.planModeStatus !== undefined) setPlanModeStatus(state.planModeStatus ?? null);
     if (state.buddyMode) setBuddyMode(state.buddyMode);
     if (state.buddyReviewerModel !== undefined) setBuddyReviewerModel(state.buddyReviewerModel ?? null);
     if (state.subagentsEnabled !== undefined) setSubagentsEnabled(state.subagentsEnabled);
-  }, []);
+  }, [thinkingLevelStorageKey]);
 
   useEffect(() => {
     modelRequestRef.current?.abort();
@@ -314,11 +354,14 @@ export function usePreferencesController(options: PreferencesOptions) {
     fetch(apiPath("models"), { signal: controller.signal }).then((response) => response.json()).then((result: {
       models: Record<string, string>; modelList?: ModelListItem[]; defaultModel?: ModelRef | null;
       thinkingLevels?: Record<string, string[]>; thinkingLevelMaps?: Record<string, Record<string, string | null>>;
+      modelThinkingDefaults?: Record<string, string>; defaultThinkingLevel?: string | null;
     }) => {
       if (!gate.isCurrent(token) || modelRequestRef.current !== controller) return;
       setModelNames(result.models);
       if (result.thinkingLevels) setModelThinkingLevels(result.thinkingLevels);
       if (result.thinkingLevelMaps) setModelThinkingLevelMaps(result.thinkingLevelMaps);
+      if (result.modelThinkingDefaults) setModelThinkingDefaults(result.modelThinkingDefaults);
+      setDefaultThinkingLevel(result.defaultThinkingLevel ?? null);
       if (!result.modelList) return;
       setModelList(result.modelList);
       setBuddyReviewerModel((current) => {

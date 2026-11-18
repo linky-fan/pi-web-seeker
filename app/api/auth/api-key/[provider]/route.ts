@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAppModelRuntime } from "@/lib/model-registry";
+import { invalidateModelsPayloadCache } from "@/lib/models-payload";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export async function POST(req: Request, { params }: Params) {
       prompt: async () => apiKey.trim(),
       notify: () => {},
     });
+    invalidateModelsPayloadCache();
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -40,6 +42,7 @@ export async function DELETE(_req: Request, { params }: Params) {
   try {
     const runtime = await createAppModelRuntime();
     await runtime.logout(provider);
+    invalidateModelsPayloadCache();
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

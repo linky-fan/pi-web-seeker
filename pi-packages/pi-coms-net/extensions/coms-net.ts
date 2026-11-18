@@ -7,6 +7,15 @@ import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-
 
 const COMS_NET_DIR = path.join(os.homedir(), ".pi", "coms-net");
 const DEFAULT_PROJECT = process.env.PI_COMS_NET_PROJECT ?? "default";
+const PROJECT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/** Project ids become directory names under COMS_NET_DIR; reject anything that can escape it. */
+function assertProjectId(project: string): string {
+	if (!PROJECT_ID_RE.test(project) || project.includes("..")) {
+		throw new Error(`Invalid coms-net project id: ${project}`);
+	}
+	return project;
+}
 const DEFAULT_TIMEOUT_MS = Number(process.env.PI_COMS_NET_MESSAGE_TTL_MS ?? 1_800_000);
 const MAX_HOPS = Number(process.env.PI_COMS_NET_MAX_HOPS ?? 5);
 const RECONNECT_BASE_MS = 500;
@@ -168,7 +177,8 @@ function flagBool(pi: ExtensionAPI, name: string): boolean {
 }
 
 function discoverServer(project: string): { serverUrl?: string; authToken?: string } {
-	const projectDir = path.join(COMS_NET_DIR, "projects", project);
+	const safeProject = assertProjectId(project);
+	const projectDir = path.join(COMS_NET_DIR, "projects", safeProject);
 	const client = readJson<ClientJson>(path.join(projectDir, "client.json"));
 	const clientSecretPath = path.join(projectDir, "client.secret.json");
 	const clientSecret = isPrivateFile(clientSecretPath) ? readJson<{ token?: string }>(clientSecretPath) : null;
@@ -374,7 +384,7 @@ export default function comsNetExtension(pi: ExtensionAPI) {
 	}
 
 	function projectDirFor(projectName: string) {
-		return path.join(COMS_NET_DIR, "projects", projectName);
+		return path.join(COMS_NET_DIR, "projects", assertProjectId(projectName));
 	}
 
 	function currentConfigSignature(projectName: string) {
@@ -636,6 +646,14 @@ export default function comsNetExtension(pi: ExtensionAPI) {
 		stopConnection();
 
 		project = flagString(pi, "project") ?? process.env.PI_COMS_NET_PROJECT ?? DEFAULT_PROJECT;
+		try {
+			assertProjectId(project);
+		} catch {
+			ready = false;
+			setStatus(ctx, "coms-net: invalid project");
+			notify(ctx, `coms-net: invalid project id "${project}"`, "warning");
+			return;
+		}
 		ensureConfigWatcher(project);
 		const discovered = discoverServer(project);
 		serverUrl = flagString(pi, "server-url") ?? process.env.PI_COMS_NET_SERVER_URL ?? discovered.serverUrl ?? "";

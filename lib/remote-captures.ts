@@ -13,6 +13,7 @@ const RETENTION_MS = (Number(process.env.PI_WEB_REMOTE_CAPTURE_RETENTION_DAYS) |
 const PREVIEW_BYTES = 64 * 1024;
 
 interface StoredCapture { summary: RemoteCaptureSummary; text: string }
+interface StoredCaptureSummary { size: number; mtimeMs: number; summary: RemoteCaptureSummary }
 export interface RemoteCaptureExportInspection { target: string; exists: boolean; summary: RemoteCaptureSummary }
 
 function rootDir(): string {
@@ -29,14 +30,49 @@ function capturePath(agentSessionId: string, captureId: string): string {
   return join(sessionDir(agentSessionId), `${captureId}.json`);
 }
 
+function captureSummaryPath(filePath: string): string {
+  return `${filePath}.summary`;
+}
+
+function writeCaptureSummary(filePath: string, summary: RemoteCaptureSummary): void {
+  const stat = statSync(filePath);
+  const summaryPath = captureSummaryPath(filePath);
+  const temp = `${summaryPath}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temp, `${JSON.stringify({ size: stat.size, mtimeMs: stat.mtimeMs, summary })}\n`, { encoding: "utf8", mode: 0o600 });
+    renameSync(temp, summaryPath);
+  } finally {
+    if (existsSync(temp)) unlinkSync(temp);
+  }
+}
+
+function cacheCaptureSummary(filePath: string, summary: RemoteCaptureSummary): void {
+  try {
+    writeCaptureSummary(filePath, summary);
+  } catch {
+    // The capture file remains the source of truth.
+  }
+}
+
+function readCaptureSummary(filePath: string): RemoteCaptureSummary | null {
+  try {
+    const sourceStat = statSync(filePath);
+    const cached = JSON.parse(readFileSync(captureSummaryPath(filePath), "utf8")) as StoredCaptureSummary;
+    return cached.size === sourceStat.size && cached.mtimeMs === sourceStat.mtimeMs ? cached.summary : null;
+  } catch {
+    return null;
+  }
+}
+
 function readStored(agentSessionId: string, captureId: string): { path: string; stored: StoredCapture } {
   const path = capturePath(agentSessionId, captureId);
   try { return { path, stored: JSON.parse(readFileSync(path, "utf8")) as StoredCapture }; } catch { throw new Error("Remote capture not found"); }
 }
 
-function touchCapture(path: string): void {
+function touchCapture(filePath: string, summary: RemoteCaptureSummary): void {
   const now = new Date();
-  try { utimesSync(path, now, now); } catch { /* The capture may have been removed concurrently. */ }
+  try { utimesSync(filePath, now, now); } catch { return; }
+  cacheCaptureSummary(filePath, summary);
 }
 
 function allCaptureFiles(): Array<{ path: string; size: number; mtimeMs: number }> {
@@ -61,7 +97,13 @@ function pruneCaptureLibrary(): void {
   let total = files.reduce((sum, file) => sum + file.size, 0);
   for (const file of files) {
     if (now - file.mtimeMs <= RETENTION_MS && total <= MAX_LIBRARY_BYTES) continue;
-    try { unlinkSync(file.path); total -= file.size; } catch { /* Best-effort retention cleanup. */ }
+    try {
+      unlinkSync(file.path);
+      total -= file.size;
+      try { unlinkSync(captureSummaryPath(file.path)); } catch { /* Best-effort sidecar cleanup. */ }
+    } catch {
+      // Best-effort retention cleanup.
+    }
   }
 }
 
@@ -100,6 +142,7 @@ export function saveRemoteCapture(input: {
   } finally {
     if (existsSync(temp)) unlinkSync(temp);
   }
+  cacheCaptureSummary(path, summary);
   pruneCaptureLibrary();
   return { ...summary, preview: Buffer.from(text, "utf8").subarray(0, PREVIEW_BYTES).toString("utf8") };
 }
@@ -110,7 +153,19 @@ export function listRemoteCaptures(agentSessionId: string): RemoteCaptureSummary
   const captures: RemoteCaptureSummary[] = [];
   for (const file of readdirSync(dir)) {
     if (!file.endsWith(".json")) continue;
-    try { captures.push((JSON.parse(readFileSync(join(dir, file), "utf8")) as StoredCapture).summary); } catch { /* Skip corrupt captures. */ }
+    const filePath = join(dir, file);
+    const cached = readCaptureSummary(filePath);
+    if (cached) {
+      captures.push(cached);
+      continue;
+    }
+    try {
+      const summary = (JSON.parse(readFileSync(filePath, "utf8")) as StoredCapture).summary;
+      captures.push(summary);
+      cacheCaptureSummary(filePath, summary);
+    } catch {
+      // Skip corrupt captures.
+    }
   }
   return captures.sort((a, b) => b.createdAt - a.createdAt).slice(0, 100);
 }
@@ -121,7 +176,7 @@ export function readRemoteCapture(agentSessionId: string, captureId: string, off
   const size = Math.max(1, Math.min(PREVIEW_BYTES, Math.floor(limit)));
   const text = stored.text.slice(start, start + size);
   const nextOffset = start + text.length < stored.text.length ? start + text.length : null;
-  touchCapture(path);
+  touchCapture(path, stored.summary);
   return { text, offset: start, nextOffset, total: stored.text.length, summary: stored.summary };
 }
 
@@ -134,7 +189,7 @@ export function searchRemoteCapture(agentSessionId: string, captureId: string, q
   for (let index = 0; index < lines.length && matches.length < 100; index += 1) {
     if (lines[index].toLowerCase().includes(normalized)) matches.push({ line: index + 1, text: lines[index].slice(0, 2_000) });
   }
-  touchCapture(path);
+  touchCapture(path, stored.summary);
   return { matches, truncated: matches.length === 100 };
 }
 
@@ -176,6 +231,6 @@ export async function exportRemoteCapture(agentSessionId: string, captureId: str
   } finally {
     if (existsSync(temp)) unlinkSync(temp);
   }
-  touchCapture(sourcePath);
+  touchCapture(sourcePath, stored.summary);
   return target;
 }

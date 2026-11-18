@@ -75,9 +75,9 @@ When improving observability, keep the existing user-friendly failure surface an
 
 - `useSessionWorkspaceController` owns URL restoration, session/workspace selection, refresh keys, branch and system-prompt state, statistics, context usage, task status, and composer activity.
 - `useSessionImportController` owns ordinary JSON/JSONL import and the inspect-confirm-cancel lifecycle for Debug Bundles.
-- `useInspectorController` owns file, Browser, and Remote tabs, panel tiers, maximize/navigation restoration, responsive capability, and Browser/Remote SSE activation.
+- `useInspectorController` owns file, Browser, Remote, and checker tabs, panel tiers, maximize/navigation restoration, responsive capability, and Browser/Remote SSE activation.
 - `ShellNavigation`, `ShellWorkspace`, and `ShellInspector` receive only the state needed by their region. High-frequency chat statistics and composer updates therefore do not invalidate navigation or inspector rendering.
-- The inspector and deferred-feature views retain the existing dynamic boundaries: Browser, Remote, Models, Capabilities, and the Quick Chat body stay outside the initial client dependency graph. Quick Chat remains mounted after its first successful load.
+- The inspector and deferred-feature views retain the existing dynamic boundaries: Browser, Remote, language checkers, Models, Capabilities, and the Quick Chat body stay outside the initial client dependency graph. Quick Chat remains mounted after its first successful load.
 
 Pure transitions used by the controllers live in `components/app-shell/session-state.ts` and `inspector-state.ts`; display derivation lives in `helpers.ts`. Preserve callback stability and the current async ordering when extending a controller.
 
@@ -167,6 +167,13 @@ The lifecycle gate combines a session/cwd identity with a monotonically increasi
 
 - `lib/rpc-manager.ts` - `AgentSessionWrapper`, registry, and `startRpcSession()`.
 - `lib/session-reader.ts` - parse `.jsonl`, model maps, and default model helpers.
+- `lib/session-index.ts` / `lib/session-scan.ts` - incremental session metadata index: tracks consumed byte offsets so unchanged sessions are not re-read, and persists to `~/.pi/agent/pi-web-session-index.json`.
+- `lib/request-guard.ts` - Edge-safe guard rejecting cross-origin and DNS-rebinding requests to unauthenticated loopback APIs.
+- `lib/provider-config.ts` - provider protocol list and header-map editing helpers.
+- `lib/cli-args.ts` - validation for values passed positionally to external CLIs.
+- `lib/ttl-cache.ts` / `lib/scan-cache.ts` - single-value and per-workspace TTL caches.
+- `lib/syntax-highlighting.ts` / `lib/code-languages.ts` - on-demand Prism grammars and language normalization.
+- `lib/markdown-math.ts` - detects the `$$` delimiters `remark-math` actually parses.
 - `lib/session-export.ts` - ordinary Markdown / JSON export helpers.
 - `lib/debug-bundle.ts` - debug bundle manifest, tar safety checks, media externalization, workspace snapshot, inspect, and import helpers.
 - `lib/quick-chat.ts` - Quick Chat message/source types, size limits, validation, and promotion formatting.
@@ -187,7 +194,7 @@ The lifecycle gate combines a session/cwd identity with a monotonically increasi
 - `components/AppShell.tsx` - stable public composition root for shell controllers and memoized view regions.
 - `components/app-shell/useSessionWorkspaceController.ts` - session, workspace, URL, branch, statistics, context, task, and composer state.
 - `components/app-shell/useSessionImportController.ts` - ordinary session and Debug Bundle import lifecycle.
-- `components/app-shell/useInspectorController.ts` - file/Browser/Remote tabs, responsive panel state, maximize restoration, and SSE activation.
+- `components/app-shell/useInspectorController.ts` - file/Browser/Remote/checker tabs, responsive panel state, maximize restoration, and SSE activation.
 - `components/app-shell/ShellNavigation.tsx` / `ShellWorkspace.tsx` / `ShellInspector.tsx` - memoized navigation, chat workspace, and inspector view regions.
 - `components/app-shell/ShellDeferredFeatures.tsx` - Models, Capabilities, and Quick Chat dynamic-load ownership; Browser and Remote boundaries stay with `ShellInspector.tsx`.
 - `components/SessionSidebar.tsx` - session tree and file explorer shell.
@@ -198,6 +205,7 @@ The lifecycle gate combines a session/cwd identity with a monotonically increasi
 - `components/QuickChatPanel.tsx` - floating model-direct text chat, optional Tavily search controls and sources, temporary browser history, and promotion to a formal session.
 - `components/QuickChatLauncher.tsx` - initial lightweight Quick Chat launcher plus local loading and chunk-error states.
 - `components/BrowserPanel.tsx` - controlled-browser snapshot, activity timeline, permissions, setup diagnostics, and manual takeover UI.
+- `components/CheckersPanel.tsx` - explicit-confirmation runner UI, bounded project inventory, diagnostics, and file/line navigation.
 - `components/MessageView.tsx` - stable role router and relevant-tool memo boundary for message rendering.
 - `components/message-view/` - user/assistant/custom views, Markdown and Plan rendering, Thinking and tool cards, streaming metrics, and pure message helpers.
 - `components/BranchNavigator.tsx` - in-session branch switcher.
@@ -207,7 +215,9 @@ The lifecycle gate combines a session/cwd identity with a monotonically increasi
 - `components/SkillsConfig.tsx` - skill discovery/install/enablement modal.
 - `components/FileExplorer.tsx` - sidebar file tree.
 - `components/FileViewer.tsx` - file content tabs.
-- `components/TabBar.tsx` - right-side file and controlled-browser tabs.
+- `components/TabBar.tsx` - right-side file, checker, and controlled-browser tabs.
+- `lib/checkers/` - bounded workspace discovery, allowed-project path normalization, shell-free process runner, shared diagnostic types/parsers, registry, and per-language adapters.
+- `app/api/checkers/route.ts` - allowed-root-checked checker inventory and explicitly confirmed execution endpoint.
 - `pi-packages/pi-opencli` - built-in optional OpenCLI extension tools, cross-platform launch-target resolution, and the shared process/session runtime.
 
 ## CSS Variables

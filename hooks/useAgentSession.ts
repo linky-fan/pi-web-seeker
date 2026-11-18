@@ -104,6 +104,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     onSessionCreated,
     onSessionForked,
     pendingScrollToUserRef: scroll.pendingScrollToUserRef,
+    insertComposerText: (text) => options.chatInputRef?.current?.insertText(text),
   });
 
   const loadSession = sessionData.loadSession;
@@ -114,6 +115,9 @@ export function useAgentSession(options: UseAgentSessionOptions) {
 
   useEffect(() => {
     if (!selectedSessionId) return;
+    // A new session's stream is already connected by the send that created it; reloading
+    // here would reset that live stream and the active turn.
+    if (runtime.eventSourceRef.current && sessionIdRef.current === selectedSessionId && runtime.agentRunningRef.current) return;
     const token = gate.capture();
     const sid = selectedSessionId;
     void loadSession(sid, { showLoading: true, includeState: true }).then((agentState) => {
@@ -121,7 +125,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
       applyAgentState(agentState);
       if (agentState?.running && agentState.state?.isStreaming) connectEvents(sid);
     });
-  }, [applyAgentState, connectEvents, gate, loadSession, selectedSessionId, sessionIdRef]);
+  }, [applyAgentState, connectEvents, gate, loadSession, runtime.agentRunningRef, runtime.eventSourceRef, selectedSessionId, sessionIdRef]);
 
   useEffect(() => {
     onSystemPromptChange?.(runtime.systemPrompt);
@@ -188,6 +192,10 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     pendingScrollToUserRef: scroll.pendingScrollToUserRef,
     initialScrollDoneRef: scroll.initialScrollDoneRef,
     handleSend: commands.handleSend,
+    projectTrustPrompt: commands.projectTrustPrompt,
+    projectTrustResolving: commands.projectTrustResolving,
+    resolveProjectTrust: commands.resolveProjectTrust,
+    dismissProjectTrust: commands.dismissProjectTrust,
     handleAbort: commands.handleAbort,
     handleFork: commands.handleFork,
     handleNavigate: commands.handleNavigate,

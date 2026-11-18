@@ -7,12 +7,13 @@ import { isSubagentCustomType, messageContentToText, parseSubagentNotifications,
 import type { CustomMessage } from "@/lib/types";
 import { ComsNetMessageCard } from "./ComsNetMessageCard";
 import { formatAgentName, formatCompactNumber, formatDurationMs, formatTime, getSubagentStatusStyle, parseComsNetMessage } from "./helpers";
-import { MESSAGE_REHYPE_PLUGINS, MESSAGE_REMARK_PLUGINS } from "./markdownConfig";
+import { useMathRehypePlugins } from "./useMathRehypePlugins";
 
 function CustomMessageViewImpl({ message, showTimestamp }: { message: CustomMessage; showTimestamp?: boolean }) {
+  const content = messageContentToText(message.content);
+  const { remarkPlugins, rehypePlugins } = useMathRehypePlugins(content);
   if (message.display === false) return null;
 
-  const content = messageContentToText(message.content);
   const time = showTimestamp ? formatTime(message.timestamp) : null;
   const isSubagent = isSubagentCustomType(message.customType, message.content);
   const comsNet = parseComsNetMessage(message.customType, content, message.details);
@@ -45,7 +46,7 @@ function CustomMessageViewImpl({ message, showTimestamp }: { message: CustomMess
   return (
     <div className="pi-message pi-message-custom" style={{ marginBottom: 16 }}>
       <div className="markdown-body">
-        <ReactMarkdown remarkPlugins={MESSAGE_REMARK_PLUGINS} rehypePlugins={MESSAGE_REHYPE_PLUGINS}>
+        <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
           {normalizeMarkdownMath(content)}
         </ReactMarkdown>
       </div>

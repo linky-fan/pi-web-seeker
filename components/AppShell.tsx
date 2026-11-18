@@ -48,6 +48,7 @@ export function AppShell() {
     activeCwd: session.activeCwd,
     browserLabel: t("browser.tab"),
     remoteLabel: t("remote.tab"),
+    checkerLabel: t("checkers.tab"),
     sidebarOpen,
     setSidebarOpen,
     fluidDrawerOpen,
@@ -145,7 +146,7 @@ export function AppShell() {
       style={{ display: "none" }}
     />
     <div
-      className={`pi-app-shell${isFluid ? " pi-fluid-shell" : " pi-classic-shell"}${inspector.interactivePanelMaximized ? " pi-browser-focus-mode" : ""}${inspector.activeTab?.kind === "remote" ? " pi-remote-active" : ""}`}
+      className={`pi-app-shell${isFluid ? " pi-fluid-shell" : " pi-classic-shell"}${inspector.inspectorMaximized ? " pi-inspector-focus-mode" : ""}${inspector.activeTab?.kind === "remote" ? " pi-remote-active" : ""}`}
       style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}
     >
       <ShellNavigation
@@ -246,7 +247,7 @@ export function AppShell() {
         activeTab={inspector.activeTab}
         tabs={inspector.tabs}
         activeTabId={inspector.activeTabId}
-        interactivePanelMaximized={inspector.interactivePanelMaximized}
+        inspectorMaximized={inspector.inspectorMaximized}
         activeCwd={session.activeCwd}
         selectedSession={session.selectedSession}
         toggleTitle={inspector.toggleTitle}
@@ -254,11 +255,13 @@ export function AppShell() {
         onCloseTab={inspector.closeTab}
         onOpenBrowser={inspector.openBrowser}
         onOpenRemote={inspector.openRemote}
+        onOpenCheckers={inspector.openCheckers}
+        onOpenFile={inspector.openFileAtLine}
         onToggleMaximize={inspector.toggleMaximize}
         onTogglePanel={inspector.togglePanel}
       />
     </div>
-    <ClassicInspectorToggle visible={!isFluid && !inspector.interactivePanelMaximized} panelOpen={inspector.panelOpen} title={inspector.toggleTitle} onToggle={inspector.togglePanel} />
+    <ClassicInspectorToggle visible={!isFluid && !inspector.inspectorMaximized} panelOpen={inspector.panelOpen} title={inspector.toggleTitle} onToggle={inspector.togglePanel} />
     <ShellDeferredFeatures
       modelsOpen={modelsConfigOpen}
       onCloseModels={closeModels}

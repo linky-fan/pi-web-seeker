@@ -5,7 +5,7 @@ import { apiPath } from "@/lib/api-path";
 import type { SessionInfo } from "@/lib/types";
 import type { Tab } from "../TabBar";
 import { FLUID_INSPECTOR_TIER_TWO_MIN_VIEWPORT } from "./helpers";
-import { appendUniqueTab, closeInspectorTab } from "./inspector-state";
+import { appendUniqueTab, closeInspectorTab, isInspectorMaximized, openFileTab } from "./inspector-state";
 import type { FluidInspectorTier } from "./types";
 
 interface NavigationSnapshot {
@@ -19,6 +19,7 @@ interface Options {
   activeCwd: string | null;
   browserLabel: string;
   remoteLabel: string;
+  checkerLabel: string;
   sidebarOpen: boolean;
   setSidebarOpen: Dispatch<SetStateAction<boolean>>;
   fluidDrawerOpen: boolean;
@@ -32,6 +33,7 @@ export function useInspectorController({
   activeCwd,
   browserLabel,
   remoteLabel,
+  checkerLabel,
   sidebarOpen,
   setSidebarOpen,
   fluidDrawerOpen,
@@ -49,15 +51,37 @@ export function useInspectorController({
   const navigationSnapshotRef = useRef<NavigationSnapshot | null>(null);
   const fluidInitializedRef = useRef(false);
   const activeTab = useMemo(() => tabs.find((tab) => tab.id === activeTabId) ?? null, [activeTabId, tabs]);
-  const interactivePanelMaximized = maximized && (activeTab?.kind === "browser" || activeTab?.kind === "remote");
+  const inspectorMaximized = isInspectorMaximized(maximized, activeTab);
 
   const openFile = useCallback((filePath: string, fileName: string) => {
     const tabId = `file:${filePath}`;
-    setTabs((current) => appendUniqueTab(current, { id: tabId, label: fileName, kind: "file", filePath }));
+    setTabs((current) => openFileTab(current, filePath, fileName));
     setActiveTabId(tabId);
     if (isFluid) setFluidTier(2);
     setPanelOpen(true);
   }, [isFluid]);
+
+  const openFileAtLine = useCallback((filePath: string, fileName: string, lineNumber?: number) => {
+    const tabId = `file:${filePath}`;
+    setTabs((current) => openFileTab(current, filePath, fileName, lineNumber));
+    setActiveTabId(tabId);
+    if (isFluid && !panelOpen) setFluidTier(1);
+    setPanelOpen(true);
+  }, [isFluid, panelOpen]);
+
+  const openCheckers = useCallback(() => {
+    if (!activeCwd) return;
+    const tabId = `checker:${activeCwd}`;
+    setTabs((current) => appendUniqueTab(current, {
+      id: tabId,
+      label: checkerLabel,
+      kind: "checker",
+      cwd: activeCwd,
+    }));
+    setActiveTabId(tabId);
+    setPanelOpen(true);
+    if (isFluid && !panelOpen) setFluidTier(1);
+  }, [activeCwd, checkerLabel, isFluid, panelOpen]);
 
   const openBrowserForSession = useCallback((agentSessionId: string | undefined) => {
     if (!agentSessionId) return;
@@ -102,7 +126,7 @@ export function useInspectorController({
     setTabs(next.tabs);
     setActiveTabId(next.activeTabId);
     if (!next.panelOpen) setPanelOpen(false);
-    if (tabId === activeTabId && (tabId.startsWith("browser:") || tabId.startsWith("remote:"))) setMaximized(false);
+    if (!next.panelOpen) setMaximized(false);
   }, [activeTabId, tabs]);
 
   const selectTab = useCallback((tabId: string) => {
@@ -183,8 +207,8 @@ export function useInspectorController({
   }, [openRemoteForSession, selectedSession?.id]);
 
   useEffect(() => {
-    if (activeTab?.kind !== "browser" && activeTab?.kind !== "remote") setMaximized(false);
-  }, [activeTab?.kind]);
+    if (!activeTab) setMaximized(false);
+  }, [activeTab]);
 
   useEffect(() => {
     setMaximized(false);
@@ -231,12 +255,14 @@ export function useInspectorController({
     activeTab,
     panelOpen,
     maximized,
-    interactivePanelMaximized,
+    inspectorMaximized,
     fluidTier,
     canUseTierTwo,
     toggleTitle,
     selectTab,
     openFile,
+    openFileAtLine,
+    openCheckers,
     openBrowser,
     openRemote,
     closeTab,

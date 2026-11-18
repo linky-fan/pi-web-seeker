@@ -1,16 +1,14 @@
 "use client";
 
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import { useTheme } from "@/hooks/useTheme";
+import { CodeBlockHighlighter } from "./LazyCodeBlock";
+import { enterMessage } from "@/lib/motion";
 import { useLocale } from "@/lib/i18n";
 import { normalizeMarkdownMath } from "@/lib/markdown";
 import { parsePlanDocument, type PlanDocumentSection } from "@/lib/plan-mode";
 import type { TextContent } from "@/lib/types";
-import { MESSAGE_REHYPE_PLUGINS, MESSAGE_REMARK_PLUGINS } from "./markdownConfig";
+import { useMathRehypePlugins } from "./useMathRehypePlugins";
 import { useCopyFeedback } from "./useCopyFeedback";
 
 const MARKDOWN_COMPONENTS: Components = {
@@ -39,15 +37,26 @@ const MARKDOWN_COMPONENTS: Components = {
   },
 };
 
-function MarkdownContentImpl({ block }: { block: TextContent }) {
+function MarkdownContentImpl({ block, animate, animationToken }: { block: TextContent; animate?: boolean; animationToken?: string }) {
   const plan = useMemo(() => parsePlanDocument(block.text), [block.text]);
+  const { remarkPlugins, rehypePlugins } = useMathRehypePlugins(block.text);
+  const textRef = useRef<HTMLDivElement | null>(null);
+  const animatedRef = useRef(false);
+
+  // Only prose animates in; thinking panels and tool cards appear as-is.
+  useEffect(() => {
+    if (!animate || animatedRef.current || !textRef.current) return;
+    animatedRef.current = true;
+    enterMessage(textRef.current);
+  }, [animate, animationToken]);
+
   if (plan) return <PlanCard title={plan.title} sections={plan.sections} raw={block.text} />;
 
   return (
-    <div className="markdown-body pi-text-block">
+    <div className="markdown-body pi-text-block" ref={textRef}>
       <ReactMarkdown
-        remarkPlugins={MESSAGE_REMARK_PLUGINS}
-        rehypePlugins={MESSAGE_REHYPE_PLUGINS}
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
         components={MARKDOWN_COMPONENTS}
       >
         {normalizeMarkdownMath(block.text)}
@@ -58,6 +67,7 @@ function MarkdownContentImpl({ block }: { block: TextContent }) {
 
 function PlanCard({ title, sections, raw }: { title: string; sections: PlanDocumentSection[]; raw: string }) {
   const { t } = useLocale();
+  const { remarkPlugins, rehypePlugins } = useMathRehypePlugins(sections.map((section) => section.body).join("\n\n"));
   const { copied, copy: copyPlan } = useCopyFeedback(raw);
   const summary = sections.find((section) => section.key === "summary");
   const rest = sections.filter((section) => section.key !== "summary");
@@ -155,7 +165,7 @@ function PlanCard({ title, sections, raw }: { title: string; sections: PlanDocum
               {summary.title}
             </div>
             <div className="markdown-body plan-card-markdown">
-              <ReactMarkdown remarkPlugins={MESSAGE_REMARK_PLUGINS} rehypePlugins={MESSAGE_REHYPE_PLUGINS}>
+              <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
                 {normalizeMarkdownMath(summary.body)}
               </ReactMarkdown>
             </div>
@@ -196,7 +206,7 @@ function PlanCard({ title, sections, raw }: { title: string; sections: PlanDocum
                 {section.title}
               </div>
               <div className="markdown-body plan-card-markdown">
-                <ReactMarkdown remarkPlugins={MESSAGE_REMARK_PLUGINS} rehypePlugins={MESSAGE_REHYPE_PLUGINS}>
+                <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
                   {normalizeMarkdownMath(section.body)}
                 </ReactMarkdown>
               </div>
@@ -210,7 +220,6 @@ function PlanCard({ title, sections, raw }: { title: string; sections: PlanDocum
 
 
 function CodeBlock({ code, lang }: { code: string; lang: string }) {
-  const { isDark } = useTheme();
   const { copied, copy } = useCopyFeedback(code);
 
   return (
@@ -250,25 +259,13 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
           {copied ? "copied" : "copy"}
         </button>
       </div>
-      <SyntaxHighlighter
-        language={lang || "text"}
-        style={isDark ? vscDarkPlus : vs}
-        showLineNumbers
-        lineNumberStyle={{ color: "var(--text-dim)", fontStyle: "normal" }}
-        customStyle={{
-          margin: 0,
-          padding: "10px 12px",
-          fontSize: 12.5,
-          lineHeight: 1.6,
-          borderRadius: 0,
-          background: "var(--bg)",
-        }}
-        codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
-      >
-        {code}
-      </SyntaxHighlighter>
+      <CodeBlockHighlighter code={code} lang={lang} />
     </div>
   );
 }
 
-export const MarkdownContent = memo(MarkdownContentImpl, (previous, next) => previous.block.text === next.block.text);
+export const MarkdownContent = memo(MarkdownContentImpl, (previous, next) =>
+  previous.block.text === next.block.text
+    && previous.animate === next.animate
+    && previous.animationToken === next.animationToken,
+);
