@@ -60,7 +60,7 @@ export const ComposerRuntimeControls = memo(function ComposerRuntimeControls(pro
           {menus.thinkingDropdownOpen && (
             <div ref={menus.thinkingDropdownPanelRef} className="pi-popover pi-thinking-popover" style={{
               position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 100,
-              background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8,
+              background: "var(--bg-paint)", border: "1px solid var(--border)", borderRadius: 8,
               boxShadow: "0 -4px 16px rgba(0,0,0,0.10)", overflow: "hidden", minWidth: 180,
             }}>
               {visibleThinkingLevels(props.availableThinkingLevels).map((level) => {

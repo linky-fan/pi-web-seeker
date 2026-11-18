@@ -78,7 +78,7 @@ function SubagentNotificationCard({ notification }: { notification: SubagentNoti
       style={{
         border: `1px solid ${status.border}`,
         borderLeft: `3px solid ${status.color}`,
-        background: `linear-gradient(135deg, ${status.bg}, var(--bg-panel))`,
+        background: `linear-gradient(135deg, ${status.bg}, var(--bg-panel-paint))`,
         borderRadius: 7,
         overflow: "hidden",
         fontSize: 13,
@@ -112,7 +112,7 @@ function SubagentNotificationCard({ notification }: { notification: SubagentNoti
             alignItems: "center",
             justifyContent: "center",
             color: status.color,
-            background: "var(--bg)",
+            background: "var(--bg-paint)",
             border: `1px solid ${status.border}`,
             fontSize: 9,
             fontWeight: 800,
@@ -132,7 +132,7 @@ function SubagentNotificationCard({ notification }: { notification: SubagentNoti
               padding: "0 7px",
               borderRadius: 4,
               border: `1px solid ${status.border}`,
-              background: "var(--bg)",
+              background: "var(--bg-paint)",
               color: status.color,
               fontSize: 10,
               fontWeight: 700,
@@ -175,7 +175,7 @@ function SubagentNotificationCard({ notification }: { notification: SubagentNoti
             height: 24,
             borderRadius: 6,
             border: "1px solid var(--border)",
-            background: "var(--bg)",
+            background: "var(--bg-paint)",
             color: "var(--text-dim)",
             display: "inline-flex",
             alignItems: "center",
@@ -201,7 +201,7 @@ function SubagentNotificationCard({ notification }: { notification: SubagentNoti
           <div
             style={{
               border: "1px solid var(--border)",
-              background: "var(--bg)",
+              background: "var(--bg-paint)",
               borderRadius: 6,
               padding: "8px 9px",
             }}

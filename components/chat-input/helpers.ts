@@ -250,7 +250,7 @@ export function getContextTone(contextUsage: ContextUsage | null | undefined, mo
   if (percent != null && percent >= 80) return { color: "rgba(234,179,8,0.98)", bg: "rgba(234,179,8,0.10)", border: "rgba(234,179,8,0.28)" };
   if (percent != null && percent >= 60) return { color: "var(--accent)", bg: "rgba(37,99,235,0.09)", border: "rgba(37,99,235,0.22)" };
   if (percent != null) return { color: "#16a34a", bg: "rgba(22,163,74,0.08)", border: "rgba(22,163,74,0.22)" };
-  return { color: "var(--text-muted)", bg: "var(--bg-panel)", border: "var(--border)" };
+  return { color: "var(--text-muted)", bg: "var(--bg-panel-paint)", border: "var(--border)" };
 }
 
 export function getContextUsageTitle(

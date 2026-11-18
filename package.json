@@ -48,7 +48,7 @@
     "start": "node scripts/run-next.mjs start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/agent-events.test.mjs tests/agent-session-state.test.mjs tests/app-shell-state.test.mjs tests/buddy-workflow.test.mjs tests/chat-input-state.test.mjs tests/chat-window-state.test.mjs tests/checkers.test.mjs tests/coms-net-project.test.mjs tests/extension-ui.test.mjs tests/markdown-math.test.mjs tests/message-view-state.test.mjs tests/model-runtime.test.mjs tests/model-test-credentials.test.mjs tests/network-security.test.mjs tests/opencli-launch-target.test.mjs tests/remote-runtime.test.mjs tests/remote-store-captures.test.mjs tests/portable-launchers.test.mjs tests/patch-pi-ai-stepfun-cache.test.mjs tests/project-trust.test.mjs tests/provider-config.test.mjs tests/scan-cache.test.mjs tests/session-reader-context.test.mjs tests/session-scan.test.mjs tests/cli-args.test.mjs tests/code-languages.test.mjs tests/builtin-package-trust.test.mjs tests/package-trust-gate.test.mjs tests/request-guard.test.mjs tests/thinking-level.test.mjs tests/ttl-cache.test.mjs",
+    "test": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/agent-events.test.mjs tests/agent-session-state.test.mjs tests/app-shell-state.test.mjs tests/buddy-workflow.test.mjs tests/chat-input-state.test.mjs tests/chat-window-state.test.mjs tests/checkers.test.mjs tests/coms-net-project.test.mjs tests/extension-ui.test.mjs tests/file-changes.test.mjs tests/markdown-math.test.mjs tests/message-view-state.test.mjs tests/model-runtime.test.mjs tests/model-test-credentials.test.mjs tests/network-security.test.mjs tests/opencli-launch-target.test.mjs tests/remote-runtime.test.mjs tests/remote-store-captures.test.mjs tests/portable-launchers.test.mjs tests/patch-pi-ai-stepfun-cache.test.mjs tests/project-trust.test.mjs tests/provider-config.test.mjs tests/scan-cache.test.mjs tests/session-reader-context.test.mjs tests/session-scan.test.mjs tests/cli-args.test.mjs tests/code-languages.test.mjs tests/builtin-package-trust.test.mjs tests/package-trust-gate.test.mjs tests/request-guard.test.mjs tests/thinking-level.test.mjs tests/ttl-cache.test.mjs",
     "check:fluid-css": "node scripts/check-fluid-css.mjs",
     "agents": "node scripts/agents-md.mjs",
     "agents:init": "node scripts/agents-md.mjs init",
@@ -63,7 +63,7 @@
     "test:chat-window": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/chat-window-state.test.mjs",
     "test:agent-session": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/agent-session-state.test.mjs",
     "test:agent-events": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/agent-events.test.mjs",
-    "test:extension-ui": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/extension-ui.test.mjs",
+    "test:extension-ui": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/extension-ui.test.mjs tests/file-changes.test.mjs",
     "test:checkers": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/checkers.test.mjs",
     "test:buddy": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/buddy-workflow.test.mjs",
     "test:model-runtime": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/model-runtime.test.mjs",
@@ -73,8 +73,8 @@
     "release": "npm run build && npm publish --access public --registry=https://registry.npmjs.org"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "gsap": "^3.15.0",

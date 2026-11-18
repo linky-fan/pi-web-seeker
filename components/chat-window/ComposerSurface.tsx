@@ -51,7 +51,7 @@ function ComposerSurfaceImpl(props: ComposerSurfaceProps) {
   return (
     <div
       className={`${props.isFluid ? "pi-fluid-composer-dock" : "pi-composer-dock"} relative`}
-      style={props.isFluid ? { background: "linear-gradient(180deg, transparent, color-mix(in srgb, var(--bg) 82%, transparent) 28px, color-mix(in srgb, var(--bg) 90%, transparent))" } : undefined}
+      style={props.isFluid ? { background: "linear-gradient(180deg, transparent, color-mix(in srgb, var(--bg-paint) 82%, transparent) 28px, color-mix(in srgb, var(--bg-paint) 90%, transparent))" } : undefined}
     >
       <ComposerContents {...props} />
     </div>

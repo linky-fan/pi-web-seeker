@@ -78,7 +78,7 @@ function PlanCard({ title, sections, raw }: { title: string; sections: PlanDocum
         border: "1px solid color-mix(in srgb, var(--accent) 18%, var(--border))",
         borderRadius: 10,
         overflow: "hidden",
-        background: "var(--bg)",
+        background: "var(--bg-paint)",
         boxShadow: "0 10px 30px -24px rgba(15,23,42,0.35)",
       }}
     >
@@ -90,7 +90,7 @@ function PlanCard({ title, sections, raw }: { title: string; sections: PlanDocum
           gap: 12,
           padding: "13px 14px 11px",
           borderBottom: "1px solid var(--border)",
-          background: "color-mix(in srgb, var(--bg-panel) 70%, transparent)",
+          background: "color-mix(in srgb, var(--bg-panel-paint) 70%, transparent)",
         }}
       >
         <div style={{ minWidth: 0 }}>
@@ -136,7 +136,7 @@ function PlanCard({ title, sections, raw }: { title: string; sections: PlanDocum
             padding: "0 9px",
             border: "1px solid var(--border)",
             borderRadius: 7,
-            background: "var(--bg)",
+            background: "var(--bg-paint)",
             color: copied ? "var(--accent)" : "var(--text-muted)",
             cursor: "pointer",
             fontSize: 12,
@@ -158,7 +158,7 @@ function PlanCard({ title, sections, raw }: { title: string; sections: PlanDocum
               padding: "10px 11px",
               border: "1px solid color-mix(in srgb, var(--accent) 16%, var(--border))",
               borderRadius: 8,
-              background: "color-mix(in srgb, var(--bg-panel) 58%, transparent)",
+              background: "color-mix(in srgb, var(--bg-panel-paint) 58%, transparent)",
             }}
           >
             <div style={{ marginBottom: 5, color: "var(--text)", fontSize: 12, fontWeight: 750 }}>
@@ -180,7 +180,7 @@ function PlanCard({ title, sections, raw }: { title: string; sections: PlanDocum
                 padding: "10px 11px",
                 border: "1px solid var(--border)",
                 borderRadius: 8,
-                background: section.key === "risks" ? "rgba(234,179,8,0.045)" : "var(--bg)",
+                background: section.key === "risks" ? "rgba(234,179,8,0.045)" : "var(--bg-paint)",
               }}
             >
               <div
@@ -236,7 +236,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
       <div
         style={{
           padding: "3px 10px",
-          background: "var(--bg-panel)",
+          background: "var(--bg-panel-paint)",
           borderBottom: "1px solid var(--border)",
           fontSize: 11,
           color: "var(--text-dim)",

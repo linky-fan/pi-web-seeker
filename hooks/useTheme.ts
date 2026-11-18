@@ -19,6 +19,9 @@ function applyTheme(theme: ThemeId): void {
   document.documentElement.classList.toggle("dark", option.isDark);
   document.documentElement.style.setProperty("--bg", vars.bg);
   document.documentElement.style.setProperty("--bg-panel", vars.bgPanel);
+  // Empty string removes the custom property, so paint falls back to the solid color.
+  document.documentElement.style.setProperty("--bg-image", vars.bgGradient || "");
+  document.documentElement.style.setProperty("--bg-panel-image", vars.bgPanelGradient || "");
   document.documentElement.style.setProperty("--bg-hover", vars.bgHover);
   document.documentElement.style.setProperty("--bg-selected", vars.bgSelected);
   document.documentElement.style.setProperty("--border", vars.border);

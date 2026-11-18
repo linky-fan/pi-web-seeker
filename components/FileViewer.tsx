@@ -191,7 +191,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
               style={{
                 padding: "2px 16px",
                 color: "var(--text-dim)",
-                background: "var(--bg-panel)",
+                background: "var(--bg-panel-paint)",
                 fontSize: 11,
                 borderTop: "1px solid var(--border)",
                 borderBottom: "1px solid var(--border)",
@@ -240,7 +240,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
                   fontSize: 11,
                   lineHeight: 1.6,
                   borderRight: "1px solid var(--border)",
-                  background: "var(--bg-panel)",
+                  background: "var(--bg-panel-paint)",
                   flexShrink: 0,
                 }}
               >
@@ -290,7 +290,7 @@ function PlainTextView({ content, wrapLines, lineNumber, startLine = 1 }: {
       style={{
         margin: 0,
         padding: "12px 16px",
-        background: "var(--bg)",
+        background: "var(--bg-paint)",
         color: "var(--text)",
         fontSize: 13,
         lineHeight: 1.6,
@@ -379,7 +379,7 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
           borderBottom: "1px solid var(--border)",
           fontSize: 11,
           color: "var(--text-dim)",
-          background: "var(--bg)",
+          background: "var(--bg-paint)",
           flexShrink: 0,
         }}
       >
@@ -410,13 +410,13 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
         style={{
           flex: 1,
           overflow: "auto",
-          background: "var(--bg-panel)",
+          background: "var(--bg-panel-paint)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           padding: 16,
           backgroundImage:
-            "linear-gradient(45deg, var(--bg) 25%, transparent 25%), linear-gradient(-45deg, var(--bg) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--bg) 75%), linear-gradient(-45deg, transparent 75%, var(--bg) 75%)",
+            "linear-gradient(45deg, var(--bg-paint) 25%, transparent 25%), linear-gradient(-45deg, var(--bg-paint) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--bg-paint) 75%), linear-gradient(-45deg, transparent 75%, var(--bg-paint) 75%)",
           backgroundSize: "16px 16px",
           backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
         }}
@@ -513,7 +513,7 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
           borderBottom: "1px solid var(--border)",
           fontSize: 11,
           color: "var(--text-dim)",
-          background: "var(--bg)",
+          background: "var(--bg-paint)",
           flexShrink: 0,
         }}
       >
@@ -547,7 +547,7 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
           alignItems: "center",
           justifyContent: "center",
           padding: 24,
-          background: "var(--bg-panel)",
+          background: "var(--bg-panel-paint)",
         }}
       >
         <div style={{ width: "min(680px, 100%)" }}>
@@ -742,7 +742,7 @@ function TextFileViewer({ filePath, cwd, lineNumber }: Props) {
           borderBottom: "1px solid var(--border)",
           fontSize: 11,
           color: "var(--text-dim)",
-          background: "var(--bg)",
+          background: "var(--bg-paint)",
           flexShrink: 0,
         }}
       >
@@ -874,7 +874,7 @@ function TextFileViewer({ filePath, cwd, lineNumber }: Props) {
       </div>
 
       {/* Content area */}
-      <div ref={contentRef} style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
+      <div ref={contentRef} style={{ flex: 1, overflow: "auto", background: "var(--bg-paint)" }}>
         {(isLargeTextFile || shouldTruncateRaw || (isMarkdown && previewMode && isMarkdownPreviewTooLarge) || (hasDiff && isLargeDiff)) && (
           <div
             style={{
@@ -883,7 +883,7 @@ function TextFileViewer({ filePath, cwd, lineNumber }: Props) {
               gap: 8,
               padding: "8px 16px",
               borderBottom: "1px solid var(--border)",
-              background: "var(--bg-panel)",
+              background: "var(--bg-panel-paint)",
               color: "var(--text-muted)",
               fontSize: 12,
             }}
@@ -910,7 +910,7 @@ function TextFileViewer({ filePath, cwd, lineNumber }: Props) {
           <iframe
             srcDoc={content}
             sandbox="allow-scripts"
-            style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
+            style={{ width: "100%", height: "100%", border: "none", background: "var(--bg-paint)" }}
             title="HTML preview"
           />
         ) : isMarkdown && previewMode && !isMarkdownPreviewTooLarge ? (
@@ -943,7 +943,7 @@ function TextFileViewer({ filePath, cwd, lineNumber }: Props) {
             customStyle={{
               margin: 0,
               padding: "12px 0",
-              background: "var(--bg)",
+              background: "var(--bg-paint)",
               fontSize: 13,
               lineHeight: 1.6,
               fontFamily: "var(--font-mono)",

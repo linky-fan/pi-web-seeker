@@ -71,7 +71,7 @@ function Toggle({
           width: 16,
           height: 16,
           borderRadius: "50%",
-          background: "var(--bg)",
+          background: "var(--bg-paint)",
           boxShadow: "0 1px 4px rgba(0,0,0,0.22)",
           transition: "left 0.18s cubic-bezier(.4,0,.2,1)",
         }}
@@ -291,7 +291,7 @@ function AddSkillPanel({
               flex: 1,
               padding: "7px 10px",
               fontSize: 13,
-              background: "var(--bg-panel)",
+              background: "var(--bg-panel-paint)",
               border: "1px solid var(--border)",
               borderRadius: 6,
               color: "var(--text)",
@@ -647,7 +647,7 @@ export function SkillsConfig({
               display: "flex",
               flexDirection: "column",
               flexShrink: 0,
-              background: "var(--bg-panel)",
+              background: "var(--bg-panel-paint)",
             }}
           >
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>

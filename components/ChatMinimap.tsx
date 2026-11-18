@@ -248,7 +248,7 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
         cursor: "default",
         userSelect: "none",
         borderLeft: "1px solid var(--border)",
-        background: "var(--bg-panel)",
+        background: "var(--bg-panel-paint)",
         overflow: "visible",
       }}
     >
@@ -340,7 +340,7 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
               top: tooltipPositions[i],
               right: "100%",
               marginRight: 6,
-              background: "var(--bg)",
+              background: "var(--bg-paint)",
               borderTop: `1px solid ${isNearest ? color.border : "var(--border)"}`,
               borderRight: `1px solid ${isNearest ? color.border : "var(--border)"}`,
               borderBottom: `1px solid ${isNearest ? color.border : "var(--border)"}`,

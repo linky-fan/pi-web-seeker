@@ -14,7 +14,7 @@ import type { DebugBundleSummary, ShellContextUsage, ShellSessionStats } from ".
 
 const exportLinkStyle = {
   display: "inline-flex", alignItems: "center", height: 28, padding: "0 10px", borderRadius: 6,
-  border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 12,
+  border: "1px solid var(--border)", background: "var(--bg-paint)", color: "var(--text)", fontSize: 12,
   fontWeight: 600, textDecoration: "none",
 } as const;
 const importButtonStyle = { ...exportLinkStyle, cursor: "pointer" } as const;
@@ -78,7 +78,7 @@ export const ClassicWorkspaceHeader = memo(function ClassicWorkspaceHeader({
     tooltipParts.push(`${t("stats.context")}: ${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : t("stats.unknown")} of ${contextUsage.contextWindow.toLocaleString()} tokens`);
   }
 
-  return <div ref={topBarRef} className="pi-topbar" style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 36, background: "var(--bg-panel)" }}>
+  return <div ref={topBarRef} className="pi-topbar" style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 36, background: "var(--bg-panel-paint)" }}>
     <button onClick={() => setSidebarOpen((open) => !open)} title={sidebarOpen ? t("sidebar.hide") : t("sidebar.show")} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, padding: 0, background: "none", border: "none", borderRight: "1px solid var(--border)", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s" }} onMouseEnter={(event) => { event.currentTarget.style.color = "var(--text)"; }} onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text-muted)"; }}>
       {sidebarOpen ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" /></svg> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>}
     </button>
@@ -100,7 +100,7 @@ export const ClassicWorkspaceHeader = memo(function ClassicWorkspaceHeader({
       {contextText && <span style={{ display: "flex", alignItems: "center", gap: 4, color: contextColor }}><svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 9 L1 5 Q1 1 5 1 Q9 1 9 5 L9 9" /><line x1="1" y1="9" x2="9" y2="9" /></svg>{contextText}</span>}
     </div>}
     {activeTopPanel && topPanelPos && <div ref={dropdownRef} className="pi-top-dropdown" style={{ position: "fixed", top: topPanelPos.top, left: topPanelPos.left, width: topPanelPos.width, zIndex: 500 }}>
-      {activeTopPanel === "session" && <div style={{ background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", boxShadow: "0 10px 28px rgba(0,0,0,0.12)" }}>
+      {activeTopPanel === "session" && <div style={{ background: "var(--bg-panel-paint)", borderBottom: "1px solid var(--border)", boxShadow: "0 10px 28px rgba(0,0,0,0.12)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text)", fontSize: 12, fontWeight: 650 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--accent)" }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>{t("session.exportTitle")}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -116,7 +116,7 @@ export const ClassicWorkspaceHeader = memo(function ClassicWorkspaceHeader({
         </div>}
         <div style={{ paddingTop: 1 }}><div style={{ padding: "8px 16px 4px", fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>{t("session.branches")}</div><BranchNavigator sessionId={selectedSession?.id ?? null} tree={branchTree} activeLeafId={branchActiveLeafId} onLeafChange={onBranchLeafChange} hasSession={Boolean(selectedSession)} panelOnly /></div>
       </div>}
-      {activeTopPanel === "system" && <div style={{ background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>{systemPrompt ? <div style={{ maxHeight: "min(600px, 75vh)", overflowY: "auto", padding: "12px 16px", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}>{systemPrompt}</div> : systemPrompt === "" ? <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>{t("system.emptyTools")}</div> : <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>{t("system.loadHint")}</div>}</div>}
+      {activeTopPanel === "system" && <div style={{ background: "var(--bg-panel-paint)", borderBottom: "1px solid var(--border)" }}>{systemPrompt ? <div style={{ maxHeight: "min(600px, 75vh)", overflowY: "auto", padding: "12px 16px", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}>{systemPrompt}</div> : systemPrompt === "" ? <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>{t("system.emptyTools")}</div> : <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>{t("system.loadHint")}</div>}</div>}
     </div>}
   </div>;
 });

@@ -108,7 +108,7 @@ export function SubagentsConfig({
           width: "min(620px, 100%)",
           maxHeight: "min(720px, calc(100dvh - 40px))",
           overflow: "auto",
-          background: "var(--bg-panel)",
+          background: "var(--bg-panel-paint)",
           borderRadius: 8,
           color: "var(--text)",
           boxShadow: "0 24px 80px rgba(0,0,0,0.28)",
@@ -128,7 +128,7 @@ export function SubagentsConfig({
               justifyContent: "center",
               color: stateColor,
               border: "1px solid currentColor",
-              background: "var(--bg)",
+              background: "var(--bg-paint)",
               fontSize: 10,
               fontWeight: 800,
             }}
@@ -151,7 +151,7 @@ export function SubagentsConfig({
         </div>
 
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 12, border: "1px solid var(--border)", borderRadius: 7, background: "var(--bg)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 12, border: "1px solid var(--border)", borderRadius: 7, background: "var(--bg-paint)" }}>
             <div>
               <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 4 }}>{t("subagents.status")}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 650 }}>
@@ -161,7 +161,7 @@ export function SubagentsConfig({
             </div>
             <button
               onClick={() => copyText("install", status?.installCommand ?? "npx --no-install pi install npm:@tintinweb/pi-subagents")}
-              style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", color: "var(--text)", height: 30, padding: "0 10px", cursor: "pointer", fontSize: 12 }}
+              style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel-paint)", color: "var(--text)", height: 30, padding: "0 10px", cursor: "pointer", fontSize: 12 }}
             >
               {copied === "install" ? t("subagents.copied") : t("subagents.copyInstall")}
             </button>
@@ -169,7 +169,7 @@ export function SubagentsConfig({
 
           <section>
             <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 6 }}>{t("subagents.installCommand")}</div>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "9px 10px", overflow: "auto" }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, background: "var(--bg-paint)", border: "1px solid var(--border)", borderRadius: 6, padding: "9px 10px", overflow: "auto" }}>
               {status?.installCommand ?? "npx --no-install pi install npm:@tintinweb/pi-subagents"}
             </div>
           </section>
@@ -183,7 +183,7 @@ export function SubagentsConfig({
                     key={item.label}
                     onClick={() => copyText(`cmd:${item.label}`, item.command)}
                     title={t("subagents.copyCommand")}
-                    style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 30, textAlign: "left", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text)", padding: "6px 9px", cursor: "pointer" }}
+                    style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 30, textAlign: "left", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-paint)", color: "var(--text)", padding: "6px 9px", cursor: "pointer" }}
                   >
                     <span style={{ width: 96, flexShrink: 0, color: "var(--text-dim)", fontSize: 11 }}>{item.label}</span>
                     <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: 11 }}>{item.command}</span>
@@ -198,13 +198,13 @@ export function SubagentsConfig({
             <button
               onClick={() => loadStatus()}
               disabled={loading}
-              style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text)", height: 30, padding: "0 10px", cursor: loading ? "default" : "pointer", fontSize: 12, opacity: loading ? 0.6 : 1 }}
+              style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-paint)", color: "var(--text)", height: 30, padding: "0 10px", cursor: loading ? "default" : "pointer", fontSize: 12, opacity: loading ? 0.6 : 1 }}
             >
               {loading ? t("subagents.checking") : t("subagents.refreshStatus")}
             </button>
             <button
               onClick={() => copyText("prompt", TEST_PROMPT)}
-              style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text)", height: 30, padding: "0 10px", cursor: "pointer", fontSize: 12 }}
+              style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-paint)", color: "var(--text)", height: 30, padding: "0 10px", cursor: "pointer", fontSize: 12 }}
             >
               {copied === "prompt" ? t("subagents.copiedPrompt") : t("subagents.copyPrompt")}
             </button>
@@ -226,7 +226,7 @@ export function SubagentsConfig({
             </section>
           )}
 
-          <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5, border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--bg)" }}>
+          <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5, border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--bg-paint)" }}>
             {t("subagents.applyHint")}
           </div>
 
@@ -241,7 +241,7 @@ export function SubagentsConfig({
             {status?.extensions.length ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {status.extensions.map((extension) => (
-                  <div key={extension.resolvedPath} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--bg)" }}>
+                  <div key={extension.resolvedPath} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--bg-paint)" }}>
                     <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={extension.resolvedPath}>
                       {extension.resolvedPath}
                     </div>

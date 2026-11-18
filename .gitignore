@@ -54,3 +54,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .factory
+
+# locally generated patch exports (not for commit)
+/pi-web-dev-from-initial*.patch

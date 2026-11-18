@@ -384,7 +384,7 @@ function PathPill({ node, branchLabels, active }: { node: SessionTreeNode; branc
         borderRadius: 5,
         border: `1px solid ${active ? "rgba(96,165,250,0.45)" : "var(--border)"}`,
         color: active ? "var(--accent)" : "var(--text-muted)",
-        background: active ? "rgba(96,165,250,0.10)" : "var(--bg)",
+        background: active ? "rgba(96,165,250,0.10)" : "var(--bg-paint)",
         fontSize: 10,
         whiteSpace: "nowrap",
       }}
@@ -476,7 +476,7 @@ function DiffPreview({
             padding: "0 8px",
             borderRadius: 5,
             border: "1px solid var(--border)",
-            background: "var(--bg)",
+            background: "var(--bg-paint)",
             color: "var(--text)",
             fontSize: 12,
             outline: "none",
@@ -491,7 +491,7 @@ function DiffPreview({
               height: 26,
               borderRadius: 5,
               border: "1px solid var(--border)",
-              background: "var(--bg)",
+              background: "var(--bg-paint)",
               color: "var(--text-dim)",
               cursor: "pointer",
             }}
@@ -544,7 +544,7 @@ function BranchPanel({
   return (
     <div>
       {visibleActivePath.length > 0 && (
-        <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid var(--border)", background: "var(--bg)" }}>
+        <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid var(--border)", background: "var(--bg-paint)" }}>
           <div style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", fontWeight: 700, marginBottom: 6, letterSpacing: 0 }}>
             {t("branches.currentPath")}
           </div>
@@ -735,7 +735,7 @@ export function BranchNavigator({ sessionId, tree, activeLeafId, onLeafChange, i
             top: dropdownPos.top,
             left: dropdownPos.left,
             width: dropdownPos.width,
-            background: "var(--bg-panel)",
+            background: "var(--bg-panel-paint)",
             borderBottom: "1px solid var(--border)",
             zIndex: 500,
           }}>
@@ -747,7 +747,7 @@ export function BranchNavigator({ sessionId, tree, activeLeafId, onLeafChange, i
   }
 
   return (
-    <div style={{ borderBottom: "1px solid var(--border)", background: "var(--bg)", flexShrink: 0, position: "relative" }}>
+    <div style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-paint)", flexShrink: 0, position: "relative" }}>
       {/* Header toggle */}
       <button
         onClick={() => setOpenInternal((v) => !v)}
@@ -777,7 +777,7 @@ export function BranchNavigator({ sessionId, tree, activeLeafId, onLeafChange, i
           top: "100%",
           left: 0,
           right: 0,
-          background: "var(--bg)",
+          background: "var(--bg-paint)",
           borderBottom: "1px solid var(--border)",
           boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
           zIndex: 100,

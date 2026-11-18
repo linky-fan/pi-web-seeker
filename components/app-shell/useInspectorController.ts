@@ -83,6 +83,20 @@ export function useInspectorController({
     if (isFluid && !panelOpen) setFluidTier(1);
   }, [activeCwd, checkerLabel, isFluid, panelOpen]);
 
+  const openChanges = useCallback(() => {
+    if (!selectedSession?.id) return;
+    const tabId = `changes:${selectedSession.id}`;
+    setTabs((current) => appendUniqueTab(current, {
+      id: tabId,
+      label: "Changes",
+      kind: "changes",
+      agentSessionId: selectedSession.id,
+    }));
+    setActiveTabId(tabId);
+    setPanelOpen(true);
+    if (isFluid && !panelOpen) setFluidTier(1);
+  }, [isFluid, panelOpen, selectedSession]);
+
   const openBrowserForSession = useCallback((agentSessionId: string | undefined) => {
     if (!agentSessionId) return;
     const tabId = `browser:${agentSessionId}`;
@@ -263,6 +277,7 @@ export function useInspectorController({
     openFile,
     openFileAtLine,
     openCheckers,
+    openChanges,
     openBrowser,
     openRemote,
     closeTab,

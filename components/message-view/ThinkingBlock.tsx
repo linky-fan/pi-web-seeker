@@ -17,7 +17,7 @@ function ThinkingBlockImpl({ block, duration }: { block: ThinkingContent; durati
         borderRadius: 9,
         overflow: "hidden",
         fontSize: 13,
-        background: "linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, var(--bg-panel)) 0%, var(--bg-panel) 52%, var(--bg) 100%)",
+        background: "linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, var(--bg-panel-paint)) 0%, var(--bg-panel-paint) 52%, var(--bg-paint) 100%)",
         boxShadow: "0 8px 24px rgba(0,0,0,0.05)",
       }}
     >
@@ -140,7 +140,7 @@ function ThinkingBlockImpl({ block, duration }: { block: ThinkingContent; durati
             fontSize: 12,
             lineHeight: 1.65,
             whiteSpace: "pre-wrap",
-            background: "color-mix(in srgb, var(--bg) 78%, var(--bg-panel))",
+            background: "color-mix(in srgb, var(--bg-paint) 78%, var(--bg-panel-paint))",
             border: "1px solid color-mix(in srgb, var(--accent) 12%, var(--border))",
             borderRadius: 7,
             boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",

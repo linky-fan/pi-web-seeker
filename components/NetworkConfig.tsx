@@ -256,7 +256,7 @@ export function NetworkConfig({
 
 function StatusTile({ label, value, ok }: { label: string; value: string; ok: boolean }) {
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 7, padding: 10, background: "var(--bg)" }}>
+    <div style={{ border: "1px solid var(--border)", borderRadius: 7, padding: 10, background: "var(--bg-paint)" }}>
       <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 5 }}>{label}</div>
       <div style={{ color: ok ? "#16a34a" : "#f59e0b", fontWeight: 650, fontSize: 13 }}>{value}</div>
     </div>
@@ -264,18 +264,18 @@ function StatusTile({ label, value, ok }: { label: string; value: string; ok: bo
 }
 
 const overlayStyle = { position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.42)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 } as const;
-const panelStyle = { width: "min(560px, 100%)", maxHeight: "min(720px, calc(100dvh - 40px))", overflow: "auto", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", boxShadow: "0 24px 80px rgba(0,0,0,0.28)" } as const;
+const panelStyle = { width: "min(560px, 100%)", maxHeight: "min(720px, calc(100dvh - 40px))", overflow: "auto", background: "var(--bg-panel-paint)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", boxShadow: "0 24px 80px rgba(0,0,0,0.28)" } as const;
 const headerStyle = { display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderBottom: "1px solid var(--border)" } as const;
-const badgeStyle = { width: 34, height: 34, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent)", border: "1px solid currentColor", background: "var(--bg)", fontSize: 10, fontWeight: 800 } as const;
+const badgeStyle = { width: 34, height: 34, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent)", border: "1px solid currentColor", background: "var(--bg-paint)", fontSize: 10, fontWeight: 800 } as const;
 const closeButtonStyle = { width: 30, height: 30, border: "none", borderRadius: 6, background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 } as const;
 const mutedLineStyle = { fontSize: 12, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } as const;
 const statusGridStyle = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 } as const;
-const sectionStyle = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 190px", gap: 12, alignItems: "center", border: "1px solid var(--border)", borderRadius: 7, background: "var(--bg)", padding: 12 } as const;
+const sectionStyle = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 190px", gap: 12, alignItems: "center", border: "1px solid var(--border)", borderRadius: 7, background: "var(--bg-paint)", padding: 12 } as const;
 const sectionTitleStyle = { fontSize: 13, fontWeight: 650, color: "var(--text)", marginBottom: 4 } as const;
 const sectionTextStyle = { fontSize: 12, lineHeight: 1.45, color: "var(--text-dim)" } as const;
 const primaryButtonStyle = { minHeight: 32, border: "none", borderRadius: 6, background: "var(--accent)", color: "#fff", padding: "0 12px", cursor: "pointer", fontSize: 12, fontWeight: 650 } as const;
-const inputStyle = { width: "100%", height: 32, border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", color: "var(--text)", padding: "0 9px", fontSize: 12 } as const;
-const hintStyle = { color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5, border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--bg)" } as const;
+const inputStyle = { width: "100%", height: 32, border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel-paint)", color: "var(--text)", padding: "0 9px", fontSize: 12 } as const;
+const hintStyle = { color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5, border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--bg-paint)" } as const;
 const confirmStyle = { display: "flex", flexDirection: "column", gap: 10, border: "1px solid rgba(245,158,11,0.45)", borderRadius: 7, padding: 12, background: "rgba(245,158,11,0.08)", color: "var(--text)" } as const;
 const secondaryButtonStyle = { minHeight: 32, border: "1px solid var(--border)", borderRadius: 6, background: "none", color: "var(--text-muted)", padding: "0 12px", cursor: "pointer", fontSize: 12 } as const;
 const runtimeStyle = { display: "grid", gridTemplateColumns: "110px minmax(0, 1fr)", gap: "5px 8px", fontSize: 11, color: "var(--text-dim)" } as const;

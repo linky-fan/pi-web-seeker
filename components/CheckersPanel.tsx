@@ -119,7 +119,7 @@ export function CheckersPanel({ cwd, onOpenFile }: Props) {
   }, [cwd, onOpenFile]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, background: "var(--bg)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, background: "var(--bg-paint)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 650, color: "var(--text)" }}>{t("checkers.title")}</div>
@@ -130,7 +130,7 @@ export function CheckersPanel({ cwd, onOpenFile }: Props) {
           onClick={() => setRefreshKey((key) => key + 1)}
           disabled={loading || running}
           title={t("checkers.refresh")}
-          style={{ height: 28, padding: "0 9px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: loading || running ? "default" : "pointer", fontSize: 11 }}
+          style={{ height: 28, padding: "0 9px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel-paint)", color: "var(--text-muted)", cursor: loading || running ? "default" : "pointer", fontSize: 11 }}
         >
           {t("checkers.refresh")}
         </button>
@@ -169,7 +169,7 @@ export function CheckersPanel({ cwd, onOpenFile }: Props) {
               padding: "10px 11px",
               border: "1px solid var(--border)",
               borderRadius: 7,
-              background: selectedSet.has(target.id) ? "var(--bg-hover)" : "var(--bg-panel)",
+              background: selectedSet.has(target.id) ? "var(--bg-hover)" : "var(--bg-panel-paint)",
               opacity: target.available ? 1 : 0.7,
               cursor: target.available ? "pointer" : "default",
             }}
@@ -200,7 +200,7 @@ export function CheckersPanel({ cwd, onOpenFile }: Props) {
               <span>{t("checkers.confirmRun")}</span>
             </label>
             {running ? (
-              <button type="button" onClick={stopRun} style={{ height: 31, padding: "0 12px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 11 }}>
+              <button type="button" onClick={stopRun} style={{ height: 31, padding: "0 12px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel-paint)", color: "var(--text)", cursor: "pointer", fontSize: 11 }}>
                 {t("checkers.stop")}
               </button>
             ) : (
@@ -215,7 +215,7 @@ export function CheckersPanel({ cwd, onOpenFile }: Props) {
 
         {results.map((result) => (
           <section key={result.targetId} style={{ marginTop: 16, border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", background: "var(--bg-panel-paint)", borderBottom: "1px solid var(--border)" }}>
               <strong style={{ color: "var(--text)", fontSize: 11 }}>{result.label}</strong>
               <span style={{ color: result.status === "failed" ? "#f87171" : result.status === "issues" ? "#fbbf24" : "#4ade80", fontSize: 11 }}>{t(statusKey(result.status))}</span>
               <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10 }}>{t("checkers.duration", { duration: (result.durationMs / 1000).toFixed(1) })}</span>

@@ -108,7 +108,7 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
           }}
         >
           <span style={{ borderRadius: 3, background: themeOption.accent }} />
-          <span style={{ borderRadius: 3, background: "var(--bg)" }} />
+          <span style={{ borderRadius: 3, background: "var(--bg-paint)" }} />
           <span style={{ borderRadius: 3, background: "var(--bg-hover)" }} />
           <span style={{ borderRadius: 3, background: "var(--text-muted)" }} />
         </span>
@@ -153,7 +153,7 @@ export function ThemeCycleButton({ variant = "topbar" }: Props) {
           padding: 6,
           border: "1px solid var(--border)",
           borderRadius: 8,
-          background: "var(--bg-panel)",
+          background: "var(--bg-panel-paint)",
           boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
           zIndex: 700,
         }}

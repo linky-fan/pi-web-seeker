@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { collectFileChanges, type FileChange } from "@/lib/file-changes";
 import type { ContextUsage, SessionStats } from "./types";
 
 interface AgentEvent {
@@ -16,7 +17,9 @@ interface Options {
   contextUsage: ContextUsage | null;
   taskStatus: "done" | "running" | "error";
   taskStatusMessage: string | null;
+  messages: readonly unknown[];
   onSessionStatsChange?: (stats: SessionStats | null) => void;
+  onFileChangesChange?: (changes: FileChange[]) => void;
   onContextUsageChange?: (usage: ContextUsage | null) => void;
   onTaskStatusChange?: (status: "done" | "running" | "error", message?: string | null) => void;
 }
@@ -29,7 +32,9 @@ export function useChatWindowBridge({
   contextUsage,
   taskStatus,
   taskStatusMessage,
+  messages,
   onSessionStatsChange,
+  onFileChangesChange,
   onContextUsageChange,
   onTaskStatusChange,
 }: Options) {
@@ -65,6 +70,19 @@ export function useChatWindowBridge({
     onContextUsageChange?.(contextUsageRef.current);
   }, [contextKey, onContextUsageChange]);
   useEffect(() => () => onContextUsageChange?.(null), [onContextUsageChange]);
+
+  const changes = useMemo(() => collectFileChanges(messages), [messages]);
+  const changesRef = useRef(changes);
+  changesRef.current = changes;
+  // Only notify when the change set actually differs, not on every token update.
+  const changesKey = useMemo(
+    () => changes.map((change) => `${change.path}:${change.diff.length}:${change.isError ? 1 : 0}`).join("|"),
+    [changes],
+  );
+  useEffect(() => {
+    onFileChangesChange?.(changesRef.current);
+  }, [changesKey, onFileChangesChange]);
+  useEffect(() => () => onFileChangesChange?.([]), [onFileChangesChange]);
 
   useEffect(() => {
     onTaskStatusChange?.(taskStatus, taskStatusMessage);

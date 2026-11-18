@@ -26,6 +26,7 @@ export function ChatWindow({
   onBranchDataChange,
   onSystemPromptChange,
   onSessionStatsChange,
+  onFileChangesChange,
   onContextUsageChange,
   onTaskStatusChange,
   onComposerActivityChange,
@@ -54,7 +55,9 @@ export function ChatWindow({
     contextUsage: agent.contextUsage,
     taskStatus,
     taskStatusMessage,
+    messages: agent.messages,
     onSessionStatsChange,
+    onFileChangesChange,
     onContextUsageChange,
     onTaskStatusChange,
   });

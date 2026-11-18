@@ -89,7 +89,7 @@ export function MotionModal({
         style={{
           width: 860,
           height: "78vh",
-          background: "var(--bg)",
+          background: "var(--bg-paint)",
           border: "1px solid var(--border)",
           borderRadius: 10,
           display: "flex",

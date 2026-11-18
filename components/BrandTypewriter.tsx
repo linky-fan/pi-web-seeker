@@ -193,7 +193,7 @@ export function BrandTypewriterHeader() {
             width: 36,
             height: 36,
             borderRadius: 8,
-            background: "color-mix(in srgb, var(--accent) 14%, var(--bg))",
+            background: "color-mix(in srgb, var(--accent) 14%, var(--bg-paint))",
             border: "1px solid color-mix(in srgb, var(--accent) 34%, var(--border))",
             color: "var(--accent)",
             fontSize: 23,

@@ -26,11 +26,11 @@ export const ComposerSuggestions = memo(function ComposerSuggestions({ controlle
             position: "absolute", left: 10, bottom: "calc(100% + 8px)", zIndex: 320,
             width: "min(520px, calc(100vw - 56px))", maxHeight: "min(420px, calc(100dvh - 180px))",
             overflowY: "auto", overscrollBehavior: "contain", touchAction: "pan-y", WebkitOverflowScrolling: "touch",
-            background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10,
+            background: "var(--bg-paint)", border: "1px solid var(--border)", borderRadius: 10,
             boxShadow: "0 -8px 24px rgba(15,23,42,0.16)", padding: 4,
           }}
         >
-          <div style={{ position: "sticky", top: 0, zIndex: 1, padding: "7px 9px 6px", fontSize: 11, color: "var(--text-dim)", fontWeight: 650, background: "var(--bg)" }}>
+          <div style={{ position: "sticky", top: 0, zIndex: 1, padding: "7px 9px 6px", fontSize: 11, color: "var(--text-dim)", fontWeight: 650, background: "var(--bg-paint)" }}>
             {t("chat.slash.title")}
           </div>
           {controller.slashCommands.length === 0 ? (
@@ -94,7 +94,7 @@ export const ComposerSuggestions = memo(function ComposerSuggestions({ controlle
             position: "absolute", left: 10, bottom: "calc(100% + 8px)", zIndex: 300,
             width: "min(420px, calc(100vw - 56px))", maxHeight: "min(360px, calc(100vh - 220px))",
             overflowY: "auto", overscrollBehavior: "contain", touchAction: "pan-y", WebkitOverflowScrolling: "touch",
-            background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10,
+            background: "var(--bg-paint)", border: "1px solid var(--border)", borderRadius: 10,
             boxShadow: "0 -8px 24px rgba(15,23,42,0.16)", padding: 4,
           }}
         >

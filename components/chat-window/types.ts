@@ -1,3 +1,4 @@
+import type { FileChange } from "@/lib/file-changes";
 import type { RefObject } from "react";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle, ComposerActivity } from "../ChatInput";
@@ -29,6 +30,7 @@ export interface ChatWindowProps {
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
   onSessionStatsChange?: (stats: SessionStats | null) => void;
+  onFileChangesChange?: (changes: FileChange[]) => void;
   onContextUsageChange?: (usage: ContextUsage | null) => void;
   onTaskStatusChange?: (status: "done" | "running" | "error", message?: string | null) => void;
   onComposerActivityChange?: (activity: ComposerActivity) => void;

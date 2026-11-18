@@ -88,7 +88,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
         }}
         style={{
           flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-          height: 32, padding: "0 8px", background: props.attachmentCount ? "var(--bg-selected)" : "var(--bg-panel)",
+          height: 32, padding: "0 8px", background: props.attachmentCount ? "var(--bg-selected)" : "var(--bg-panel-paint)",
           border: "1px solid var(--border)", borderRadius: 8, color: props.attachmentCount ? "var(--accent)" : "var(--text-muted)",
           cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
           transition: "background 0.12s, color 0.12s, border-color 0.12s",
@@ -99,7 +99,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
           event.currentTarget.style.borderColor = "var(--accent)";
         }}
         onMouseLeave={(event) => {
-          event.currentTarget.style.background = props.attachmentCount ? "var(--bg-selected)" : "var(--bg-panel)";
+          event.currentTarget.style.background = props.attachmentCount ? "var(--bg-selected)" : "var(--bg-panel-paint)";
           event.currentTarget.style.color = props.attachmentCount ? "var(--accent)" : "var(--text-muted)";
           event.currentTarget.style.borderColor = "var(--border)";
         }}
@@ -125,7 +125,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
           aria-expanded={menus.snippetDropdownOpen}
           style={{
             flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-            height: 32, padding: "0 9px", background: menus.snippetDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)",
+            height: 32, padding: "0 9px", background: menus.snippetDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel-paint)",
             border: "1px solid var(--border)", borderRadius: 8, color: menus.snippetDropdownOpen ? "var(--accent)" : "var(--text-muted)",
             cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", transition: "background 0.12s, color 0.12s, border-color 0.12s",
           }}
@@ -135,7 +135,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
             event.currentTarget.style.borderColor = "var(--accent)";
           }}
           onMouseLeave={(event) => {
-            event.currentTarget.style.background = menus.snippetDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)";
+            event.currentTarget.style.background = menus.snippetDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel-paint)";
             event.currentTarget.style.color = menus.snippetDropdownOpen ? "var(--accent)" : "var(--text-muted)";
             event.currentTarget.style.borderColor = "var(--border)";
           }}
@@ -147,7 +147,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
         </button>
         {menus.snippetDropdownOpen && (
           <div ref={menus.snippetDropdownPanelRef} className="pi-popover pi-snippet-popover" role="menu" style={{
-            position: "absolute", bottom: "calc(100% + 6px)", left: 0, zIndex: 100, background: "var(--bg)",
+            position: "absolute", bottom: "calc(100% + 6px)", left: 0, zIndex: 100, background: "var(--bg-paint)",
             border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
             overflow: "hidden", minWidth: 260, maxWidth: "calc(100vw - 32px)",
           }}>
@@ -225,7 +225,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
             const maxHeight = Math.max(120, Math.min(menus.modelDropdownRect.top - 8, viewportHeight * 0.6));
             return (
               <div ref={menus.modelDropdownPanelRef} className="pi-popover pi-model-popover" style={{
-                position: "fixed", bottom, left, zIndex: 500, background: "var(--bg)", border: "1px solid var(--border)",
+                position: "fixed", bottom, left, zIndex: 500, background: "var(--bg-paint)", border: "1px solid var(--border)",
                 borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)", overflow: "hidden",
                 width: "max-content", minWidth: minPanelWidth, maxWidth: maxPanelWidth, maxHeight, overflowY: "auto",
               }}>
@@ -261,7 +261,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
             onClick={() => menus.setReviewerDropdownOpen((open) => !open)} title={reviewerControl.title}
             style={{
               height: 32, maxWidth: 210, display: "flex", alignItems: "center", gap: 6, padding: "0 9px",
-              background: menus.reviewerDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel)",
+              background: menus.reviewerDropdownOpen ? "var(--bg-hover)" : "var(--bg-panel-paint)",
               border: `1px solid ${props.buddyMode !== "off" ? "rgba(234,179,8,0.28)" : "var(--border)"}`,
               borderRadius: 8, color: props.buddyMode !== "off" ? "rgba(180,130,0,1)" : "var(--text-muted)",
               cursor: props.isStreaming ? "not-allowed" : "pointer", opacity: props.isStreaming ? 0.55 : 1,
@@ -276,7 +276,7 @@ export const ComposerPrimaryControls = memo(function ComposerPrimaryControls(pro
             <div ref={menus.reviewerDropdownPanelRef} className="pi-popover pi-model-popover" role="menu" style={{
               position: "absolute", bottom: "calc(100% + 6px)", left: 0, zIndex: 500, minWidth: 240,
               maxWidth: "min(340px, calc(100vw - 32px))", maxHeight: "min(420px, 60vh)", overflowY: "auto",
-              background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 9,
+              background: "var(--bg-paint)", border: "1px solid var(--border)", borderRadius: 9,
               boxShadow: "0 -6px 20px rgba(15,23,42,0.12)", padding: 4,
             }}>
               <div style={{ padding: "7px 9px 6px", color: "var(--text-dim)", fontSize: 10, fontWeight: 650, letterSpacing: "0.04em" }}>{reviewerControl.hint}</div>

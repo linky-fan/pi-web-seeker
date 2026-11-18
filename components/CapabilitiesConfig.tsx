@@ -44,7 +44,7 @@ export function CapabilitiesConfig({ cwd, onClose }: Props) {
           padding: 4,
           border: "1px solid var(--border)",
           borderRadius: 8,
-          background: "var(--bg)",
+          background: "var(--bg-paint)",
           boxShadow: "0 8px 28px rgba(0,0,0,0.18)",
         }}
       >

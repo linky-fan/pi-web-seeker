@@ -310,7 +310,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const inputStyle = {
   padding: "6px 9px",
-  background: "var(--bg-panel)",
+  background: "var(--bg-panel-paint)",
   border: "1px solid var(--border)",
   borderRadius: 5,
   color: "var(--text)",
@@ -626,7 +626,7 @@ function ThinkingLevelMapEditor({
           fontWeight: 400,
           transition: "background 0.1s, color 0.1s",
           whiteSpace: "nowrap",
-          background: "var(--bg-panel)",
+          background: "var(--bg-panel-paint)",
           color: "var(--text-dim)",
         };
         const btnActive: React.CSSProperties = {
@@ -698,7 +698,7 @@ function ThinkingLevelMapEditor({
                 maxLength={10}
                 style={{
                   width: "12ch",
-                  background: state === "string" ? "var(--bg)" : "var(--bg-panel)",
+                  background: state === "string" ? "var(--bg-paint)" : "var(--bg-panel-paint)",
                   border: "none",
                   outline: "none",
                   color: state === "string" ? "var(--text)" : "var(--text-dim)",
@@ -1119,7 +1119,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
                 <button
                   key={option.id}
                   onClick={() => submitSelection(loginState.token, option.id)}
-                  style={{ padding: "6px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", cursor: "pointer", fontSize: 12, textAlign: "left" }}
+                  style={{ padding: "6px 9px", background: "var(--bg-paint)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", cursor: "pointer", fontSize: 12, textAlign: "left" }}
                 >
                   {option.label}
                 </button>
@@ -1150,12 +1150,12 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") submitCode(loginState.token, inputValue); }}
                 placeholder={loginState.phase === "auth" ? "http://localhost:1455/auth/callback?code=…" : (loginState.placeholder ?? t("models.enterValue"))}
-                style={{ flex: 1, padding: "6px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "var(--font-mono)", boxSizing: "border-box" }}
+                style={{ flex: 1, padding: "6px 9px", background: "var(--bg-paint)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "var(--font-mono)", boxSizing: "border-box" }}
               />
               <button
                 onClick={() => submitCode(loginState.token, inputValue)}
                 disabled={!inputValue.trim()}
-                style={{ padding: "6px 12px", background: inputValue.trim() ? "var(--accent)" : "var(--bg-panel)", border: "none", borderRadius: 5, color: inputValue.trim() ? "#fff" : "var(--text-dim)", cursor: inputValue.trim() ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 600, flexShrink: 0 }}
+                style={{ padding: "6px 12px", background: inputValue.trim() ? "var(--accent)" : "var(--bg-panel-paint)", border: "none", borderRadius: 5, color: inputValue.trim() ? "#fff" : "var(--text-dim)", cursor: inputValue.trim() ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 600, flexShrink: 0 }}
               >
                 {t("models.submit")}
               </button>
@@ -1167,7 +1167,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
             <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
               {t("models.openVerification")}
             </p>
-            <div style={{ padding: "8px 10px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: 16, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: 0 }}>
+            <div style={{ padding: "8px 10px", background: "var(--bg-paint)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: 16, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: 0 }}>
               {loginState.userCode}
             </div>
             <p style={{ margin: 0, fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
@@ -1315,7 +1315,7 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
             disabled={saving || !apiKey.trim() || savedOk}
             style={{
               padding: "6px 12px",
-              background: savedOk ? "#16a34a" : apiKey.trim() ? "var(--accent)" : "var(--bg-panel)",
+              background: savedOk ? "#16a34a" : apiKey.trim() ? "var(--accent)" : "var(--bg-panel-paint)",
               border: "none", borderRadius: 5,
               color: (apiKey.trim() || savedOk) ? "#fff" : "var(--text-dim)",
               cursor: (saving || !apiKey.trim() || savedOk) ? "not-allowed" : "pointer",
@@ -1403,7 +1403,7 @@ function AddProviderPicker({
   const cardStyle: React.CSSProperties = {
     display: "flex", flexDirection: "row", alignItems: "center", gap: 8,
     padding: "10px 12px",
-    background: "var(--bg-panel)",
+    background: "var(--bg-panel-paint)",
     border: "1px solid var(--border)",
     borderRadius: 7,
     boxSizing: "border-box",
@@ -1460,7 +1460,7 @@ function AddProviderPicker({
                   onClick={() => { onAddTemplate(template); close(); }}
                   style={cardStyle}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel-paint)"; }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t(template.labelKey)}</div>
@@ -1474,7 +1474,7 @@ function AddProviderPicker({
                   onClick={() => { onAddCustom(); close(); }}
                   style={cardStyle}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel-paint)"; }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("models.compatibleProvider")}</div>
@@ -1495,7 +1495,7 @@ function AddProviderPicker({
                 <button key={p.id} onClick={() => { onSelectOAuth(p.id); close(); }}
                   style={cardStyle}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel-paint)"; }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
@@ -1512,7 +1512,7 @@ function AddProviderPicker({
                 <button key={p.id} onClick={() => { onSelectApiKey(p.id); close(); }}
                   style={cardStyle}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel-paint)"; }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.displayName}</div>
@@ -1746,7 +1746,7 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
           {/* Left: tree */}
-          <div style={{ width: 210, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)" }}>
+          <div style={{ width: 210, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel-paint)" }}>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>
               {/* Active OAuth subscriptions */}
               {activeOAuth.map((p) => {
@@ -1884,7 +1884,7 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
             position: "relative",
             padding: "6px 16px",
             minWidth: 92,
-            background: savedOk ? "#16a34a" : saving ? "var(--bg-panel)" : "var(--accent)",
+            background: savedOk ? "#16a34a" : saving ? "var(--bg-panel-paint)" : "var(--accent)",
             border: "none", borderRadius: 6,
             color: savedOk ? "#fff" : saving ? "var(--text-muted)" : "#fff",
             cursor: (saving || savedOk) ? "default" : "pointer", fontSize: 13, fontWeight: 600,

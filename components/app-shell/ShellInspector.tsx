@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { DeferredFeatureBoundary, DeferredFeatureError, DeferredFeatureLoading } from "../DeferredFeature";
 import { TabBar, type Tab } from "../TabBar";
 import { useLocale } from "@/lib/i18n";
+import { displayFileName, type FileChange } from "@/lib/file-changes";
 import type { SessionInfo } from "@/lib/types";
 import type { FluidInspectorTier } from "./types";
 
@@ -21,6 +22,11 @@ const BrowserPanel = dynamic(() => import("../BrowserPanel").then((module) => mo
 const RemotePanel = dynamic(() => import("../RemotePanel").then((module) => module.RemotePanel), {
   ssr: false,
   loading: () => <DeferredFeatureLoading featureKey="remote.tab" variant="panel" />,
+});
+
+const ChangesPanel = dynamic(() => import("../ChangesPanel").then((module) => module.ChangesPanel), {
+  ssr: false,
+  loading: () => <DeferredFeatureLoading featureKey="changes.tab" variant="panel" />,
 });
 
 const CheckersPanel = dynamic(() => import("../CheckersPanel").then((module) => module.CheckersPanel), {
@@ -44,6 +50,8 @@ interface InspectorProps {
   onOpenBrowser: () => void;
   onOpenRemote: () => void;
   onOpenCheckers: () => void;
+  onOpenChanges: () => void;
+  fileChanges: FileChange[];
   onOpenFile: (filePath: string, fileName: string, lineNumber?: number) => void;
   onToggleMaximize: () => void;
   onTogglePanel: () => void;
@@ -56,9 +64,9 @@ export const ShellInspector = memo(function ShellInspector(props: InspectorProps
   return <>
     <div
       className={`right-panel-container ${props.isFluid ? `pi-fluid-inspector pi-fluid-inspector-tier-${props.fluidTier}` : "pi-right-panel"}${props.panelOpen ? " right-panel-open" : " right-panel-closed"}${widePanel ? " pi-wide-panel-active" : ""}${interactive ? " pi-browser-panel-active" : ""}${props.activeTab?.kind === "remote" ? " pi-remote-panel-active" : ""}${props.inspectorMaximized ? " pi-inspector-maximized" : ""}`}
-      style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid var(--border)", background: "var(--bg)" }}
+      style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid var(--border)", background: "var(--bg-paint)" }}
     >
-      <div className="pi-right-panel-header" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>
+      <div className="pi-right-panel-header" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel-paint)", borderBottom: "1px solid var(--border)", height: 36 }}>
         <div style={{ flex: 1, overflow: "hidden" }}>
           <TabBar tabs={props.tabs} activeTabId={props.activeTabId ?? ""} onSelectTab={props.onSelectTab} onCloseTab={props.onCloseTab} />
         </div>
@@ -70,6 +78,9 @@ export const ShellInspector = memo(function ShellInspector(props: InspectorProps
         </button>
         <button className="pi-browser-open-tab" onClick={() => props.onOpenCheckers()} disabled={!props.activeCwd} title={t("checkers.open")} aria-label={t("checkers.open")}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 4l-4 16" /></svg>
+        </button>
+        <button className="pi-browser-open-tab" onClick={() => props.onOpenChanges()} disabled={!props.selectedSession} title={props.selectedSession ? t("changes.open") : t("changes.requiresSession")} aria-label={props.selectedSession ? t("changes.open") : t("changes.requiresSession")}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18M5 8h4M5 16h4M15 8h4M15 16h4" /></svg>
         </button>
         {props.activeTab && <button
           className="pi-inspector-maximize-button"
@@ -85,6 +96,10 @@ export const ShellInspector = memo(function ShellInspector(props: InspectorProps
         {props.activeTab?.kind === "file" ? <FileViewer filePath={props.activeTab.filePath} cwd={props.activeCwd ?? undefined} lineNumber={props.activeTab.lineNumber} /> : props.activeTab?.kind === "checker" ? (
           <DeferredFeatureBoundary resetKey={props.activeTab.id} fallback={<DeferredFeatureError featureKey="checkers.tab" variant="panel" onDismiss={() => props.onCloseTab(props.activeTab!.id)} />}>
             <CheckersPanel cwd={props.activeTab.cwd} onOpenFile={props.onOpenFile} />
+          </DeferredFeatureBoundary>
+        ) : props.activeTab?.kind === "changes" ? (
+          <DeferredFeatureBoundary resetKey={props.activeTab.id} fallback={<DeferredFeatureError featureKey="changes.tab" variant="panel" onDismiss={() => props.onCloseTab(props.activeTab!.id)} />}>
+            <ChangesPanel cwd={props.activeCwd} changes={props.fileChanges} onOpenFile={(path) => props.onOpenFile(path, displayFileName(path))} />
           </DeferredFeatureBoundary>
         ) : props.activeTab?.kind === "browser" ? (
           <DeferredFeatureBoundary resetKey={props.activeTab.id} fallback={<DeferredFeatureError featureKey="browser.tab" variant="panel" onDismiss={() => props.onCloseTab(props.activeTab!.id)} />}>
@@ -110,7 +125,7 @@ interface ClassicToggleProps {
 
 export const ClassicInspectorToggle = memo(function ClassicInspectorToggle({ visible, panelOpen, title, onToggle }: ClassicToggleProps) {
   if (!visible) return null;
-  return <button className="pi-right-panel-toggle" onClick={onToggle} title={title} aria-label={title} aria-pressed={panelOpen} style={{ position: "fixed", top: 0, right: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, padding: 0, background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", color: panelOpen ? "var(--text)" : "var(--text-muted)", cursor: "pointer", transition: "color 0.12s" }} onMouseEnter={(event) => { event.currentTarget.style.color = "var(--text)"; }} onMouseLeave={(event) => { event.currentTarget.style.color = panelOpen ? "var(--text)" : "var(--text-muted)"; }}>
+  return <button className="pi-right-panel-toggle" onClick={onToggle} title={title} aria-label={title} aria-pressed={panelOpen} style={{ position: "fixed", top: 0, right: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, padding: 0, background: "var(--bg-panel-paint)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", color: panelOpen ? "var(--text)" : "var(--text-muted)", cursor: "pointer", transition: "color 0.12s" }} onMouseEnter={(event) => { event.currentTarget.style.color = "var(--text)"; }} onMouseLeave={(event) => { event.currentTarget.style.color = panelOpen ? "var(--text)" : "var(--text-muted)"; }}>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" /></svg>
   </button>;
 });

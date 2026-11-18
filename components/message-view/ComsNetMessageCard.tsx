@@ -24,7 +24,7 @@ function ComsNetMessageCardImpl({ event }: { event: ComsNetEvent }) {
       style={{
         border: `1px solid ${border}`,
         borderLeft: `3px solid ${color}`,
-        background: `linear-gradient(135deg, ${bg}, var(--bg-panel))`,
+        background: `linear-gradient(135deg, ${bg}, var(--bg-panel-paint))`,
         borderRadius: 7,
         overflow: "hidden",
         fontSize: 13,
@@ -42,7 +42,7 @@ function ComsNetMessageCardImpl({ event }: { event: ComsNetEvent }) {
             alignItems: "center",
             justifyContent: "center",
             color,
-            background: "var(--bg)",
+            background: "var(--bg-paint)",
             border: `1px solid ${border}`,
             fontSize: 9,
             fontWeight: 800,
@@ -61,7 +61,7 @@ function ComsNetMessageCardImpl({ event }: { event: ComsNetEvent }) {
                 padding: "0 7px",
                 borderRadius: 4,
                 border: `1px solid ${border}`,
-                background: "var(--bg)",
+                background: "var(--bg-paint)",
                 color,
                 fontSize: 10,
                 fontWeight: 700,
@@ -102,7 +102,7 @@ function ComsNetDetail({ label, text, isError }: { label: string; text: string; 
       <div
         style={{
           border: "1px solid var(--border)",
-          background: "var(--bg)",
+          background: "var(--bg-paint)",
           borderRadius: 6,
           padding: "7px 8px",
           color: isError ? "#f87171" : "var(--text-muted)",

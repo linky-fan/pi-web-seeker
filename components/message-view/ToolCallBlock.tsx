@@ -254,7 +254,7 @@ function PairedResult({ text, isEmpty, isError }: {
           lineHeight: 1.5,
           overflow: "auto",
           maxHeight: 400,
-          background: "var(--bg)",
+          background: "var(--bg-paint)",
           whiteSpace: "pre-wrap",
           wordBreak: "break-all",
           fontStyle: isEmpty ? "italic" : "normal",

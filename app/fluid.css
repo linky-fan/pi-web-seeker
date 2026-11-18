@@ -2,18 +2,18 @@
    Keep selectors scoped to data-ui="fluid"; globals.css owns Classic and shared styles. */
 
 html[data-ui="fluid"] .pi-app-loading-shell {
-  background: var(--fluid-canvas, var(--fluid-bg, var(--bg)));
+  background: var(--bg-paint);
 }
 
 html[data-ui="fluid"] .pi-app-shell {
-  background: var(--fluid-bg) !important;
+  background: var(--bg-paint) !important;
 }
 
 html[data-ui="fluid"] .pi-sidebar,
 html[data-ui="fluid"] .pi-topbar,
 html[data-ui="fluid"] .pi-right-panel,
 html[data-ui="fluid"] .pi-right-panel-header {
-  background: color-mix(in srgb, var(--fluid-surface) 92%, transparent) !important;
+  background: color-mix(in srgb, var(--fluid-panel-solid, var(--bg-panel)) 80%, transparent) !important;
   border-color: var(--fluid-border) !important;
 }
 
@@ -156,9 +156,7 @@ html[data-ui="fluid"] .pi-file-row:hover {
 }
 
 html[data-ui="fluid"] body {
-  background:
-    radial-gradient(circle at 52% 48%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 430px),
-    linear-gradient(135deg, color-mix(in srgb, var(--bg) 88%, #03131a), var(--bg));
+  background: var(--bg-image, linear-gradient(135deg, color-mix(in srgb, var(--bg) 88%, #03131a), var(--bg)));
 }
 
 html[data-ui="fluid"] .pi-fluid-rail-spacer {
@@ -992,12 +990,17 @@ html[data-ui="fluid"] .pi-fluid-shell {
   position: relative;
   display: flex !important;
   gap: 0;
-  background:
-    radial-gradient(circle at 52% 45%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 440px),
-    linear-gradient(135deg, color-mix(in srgb, var(--bg) 90%, #021018), var(--bg)) !important;
+  /* Transparent so the page-level --bg-paint gradient shows through the workspace. */
+  background: transparent !important;
   color: var(--text);
   overflow: hidden;
   grid-template-columns: none !important;
+}
+
+html[data-ui="fluid"] .pi-center-pane {
+  position: relative;
+  min-width: 0 !important;
+  background: transparent !important;
 }
 
 html[data-ui="fluid"] .pi-fluid-rail {
@@ -1201,8 +1204,7 @@ html[data-ui="fluid"] .pi-fluid-drawer-title {
 html[data-ui="fluid"] .pi-center-pane {
   position: relative;
   min-width: 0 !important;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, transparent), var(--bg)) !important;
+  /* No background: the app-level gradient is the only paint surface. */
 }
 
 html[data-ui="fluid"] .pi-fluid-workspace-title,

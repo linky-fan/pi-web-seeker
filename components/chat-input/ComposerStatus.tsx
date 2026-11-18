@@ -40,7 +40,7 @@ export const ComposerStatus = memo(function ComposerStatus({ retryInfo, attached
                 title={t("chat.removeImage")}
                 style={{
                   position: "absolute", top: -4, right: -4, width: 16, height: 16, borderRadius: "50%",
-                  background: "var(--bg-panel)", border: "1px solid var(--border)", display: "flex",
+                  background: "var(--bg-panel-paint)", border: "1px solid var(--border)", display: "flex",
                   alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, color: "var(--text-muted)",
                 }}
               >

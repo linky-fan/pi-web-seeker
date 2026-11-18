@@ -26,7 +26,7 @@ const HighlightedBlock = dynamic(
             fontSize: 12.5,
             lineHeight: 1.6,
             borderRadius: 0,
-            background: "var(--bg)",
+            background: "var(--bg-paint)",
           }}
           codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
         >
@@ -55,7 +55,7 @@ export function CodeBlockHighlighter({ code, lang }: { code: string; lang: strin
           lineHeight: 1.6,
           fontFamily: "var(--font-mono)",
           color: "var(--text)",
-          background: "var(--bg)",
+          background: "var(--bg-paint)",
           overflow: "hidden",
           pointerEvents: "none",
         }}

@@ -211,7 +211,7 @@ export function AgentsMdStatus({ cwd, variant = "classic" }: { cwd: string; vari
           padding: "3px 7px",
           border: "1px solid var(--border)",
           borderRadius: 999,
-          background: "var(--bg-panel)",
+          background: "var(--bg-panel-paint)",
         }}
       >
         <span className={isContextVariant ? "pi-fluid-agents-dot" : undefined} style={{
@@ -297,7 +297,7 @@ export function AgentsMdStatus({ cwd, variant = "classic" }: { cwd: string; vari
             padding: "8px 10px",
             border: "1px solid var(--border)",
             borderRadius: 8,
-            background: "var(--bg-panel)",
+            background: "var(--bg-panel-paint)",
             color: "var(--text-muted)",
             fontSize: 11,
             lineHeight: 1.45,
@@ -310,7 +310,7 @@ export function AgentsMdStatus({ cwd, variant = "classic" }: { cwd: string; vari
               <div style={{ marginBottom: 4, color: "var(--text-muted)", fontWeight: 650 }}>{t("agentsMd.profile")}</div>
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                 {profileBits.slice(0, 8).map((item) => (
-                  <span key={String(item)} style={{ border: "1px solid var(--border)", borderRadius: 999, padding: "2px 6px", background: "var(--bg)", color: "var(--text-dim)" }}>
+                  <span key={String(item)} style={{ border: "1px solid var(--border)", borderRadius: 999, padding: "2px 6px", background: "var(--bg-paint)", color: "var(--text-dim)" }}>
                     {item}
                   </span>
                 ))}
@@ -358,7 +358,7 @@ export function AgentsMdStatus({ cwd, variant = "classic" }: { cwd: string; vari
                   maxHeight: 260,
                   overflow: "auto",
                   whiteSpace: "pre-wrap",
-                  background: "var(--bg)",
+                  background: "var(--bg-paint)",
                   border: "1px solid var(--border)",
                   borderRadius: 6,
                   padding: 9,

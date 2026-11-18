@@ -202,7 +202,7 @@ export const ShellNavigation = memo(function ShellNavigation({
       <FluidRailHint label={railItems.ui[0]} description={railItems.ui[1]}><UiModeToggleButton /></FluidRailHint>
       <FluidRailHint label={railItems.locale[0]} description={railItems.locale[1]}><LocaleToggleButton /></FluidRailHint>
     </div>}
-    <div className={`sidebar-container pi-sidebar${isFluid ? " pi-fluid-drawer" : ""}${effectiveSidebarOpen ? " sidebar-open" : " sidebar-closed"}`} style={{ background: "var(--bg-panel)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", flexShrink: 0, zIndex: 200 }}>
+    <div className={`sidebar-container pi-sidebar${isFluid ? " pi-fluid-drawer" : ""}${effectiveSidebarOpen ? " sidebar-open" : " sidebar-closed"}`} style={{ background: "var(--bg-panel-paint)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", flexShrink: 0, zIndex: 200 }}>
       {isFluid && <div className="pi-fluid-drawer-bar"><div><div className="pi-fluid-drawer-kicker">{fluidDrawerView === "context" ? "Context" : fluidDrawerView === "explorer" ? "Workspace" : "Navigation"}</div><div className="pi-fluid-drawer-title">{fluidDrawerView === "context" ? "Session & System" : fluidDrawerView === "explorer" ? "Sessions & Explorer" : "Sessions"}</div></div><button type="button" onClick={() => setFluidDrawerOpen(false)} title={t("sidebar.hide")}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button></div>}
       {isFluid && fluidDrawerView === "context" ? contextContent : sidebarContent}
     </div>

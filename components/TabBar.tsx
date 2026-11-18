@@ -34,7 +34,22 @@ export interface RemoteTab {
   cwd: string;
 }
 
-export type Tab = FileTab | BrowserTab | RemoteTab | CheckerTab;
+export interface ChangesTab {
+  id: string;
+  label: string;
+  kind: "changes";
+  agentSessionId: string;
+}
+
+export type Tab = FileTab | BrowserTab | RemoteTab | CheckerTab | ChangesTab;
+
+function ChangesTabIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v18M5 8h4M5 16h4M15 8h4M15 16h4" />
+    </svg>
+  );
+}
 
 function BrowserTabIcon() {
   return (
@@ -78,7 +93,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
       style={{
         display: "flex",
         alignItems: "flex-end",
-        background: "var(--bg-panel)",
+        background: "var(--bg-panel-paint)",
         overflowX: "auto",
         flexShrink: 0,
         height: 36,
@@ -99,7 +114,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               paddingLeft: 12,
               paddingRight: 6,
               borderRight: "1px solid var(--border)",
-              background: isActive ? "var(--bg)" : "var(--bg-panel)",
+              background: isActive ? "var(--bg-paint)" : "var(--bg-panel-paint)",
               cursor: "pointer",
               fontSize: 12,
               color: isActive ? "var(--text)" : "var(--text-muted)",
@@ -112,7 +127,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
             }}
           >
             <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7, display: "flex", alignItems: "center" }}>
-              {tab.kind === "browser" ? <BrowserTabIcon /> : tab.kind === "remote" ? <RemoteTabIcon /> : tab.kind === "checker" ? <CheckerTabIcon /> : getFileIcon(tab.label, 13)}
+              {tab.kind === "browser" ? <BrowserTabIcon /> : tab.kind === "remote" ? <RemoteTabIcon /> : tab.kind === "checker" ? <CheckerTabIcon /> : tab.kind === "changes" ? <ChangesTabIcon /> : getFileIcon(tab.label, 13)}
             </span>
             <span
               style={{

@@ -7,6 +7,7 @@ import { APP_NAME } from "@/lib/branding";
 import { revealElement } from "@/lib/motion";
 import type { ChatInputHandle } from "./ChatInput";
 import { ShellDeferredFeatures } from "./app-shell/ShellDeferredFeatures";
+import type { FileChange } from "@/lib/file-changes";
 import { ClassicInspectorToggle, ShellInspector } from "./app-shell/ShellInspector";
 import { ShellNavigation } from "./app-shell/ShellNavigation";
 import { ShellWorkspace } from "./app-shell/ShellWorkspace";
@@ -33,6 +34,8 @@ export function AppShell() {
   const [fluidDrawerView, setFluidDrawerView] = useState<FluidDrawerView>("sessions");
   const [fluidContextTab, setFluidContextTab] = useState<FluidContextTab>("session");
   const [activeTopPanel, setActiveTopPanel] = useState<"session" | "system" | null>(null);
+  // Changes are produced inside ChatWindow, so AppShell holds the latest set for the inspector.
+  const [fileChanges, setFileChanges] = useState<FileChange[]>([]);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -147,7 +150,7 @@ export function AppShell() {
     />
     <div
       className={`pi-app-shell${isFluid ? " pi-fluid-shell" : " pi-classic-shell"}${inspector.inspectorMaximized ? " pi-inspector-focus-mode" : ""}${inspector.activeTab?.kind === "remote" ? " pi-remote-active" : ""}`}
-      style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}
+      style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg-paint)" }}
     >
       <ShellNavigation
         isFluid={isFluid}
@@ -212,6 +215,7 @@ export function AppShell() {
         onBranchDataChange={session.handleBranchDataChange}
         onSystemPromptChange={session.handleSystemPromptChange}
         onSessionStatsChange={session.handleSessionStatsChange}
+        onFileChangesChange={setFileChanges}
         onContextUsageChange={session.handleContextUsageChange}
         onTaskStatusChange={session.handleTaskStatusChange}
         onComposerActivityChange={session.handleComposerActivityChange}
@@ -256,6 +260,8 @@ export function AppShell() {
         onOpenBrowser={inspector.openBrowser}
         onOpenRemote={inspector.openRemote}
         onOpenCheckers={inspector.openCheckers}
+        onOpenChanges={inspector.openChanges}
+        fileChanges={fileChanges}
         onOpenFile={inspector.openFileAtLine}
         onToggleMaximize={inspector.toggleMaximize}
         onTogglePanel={inspector.togglePanel}

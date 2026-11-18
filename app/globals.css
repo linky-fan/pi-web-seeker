@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "@xterm/xterm/css/xterm.css";
 
+/*
+ * Gradient layers. Consumers paint `var(--bg-paint)`, which resolves to the
+ * optional gradient (--bg-image, set by useTheme) and falls back to the solid
+ * --bg color for light themes and the pre-hydration paint.
+ */
+:root {
+  --bg-paint: var(--bg-image, var(--bg));
+  --bg-panel-paint: var(--bg-panel-image, var(--bg-panel));
+}
+
 @theme {
   --color-bg: var(--bg);
   --color-bg-panel: var(--bg-panel);
@@ -39,7 +49,7 @@
 .pi-app-loading-shell {
   height: 100dvh;
   flex: 1;
-  background: var(--bg);
+  background: var(--bg-paint);
 }
 
 html[data-theme="ink"],
@@ -244,7 +254,7 @@ html, body {
   height: 100%;
   margin: 0;
   padding: 0;
-  background: var(--bg);
+  background: var(--bg-paint);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
@@ -323,7 +333,7 @@ pre, code {
   padding: 5px 10px;
   text-align: left;
 }
-.markdown-body th { background: var(--bg-panel); font-weight: 600; }
+.markdown-body th { background: var(--bg-panel-paint); font-weight: 600; }
 .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
 .plan-card-markdown {
   font-size: 13px;
@@ -352,7 +362,7 @@ pre, code {
 .markdown-file-preview h3 { font-size: 1.15em; }
 .markdown-file-preview p { margin: 0 0 12px; }
 .markdown-file-preview pre {
-  background: var(--bg-panel);
+  background: var(--bg-panel-paint);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 12px 16px;
@@ -364,7 +374,7 @@ pre, code {
 .markdown-file-preview code {
   font-family: var(--font-mono);
   font-size: 0.9em;
-  background: var(--bg-panel);
+  background: var(--bg-panel-paint);
   padding: 1px 5px;
   border-radius: 3px;
 }
@@ -560,7 +570,7 @@ span.linenumber {
   flex-direction: column;
   overflow: hidden;
   color: var(--text);
-  background: var(--bg);
+  background: var(--bg-paint);
   container-type: inline-size;
 }
 
@@ -614,7 +624,7 @@ span.linenumber {
   padding: 0 9px;
   border: 1px solid var(--border);
   border-radius: 7px;
-  background: var(--bg);
+  background: var(--bg-paint);
   color: var(--text-dim);
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
@@ -688,7 +698,7 @@ span.linenumber {
   padding: 0 9px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg);
+  background: var(--bg-paint);
   color: var(--text-muted);
   font-size: 11px;
   white-space: nowrap;
@@ -819,7 +829,7 @@ span.linenumber {
   margin-bottom: 2px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-panel);
+  background: var(--bg-panel-paint);
   color: var(--text-muted);
 }
 
@@ -844,7 +854,7 @@ span.linenumber {
   padding: 5px 7px;
   border: 1px solid var(--border);
   border-radius: 5px;
-  background: var(--bg-panel);
+  background: var(--bg-panel-paint);
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -860,7 +870,7 @@ span.linenumber {
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg-panel);
+  background: var(--bg-panel-paint);
   color: var(--text-dim);
   font: 10px/1.45 var(--font-mono);
   text-align: left;
@@ -908,7 +918,7 @@ span.linenumber {
   padding: 15px;
   border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
   border-radius: 8px;
-  background: var(--bg);
+  background: var(--bg-paint);
   box-shadow: 0 18px 56px -30px rgba(0, 0, 0, 0.82);
 }
 
@@ -1934,7 +1944,7 @@ html.dark .pi-quick-chat {
   border: 1px solid var(--quick-border);
   border-radius: 6px;
   outline: none;
-  background: var(--bg);
+  background: var(--bg-paint);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2206,8 +2216,8 @@ body:has(.pi-app-shell.pi-inspector-focus-mode) .pi-quick-chat {
 }
 
 /* Controlled SSH/Telnet workspace — terminal-first layout with overlay drawers. */
-.pi-remote-panel { --pi-terminal-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Noto Sans Mono CJK SC", "Microsoft YaHei Mono", monospace; height: 100%; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; background: var(--bg); color: var(--text); }
-.pi-remote-toolbar { height: 42px; flex: 0 0 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 12px; border-bottom: 1px solid var(--border); background: var(--bg-panel); }
+.pi-remote-panel { --pi-terminal-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Noto Sans Mono CJK SC", "Microsoft YaHei Mono", monospace; height: 100%; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; background: var(--bg-paint); color: var(--text); }
+.pi-remote-toolbar { height: 42px; flex: 0 0 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 12px; border-bottom: 1px solid var(--border); background: var(--bg-panel-paint); }
 .pi-remote-title, .pi-remote-toolbar-actions, .pi-remote-connection-bar, .pi-remote-section-head, .pi-remote-target-actions, .pi-remote-approval > div { display: flex; align-items: center; gap: 8px; }
 .pi-remote-title { font-size: 13px; font-weight: 650; }
 .pi-remote-title small { color: var(--text-dim); font-weight: 500; text-transform: capitalize; }
@@ -2216,7 +2226,7 @@ body:has(.pi-app-shell.pi-inspector-focus-mode) .pi-quick-chat {
 .pi-remote-toolbar-actions button small { margin-left: 3px; color: var(--text-dim); font-size: 9px; font-variant-numeric: tabular-nums; }
 .pi-remote-toolbar-actions button.active small { color: inherit; }
 .pi-remote-status-dot { width: 7px; height: 7px; border-radius: 999px; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 10%, transparent); }
-.pi-remote-panel button { border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text-muted); font-size: 11px; line-height: 1; padding: 7px 9px; cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }
+.pi-remote-panel button { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-paint); color: var(--text-muted); font-size: 11px; line-height: 1; padding: 7px 9px; cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }
 .pi-remote-panel button:hover:not(:disabled), .pi-remote-panel button.active { color: var(--text); border-color: color-mix(in srgb, var(--accent) 42%, var(--border)); background: var(--bg-hover); }
 .pi-remote-panel button.primary { background: var(--accent); color: white; border-color: var(--accent); }
 .pi-remote-panel button:disabled { opacity: .48; cursor: not-allowed; }
@@ -2225,7 +2235,7 @@ body:has(.pi-app-shell.pi-inspector-focus-mode) .pi-quick-chat {
 .pi-remote-main { position: relative; min-height: 0; flex: 1; overflow: hidden; }
 .pi-remote-drawer-layer { position: absolute; inset: 0; z-index: 30; overflow: hidden; }
 .pi-remote-drawer-scrim { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: rgba(4, 8, 13, .48) !important; cursor: default !important; }
-.pi-remote-drawer { position: relative; z-index: 1; width: min(260px, calc(100% - 42px)); height: 100%; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border)); background: var(--bg-panel); box-shadow: 18px 0 42px rgba(0, 0, 0, .28); animation: pi-remote-drawer-in 150ms cubic-bezier(.2,.8,.2,1); }
+.pi-remote-drawer { position: relative; z-index: 1; width: min(260px, calc(100% - 42px)); height: 100%; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border)); background: var(--bg-panel-paint); box-shadow: 18px 0 42px rgba(0, 0, 0, .28); animation: pi-remote-drawer-in 150ms cubic-bezier(.2,.8,.2,1); }
 .pi-remote-drawer-header { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 8px 7px 11px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg)); }
 .pi-remote-drawer-header > div { min-width: 0; }
 .pi-remote-drawer-header small, .pi-remote-drawer-header strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2247,10 +2257,10 @@ body:has(.pi-app-shell.pi-inspector-focus-mode) .pi-quick-chat {
 .pi-remote-targets small { margin-top: 4px; color: var(--text-dim); font: 9px/1.2 var(--font-mono); }
 .pi-remote-targets p { padding: 10px; color: var(--text-dim); font-size: 11px; }
 .pi-remote-target-actions { padding: 0 10px 8px; }
-.pi-remote-profile-editor, .pi-remote-connect-card { margin: 2px 8px 8px; padding: 9px; display: grid; gap: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); }
+.pi-remote-profile-editor, .pi-remote-connect-card { margin: 2px 8px 8px; padding: 9px; display: grid; gap: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-paint); }
 .pi-remote-profile-editor label, .pi-remote-connect-card label { display: grid; gap: 4px; color: var(--text-muted); font-size: 10px; }
 .pi-remote-profile-editor label > span, .pi-remote-connect-card label > span { color: var(--text-dim); }
-.pi-remote-profile-editor input, .pi-remote-profile-editor select, .pi-remote-connect-card input { min-width: 0; width: 100%; height: 29px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-panel); color: var(--text); padding: 0 7px; font: 11px var(--font-mono); }
+.pi-remote-profile-editor input, .pi-remote-profile-editor select, .pi-remote-connect-card input { min-width: 0; width: 100%; height: 29px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-panel-paint); color: var(--text); padding: 0 7px; font: 11px var(--font-mono); }
 .pi-remote-profile-editor .row { display: grid; grid-template-columns: 1fr 74px; gap: 7px; }
 .pi-remote-profile-editor .warning { display: flex; grid-template-columns: none; align-items: flex-start; gap: 6px; color: var(--warning, #d97706); line-height: 1.35; }
 .pi-remote-profile-editor .warning input { width: 14px; height: 14px; }

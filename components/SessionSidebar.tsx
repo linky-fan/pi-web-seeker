@@ -156,7 +156,7 @@ function AppTitle() {
           width: 26,
           height: 26,
           borderRadius: 6,
-          background: "color-mix(in srgb, var(--accent) 14%, var(--bg))",
+          background: "color-mix(in srgb, var(--accent) 14%, var(--bg-paint))",
           border: "1px solid color-mix(in srgb, var(--accent) 32%, var(--border))",
           color: "var(--accent)",
           fontSize: 16,
@@ -494,7 +494,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               disabled={!selectedCwd}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                background: selectedCwd ? "color-mix(in srgb, var(--accent) 12%, var(--bg))" : "var(--bg-hover)",
+                background: selectedCwd ? "color-mix(in srgb, var(--accent) 12%, var(--bg-paint))" : "var(--bg-hover)",
                 border: `1px solid ${selectedCwd ? "color-mix(in srgb, var(--accent) 30%, var(--border))" : "var(--border)"}`,
                 color: selectedCwd ? "var(--accent)" : "var(--text-dim)",
                 cursor: selectedCwd ? "pointer" : "not-allowed",
@@ -511,13 +511,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               title={selectedCwd ? `New session in ${selectedCwd}` : "Select a project first"}
               onMouseEnter={(e) => {
                 if (!selectedCwd) return;
-                e.currentTarget.style.background = "color-mix(in srgb, var(--accent) 18%, var(--bg))";
+                e.currentTarget.style.background = "color-mix(in srgb, var(--accent) 18%, var(--bg-paint))";
                 e.currentTarget.style.color = "var(--accent)";
                 e.currentTarget.style.borderColor = "color-mix(in srgb, var(--accent) 42%, var(--border))";
                 e.currentTarget.style.transform = "translateY(-1px)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = selectedCwd ? "color-mix(in srgb, var(--accent) 12%, var(--bg))" : "var(--bg-hover)";
+                e.currentTarget.style.background = selectedCwd ? "color-mix(in srgb, var(--accent) 12%, var(--bg-paint))" : "var(--bg-hover)";
                 e.currentTarget.style.color = selectedCwd ? "var(--accent)" : "var(--text-dim)";
                 e.currentTarget.style.borderColor = selectedCwd ? "color-mix(in srgb, var(--accent) 30%, var(--border))" : "var(--border)";
                 e.currentTarget.style.transform = "translateY(0)";
@@ -636,7 +636,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 left: 0,
                 right: 0,
                 zIndex: 100,
-                background: "var(--bg)",
+                background: "var(--bg-paint)",
                 border: "1px solid var(--border)",
                 borderRadius: 8,
                 boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
@@ -835,7 +835,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                       overflowY: "auto",
                       border: "1px solid var(--border)",
                       borderRadius: 5,
-                      background: "var(--bg)",
+                      background: "var(--bg-paint)",
                     }}
                   >
                     {directoryLoading && (
@@ -899,7 +899,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                       style={{
                         flex: 1,
                         padding: "5px 0",
-                        background: directoryBrowserPath && !directoryLoading ? "var(--accent)" : "var(--bg-panel)",
+                        background: directoryBrowserPath && !directoryLoading ? "var(--accent)" : "var(--bg-panel-paint)",
                         border: "none",
                         borderRadius: 5,
                         color: directoryBrowserPath && !directoryLoading ? "#fff" : "var(--text-dim)",
@@ -985,7 +985,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                       border: "1px solid var(--accent)",
                       borderRadius: 5,
                       outline: "none",
-                      background: "var(--bg)",
+                      background: "var(--bg-paint)",
                       color: "var(--text)",
                       boxSizing: "border-box",
                     }}
@@ -1360,7 +1360,7 @@ function SessionItem({
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center",
                 height: 30, padding: "0 11px",
-                background: "var(--bg)", border: "1px solid var(--border)",
+                background: "var(--bg-paint)", border: "1px solid var(--border)",
                 borderRadius: 6, color: "var(--text-muted)",
                 cursor: "pointer", fontSize: 12, fontWeight: 500,
                 whiteSpace: "nowrap",
@@ -1389,7 +1389,7 @@ function SessionItem({
             border: "1px solid var(--accent)",
             borderRadius: 5,
             outline: "none",
-            background: "var(--bg)",
+            background: "var(--bg-paint)",
             color: "var(--text)",
             height: 30,
           }}
